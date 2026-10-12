@@ -27,16 +27,18 @@ A kitchen agent that knows what is in your home: photograph the fridge and pantr
 | Inventory correction | Editable side panel with uncertain items highlighted. The agent also asks about up to 3 uncertain items in chat. No separate clarification wizard. |
 | Staples | Default editable list (salt, oil, ...) assumed present unless the user removes them. |
 | Expiry | No expiry tracking. The user marks items "use soon". |
+| Coverage | The inventory is built from three places: fridge, freezer, pantry. The user tags each photo with its place. The agent tracks which places were scanned and asks for the missing ones. Until the pantry is scanned, pantry-type ingredients are never reported as definitely missing. |
 | Persistence | Inventory and preferences persist across sessions. Chat history per session. |
 | UI | Mobile web app: chat + inventory side panel (a drawer on a phone). |
 
 ## 4. Core flows
 
 **Flow 1: build the inventory**
-1. The user attaches 1–4 photos in the chat (fridge, freezer, pantry). They may write a message along with them, or nothing.
-2. The agent calls `recognize_inventory`. Items appear in the side panel, uncertain ones highlighted at the top.
+1. The user attaches 1–4 photos in the chat. Each photo gets a place tag (Fridge / Freezer / Pantry), chosen with one tap on its thumbnail; the default follows the order fridge → freezer → pantry. A pantry is usually several shelves or cabinets: several photos with the same tag are fine. They may write a message along with them, or nothing.
+2. The agent calls `recognize_inventory`. The tag is passed to the model as the location, so it does not have to guess. Items appear in the side panel, uncertain ones highlighted at the top. The place is recorded as scanned, with a timestamp.
 3. The agent sends a short summary ("Found 23 items. Two I'm not sure about: is the white container leftover rice? Is that yogurt or sour cream?").
-4. The user answers in chat, or edits the panel directly (delete, rename, change quantity, toggle "use soon").
+4. If a place has not been scanned yet, the summary ends by asking for it once ("Want to add a photo of your pantry too? Then I'll know about your rice, pasta and cans."). The freezer is optional: ask for it once, and do not ask again if the user declines.
+5. The user answers in chat, or edits the panel directly (delete, rename, change quantity, toggle "use soon").
 
 **Flow 2: Mode A, what can I cook**
 1. The user writes something like "What can I cook tonight?" or "something quick, 30 min, kids are eating".
@@ -48,7 +50,7 @@ A kitchen agent that knows what is in your home: photograph the fridge and pantr
 1. "I want to make lasagna."
 2. The agent calls `get_recipe("lasagna")`, then `compute_missing`.
 3. For each missing essential ingredient, the agent checks whether something in the inventory is a reasonable substitute (e.g. cottage cheese for ricotta) and proposes it.
-4. The reply shows the recipe card, the substitutions it proposes, and a shopping list of what is still missing.
+4. The reply shows the recipe card, the substitutions it proposes, and a shopping list in two parts: **To buy** (definitely missing) and **Check your pantry first** (pantry-type ingredients — grains, pasta, canned goods, baking items, sauces and condiments, spices — that are not in the inventory while the pantry has not been scanned). Once the pantry is scanned, everything missing goes to "To buy".
 
 **Flow 4: preferences (memory)**
 - When the user states a lasting like or dislike ("the kids hated the eggplant", "we don't eat pork"), the agent calls `save_preference`.
@@ -71,6 +73,7 @@ Instructions the agent must follow (encode them in the agent's instructions):
 - Prefer meals that use "use soon" items.
 - Respect stored preferences. When the user states a lasting preference, save it.
 - When the inventory has uncertain items, ask about at most 3, in one message.
+- Know which places were scanned (fridge, freezer, pantry; it is in the injected inventory summary). After a scan, ask once for a place not yet scanned. Never say a pantry-type ingredient is missing while the pantry has not been scanned: put it under "check your pantry first". When suggesting meals in Mode A without a pantry scan, rely only on what was scanned plus staples, and mention once that a pantry photo would give more options.
 - Keep replies short. Meals go in structured cards, not prose.
 - Never order, buy or delete anything on the user's behalf without an explicit request.
 - At most ~8 tool calls per turn. If stuck, answer with what it has.
@@ -105,7 +108,7 @@ class InventoryItem(BaseModel):
     id: str
     name: str               # canonical, from normalize()
     display_name: str       # what the user sees, e.g. "Greek yogurt"
-    category: str           # vegetable, fruit, meat, fish, dairy, egg, grain, sauce, condiment, spice, drink, other
+    category: str           # vegetable, fruit, meat, fish, dairy, egg, grain, pasta, canned, baking, sauce, condiment, spice, snack, drink, frozen, other
     qty_level: QtyLevel
     location: Location
     confidence: float       # 0..1, from recognition; 1.0 for manual
@@ -119,6 +122,13 @@ class Ingredient(BaseModel):
     name: str               # canonical
     amount: str             # free text, "300 g", "2", "a handful"
     essential: bool
+    category: str           # same categories as InventoryItem; used to decide what is pantry-type
+
+PANTRY_CATEGORIES = {"grain", "pasta", "canned", "baking", "sauce", "condiment", "spice", "snack"}
+
+class ScanState(BaseModel):
+    scanned: dict[Location, datetime]   # place → last scan time; absent = never scanned
+    freezer_declined: bool = False
 
 class Recipe(BaseModel):
     name: str
@@ -135,7 +145,8 @@ class Preference(BaseModel):
     created_at: datetime
 
 class MissingReport(BaseModel):
-    missing_essential: list[str]
+    missing_essential: list[str]   # definitely missing ("To buy")
+    check_first: list[str]         # pantry-type, pantry not scanned ("Check your pantry first")
     missing_optional: list[str]
 
 class ValidationResult(BaseModel):
@@ -156,21 +167,24 @@ class AgentReply(BaseModel):
     message: str                         # short text
     meals: list[Recipe] = []             # Mode A cards (max 3) or the Mode B recipe
     substitutions: list[Substitution] = []
-    shopping_list: list[str] = []
+    shopping_list: list[str] = []        # "To buy"
+    check_first: list[str] = []          # "Check your pantry first"
     questions: list[str] = []            # clarifying questions about uncertain items (max 3)
     # trace is attached by the server from the run's messages, not produced by the model
 ```
 
 **Matching rule (used by `compute_missing` and `validate_suggestion`):** an ingredient counts as available if its canonical name equals an inventory item's canonical name, or both map to the same entry in `data/synonyms.json`, or it is in the staples list (and the user has not removed that staple). Items with `qty_level == "low"` still count as available. Optional ingredients never fail validation.
 
+**Unscanned pantry rule:** if the pantry has never been scanned, a missing essential ingredient whose `category` is in `PANTRY_CATEGORIES` goes to `check_first`, not `missing_essential`. In Mode A, `validate_suggestion` still fails such a meal (we only suggest from what we know is there), and the failure reason says "pantry not scanned" so the agent can mention it.
+
 ## 8. UI
 
 One page, mobile first.
-- **Chat** (main area): message bubbles; an attach-photo button (camera or gallery, up to 4); text input.
+- **Chat** (main area): message bubbles; an attach-photo button (camera or gallery, up to 4); text input. Before sending, each photo thumbnail shows a place tag (Fridge / Freezer / Pantry) that cycles on tap.
 - **Meal cards** inside agent messages: name, time, the inventory items it uses (chips; "use soon" chips highlighted). Tap → full recipe in a bottom sheet.
-- **Shopping list** block inside agent messages when present, with substitutions shown above it.
+- **Shopping list** block inside agent messages when present: substitutions on top, then "To buy", then "Check your pantry first" (muted style).
 - **Trace line** under each agent message, collapsed by default: "3 tools · updated inventory → 5 candidates → 1 failed (no cream) → replaced". Expanded: one line per tool call.
-- **Inventory panel**: a drawer opened from a header button, with a count badge. Grouped by location. Uncertain items at the top with a warning style. Each item: name, quantity level (tap to cycle), "use soon" toggle, delete. "Add item" input. A "Staples" section that can be collapsed.
+- **Inventory panel**: a drawer opened from a header button, with a count badge. Grouped by location; each location header shows "scanned 2 days ago" or "not scanned yet" with a camera button that opens the photo picker pre-tagged with that place. Uncertain items at the top with a warning style. Each item: name, quantity level (tap to cycle), "use soon" toggle, delete. "Add item" input. A "Staples" section that can be collapsed.
 - Loading state while the agent runs. If possible, stream the message text.
 
 ## 9. Model choice
@@ -201,6 +215,8 @@ Source: https://playground.roboflow.com/evals
 - [ ] "We're out of eggs, something in 30 minutes" updates the inventory, then suggests meals that need no eggs and take ≤ 30 min.
 - [ ] A preference stated in one session changes suggestions in a new session.
 - [ ] Mode B returns only what is truly missing, and proposes a substitute when one is in the inventory.
+- [ ] With only the fridge scanned, the agent asks once for the pantry, and Mode B puts pantry-type items under "Check your pantry first", not "To buy".
+- [ ] Recognition on the pantry eval sets meets the same targets as on fridge sets (labels on jars and packages are read).
 - [ ] Photo upload → inventory in panel: < 30 s. Meal request → reply: < 25 s.
 - [ ] Inventory and preferences survive a server restart.
 - [ ] The real user runs the full flow and says they would use it again.

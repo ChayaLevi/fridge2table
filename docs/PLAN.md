@@ -31,7 +31,7 @@ Read `CLAUDE.md` and `docs/PRODUCT.md` first. Work through the tasks **in order*
 - **Done when:** `uv run pytest -q` runs (zero tests is fine) and `uv run uvicorn app.api:app` serves a `/health` route returning `{"ok": true}`.
 
 ### T0.2 Schemas
-- Implement every model in `docs/PRODUCT.md` §7 in `app/models.py`. Add `InventoryChange` (`op`: add | remove | set_qty | set_use_soon | rename, plus fields) and a `Constraints` model for `suggest_meals` (`text: str`, `max_minutes: int | None`).
+- Implement every model in `docs/PRODUCT.md` §7 in `app/models.py`, including `ScanState`, `PANTRY_CATEGORIES`, `Ingredient.category` and `AgentReply.check_first`. Add `InventoryChange` (`op`: add | remove | set_qty | set_use_soon | rename, plus fields) and a `Constraints` model for `suggest_meals` (`text: str`, `max_minutes: int | None`).
 - **Done when:** a test builds one instance of each model and round-trips it through JSON.
 
 ### T0.3 Static data
@@ -53,7 +53,8 @@ Read `CLAUDE.md` and `docs/PRODUCT.md` first. Work through the tasks **in order*
      "items": [{"name": "milk", "alt": ["whole milk"]}, {"name": "egg"}, {"name": "spinach", "use_soon": true}]}
     ```
   - `items` = what a human sees in the photos. `alt` = other names that should count as correct.
-- 🧑 Ask the human to add 3–5 sets (their own and colleagues' fridges/pantries) with labels. Continue with P1 meanwhile; T1.4 needs them.
+- One folder = one place (`"location"` in `labels.json` is `fridge`, `freezer` or `pantry`). Name folders `<household>_<place>`, e.g. `home1_fridge`, `home1_pantry`.
+- 🧑 Ask the human to add 4–6 sets with labels: **at least 2 fridge sets and at least 2 pantry sets** (pantries test label reading on jars, cans and packages), freezer optional. Continue with P1 meanwhile; T1.4 needs them.
 - **Done when:** the README exists and the human has been asked.
 
 ---
@@ -68,40 +69,40 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - **Done when:** ≥ 25 test cases pass, covering plurals, adjectives, synonyms and the exceptions.
 
 ### T1.2 Store — `app/store.py`
-- SQLite tables: `inventory` (one row per item, JSON column is fine), `preferences`, `staples_state` (which default staples the user removed), `sessions` (session_id, message history as JSON from Pydantic AI's serializable messages).
-- Functions: `load_inventory`, `save_inventory`, `load_preferences`, `add_preference`, `load_session_messages`, `save_session_messages`, `reset_all` (for tests and demo seeding).
+- SQLite tables: `inventory` (one row per item, JSON column is fine), `preferences`, `staples_state` (which default staples the user removed), `scan_state` (the `ScanState`), `sessions` (session_id, message history as JSON from Pydantic AI's serializable messages).
+- Functions: `load_inventory`, `save_inventory`, `load_preferences`, `add_preference`, `load_scan_state`, `mark_scanned(location)`, `set_freezer_declined()`, `load_session_messages`, `save_session_messages`, `reset_all` (for tests and demo seeding).
 - **Done when:** tests on a temp DB show data survives closing and reopening the connection.
 
 ### T1.3 Inventory tools — `app/tools/inventory.py`
 - `get_inventory() -> list[InventoryItem]`: stored items + staples that were not removed (`is_staple=True`, `source="staple"`, `qty_level="plenty"`, `confidence=1.0`).
 - `update_inventory(changes: list[InventoryChange]) -> list[InventoryItem]`. Rules: names go through `normalize`; `add` of an existing canonical name updates it instead of duplicating; `remove` of a staple records it in `staples_state`; `set_qty` lowering below `low` removes the item.
 - `merge_recognized(items: list[InventoryItem])`: add new; for existing canonical names update `qty_level` and `confidence` but **never** clear `use_soon` and never override items with `source="manual"`. Recognition never removes items.
-- `inventory_summary(items) -> str`: compact text for prompts, grouped by location, `use_soon` marked, uncertain marked. Keep it under ~1,500 characters for 60 items.
+- `inventory_summary(items, scan_state) -> str`: compact text for prompts, grouped by location, `use_soon` marked, uncertain marked. Each location header says whether it was scanned ("pantry: NOT SCANNED"). Keep it under ~1,500 characters for 60 items.
 - **Done when:** tests cover add/duplicate/remove/staple removal/merge rules, and the summary length.
 
 ### T1.4 Recognition — `app/tools/recognize.py` + `eval/run_vision_eval.py` 🧑
-- `recognize_inventory(image_paths: list[Path]) -> list[InventoryItem]`: one vision call per image, **in parallel** (asyncio), structured output into a `RecognizedItem` list (name, display_name, category, qty_level, confidence, location, note). Resize images so the long side ≤ 1600 px before sending.
+- `recognize_inventory(images: list[tuple[Path, Location]]) -> list[InventoryItem]`: each image comes with the place the user tagged. One vision call per image, **in parallel** (asyncio), structured output into a `RecognizedItem` list (name, display_name, category, qty_level, confidence, note). The location comes from the tag, not the model. The prompt tells the model which place it is looking at (e.g. "This is a pantry shelf or cabinet: expect dry goods, cans, jars and packages; read their labels."). Resize images so the long side ≤ 1600 px before sending. After recognition, `mark_scanned` each tagged place.
 - Prompt rules (module constant `RECOGNITION_PROMPT`):
   - List each distinct food or drink item that is visible. Use a generic English name ("greek yogurt", "cheddar", "ketchup"), not brand names.
   - Read labels when legible, and use them for the name.
   - Do not guess the contents of opaque or closed containers. Add them as an item named by appearance ("white container") with `confidence ≤ 0.4` and a `note` with the best guess ("possibly leftover rice").
   - Quantity: `plenty` / `some` / `low` from what is visible.
-  - Location: `fridge` / `freezer` / `pantry` from the scene.
   - Do not list non-food items.
 - After the call: `normalize` names, merge duplicates across images (keep the higher confidence), set `uncertain = confidence < UNCERTAIN_THRESHOLD`.
-- `eval/run_vision_eval.py --model <id>`: for each folder in `eval/fridges/`, run recognition, match predictions to labels with `same_ingredient` (and `alt`), and print a markdown table: per set and overall **recall** (labelled items found), **hallucinations per photo** (predicted items matching no label, excluding items flagged uncertain), **mean latency per photo**. Save the results as JSON in `eval/results/`.
+- `eval/run_vision_eval.py --model <id>`: for each folder in `eval/fridges/`, run recognition (with the folder's `location` as the tag), match predictions to labels with `same_ingredient` (and `alt`), and print a markdown table: per set, **per place (fridge / pantry / freezer)** and overall **recall** (labelled items found), **hallucinations per photo** (predicted items matching no label, excluding items flagged uncertain), **mean latency per photo**. Save the results as JSON in `eval/results/`.
 - 🧑 Needs the photos from T0.5. If they are not there yet, build and test with 1–2 public food photos and say so.
 - **Done when:** unit tests pass with a mocked model, and the eval script prints a first table on the real eval set. Report the numbers to the human.
 
 ### T1.5 Checks — `app/tools/checks.py` (no LLM)
-- `compute_missing(recipe, inventory) -> MissingReport` using the matching rule in `docs/PRODUCT.md` §7.
-- `validate_suggestion(recipe, inventory, preferences) -> ValidationResult`: `ok` only if no essential ingredient is missing and no ingredient is in any preference's `avoid` list (compare with `same_ingredient`).
+- `compute_missing(recipe, inventory, scan_state) -> MissingReport` using the matching rule and the **unscanned pantry rule** in `docs/PRODUCT.md` §7.
+- `validate_suggestion(recipe, inventory, preferences, scan_state) -> ValidationResult`: `ok` only if no essential ingredient is missing (including `check_first` ones) and no ingredient is in any preference's `avoid` list (compare with `same_ingredient`). When the failure is only `check_first` items, the reason says "pantry not scanned".
 - `fill_uses_from_inventory(recipe, inventory) -> Recipe`: set `uses_from_inventory` (non-staple inventory items used), with `use_soon` items first.
-- **Done when:** ≥ 15 tests pass: synonyms, staples, a removed staple, optional ingredients, `low` items counting as available, preference violations, an empty inventory.
+- **Done when:** ≥ 18 tests pass: synonyms, staples, a removed staple, optional ingredients, `low` items counting as available, preference violations, an empty inventory, and the pantry rule (pantry unscanned → pasta goes to `check_first`; pantry scanned → pasta goes to `missing_essential`; a vegetable is never `check_first`).
 
 ### T1.6 Recipes — `app/tools/recipes.py`
 - `suggest_meals(constraints, n=5, exclude: list[str]=[]) -> list[Recipe]`: one call to `RECIPE_MODEL` with structured output. The prompt includes `inventory_summary`, preferences, constraints, the names to exclude, and the instruction: build each dish around inventory items, prefer "use soon" items, mark ingredients `essential` honestly, use only staples from the provided list without listing them as missing, home-cooking dishes that take ≤ `max_minutes` if given.
 - `get_recipe(dish: str) -> Recipe`: one structured call. Standard home recipe, essential flags honest.
+- In both, every ingredient must have a `category` from the list in `docs/PRODUCT.md` §7 (the pantry rule depends on it). If the model returns an unknown category, map it with a small lookup or default to `other`.
 - Both run `normalize` on ingredient names and `fill_uses_from_inventory` before returning.
 - Return **n = 5** candidates so the agent has spares when some fail validation.
 - **Done when:** tests with a mocked model check parsing, normalization and the exclude list. One manual run against the real model on the seeded demo inventory gives sensible dishes (print them).
@@ -126,7 +127,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 ### T2.2 Output validator (the self-correction guarantee)
 - An `@agent.output_validator` that, for every meal in `AgentReply.meals`:
   - Mode A meals (no shopping list): `validate_suggestion` must be `ok`, otherwise `raise ModelRetry` with the meal name and the reason ("Kung pao chicken needs peanut, not in inventory. Replace it or move it to a Mode B answer with a shopping list.").
-  - Mode B (a shopping list is present): the shopping list must equal `compute_missing` minus the substituted items. Fix it in code if the model's list differs (trust code over the model).
+  - Mode B (a shopping list is present): `shopping_list` must equal `missing_essential` minus the substituted items, and `check_first` must equal `MissingReport.check_first`. Fix both in code if the model's lists differ (trust code over the model).
   - Every `Substitution.use_instead` must be in the inventory; otherwise `ModelRetry`.
   - Also enforce: at most 3 meals, at most 3 questions.
 - Re-fill `uses_from_inventory` with code before returning.
@@ -143,7 +144,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 
 ### T2.5 Scenario suite — `eval/scenarios.yaml` + `eval/run_scenarios.py`
 - Each scenario: seed inventory and preferences, a list of user messages, expectations. Expectations can include: `tools_called` (in order, subset), `max_meals`, `meals_must_not_contain`, `max_minutes`, `shopping_list_contains` / `must_not_contain`, `preference_saved`.
-- Write at least these 8:
+- Write at least these 10:
   1. "What can I cook tonight?" → `suggest_meals` then `validate_suggestion`; 1–3 meals; all valid.
   2. "We're out of eggs, something in 30 minutes" → `update_inventory` before `suggest_meals`; no egg; ≤ 30 min.
   3. Inventory set up so the obvious dish fails (e.g. lots of pasta, no cream) → trace shows a failed check, final meals valid.
@@ -152,15 +153,17 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
   6. "The kids hated the eggplant" → `save_preference` with avoid `eggplant`.
   7. New session after #6, inventory with eggplant as "use soon" → no eggplant in the meals.
   8. Photos attached (use an eval set) → `recognize_inventory` called; reply asks ≤ 3 questions.
+  9. Only fridge photos attached, pantry never scanned → the reply asks once for a pantry photo.
+  10. Pantry not scanned, "I want to make spaghetti bolognese", no pasta in the fridge → `spaghetti` (and canned tomatoes) in `check_first`, not in `shopping_list`. Same request after a pantry scan without pasta → pasta in `shopping_list`.
 - Runs against real models. Prints pass/fail per scenario plus latency.
-- **Done when:** the suite runs; at least 6/8 pass. Fix prompts and tool docstrings until they do. Report which fail.
+- **Done when:** the suite runs; at least 8/10 pass. Fix prompts and tool docstrings until they do. Report which fail.
 
 ---
 
 ## P3 — App (Fri Oct 16)
 
 ### T3.1 API — `app/api.py`
-- `POST /chat` (multipart: `session_id`, `message`, up to 4 `images`) → `AgentReply` + `trace` + `inventory` (so the panel refreshes after every turn).
+- `POST /chat` (multipart: `session_id`, `message`, up to 4 `images`, and a matching list of `locations`, one per image) → `AgentReply` + `trace` + `inventory` + `scan_state` (so the panel refreshes after every turn).
 - `GET /inventory`, `PATCH /inventory` (a list of `InventoryChange`; the panel's direct edits, no agent).
 - `GET /opening?session_id=` → proactive greeting (implemented in T4.1; return a static greeting for now).
 - `POST /admin/seed` (demo seeding from `data/demo_seed.json`) and `POST /admin/reset`.
@@ -169,7 +172,9 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 
 ### T3.2 Web page — `app/static/index.html`
 - Build the UI in `docs/PRODUCT.md` §8, mobile first, plain JS. Session id kept in `localStorage` (wrapped in try/catch); a "New chat" button creates a new one (this is how we show cross-session memory).
-- Photo attach: `<input type="file" accept="image/*" multiple capture="environment">`. Show thumbnails before sending.
+- Photo attach: `<input type="file" accept="image/*" multiple capture="environment">`. Show thumbnails before sending, each with a place tag (Fridge / Freezer / Pantry) that cycles on tap. Default: the first photo is Fridge; each next photo copies the previous tag.
+- Inventory panel: each location header shows "scanned …" / "not scanned yet" and a camera button that opens the picker pre-tagged with that place.
+- Shopping list block: "To buy" and "Check your pantry first" as two groups.
 - Meal card tap → bottom sheet with the full recipe. Trace line collapsed by default.
 - Inventory drawer: tap quantity to cycle, "use soon" toggle, delete, add. Each edit calls `PATCH /inventory`.
 - **Done when:** the full flow works in a phone browser on the same network: photos → panel fills → ask for meals → cards → open a recipe → edit the panel → the next answer reflects the edit.
@@ -185,7 +190,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 ## P4 — Agentic features (Mon Oct 19)
 
 ### T4.1 Proactive opening
-- `GET /opening`: if the inventory is empty → a fixed welcome asking for photos (no LLM call). Otherwise run the agent with a hidden system-side message: "The user just opened the app. Greet briefly and offer one meal idea, preferring use-soon items. Validate it." Do not store this hidden message as a user turn in the history.
+- `GET /opening`: if the inventory is empty → a fixed welcome asking for photos of the fridge and the pantry, tagged with their place (no LLM call). Otherwise run the agent with a hidden system-side message: "The user just opened the app. Greet briefly and offer one meal idea, preferring use-soon items. Validate it." Do not store this hidden message as a user turn in the history.
 - **Done when:** with the demo seed, the opening mentions spinach and offers a valid meal.
 
 ### T4.2 Substitutions in Mode B
@@ -226,12 +231,12 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - Only if the decision point passed:
   - **T6.1 "We cooked it":** a button on each meal card ("We cooked this") and a chat intent. Lowers each used non-staple ingredient one level (`plenty → some → low → removed`) via `update_inventory`. Add a scenario.
   - **T6.2 Share shopping list:** a "Copy list" button on the shopping-list block (plain text, one item per line).
-- **Done when:** issues fixed or consciously deferred; scenarios ≥ 7/8 pass.
+- **Done when:** issues fixed or consciously deferred; scenarios ≥ 9/10 pass.
 
 ## P7 — Freeze (Thu Oct 22) 🧑
 
 - Code freeze after the morning. Only demo-blocking fixes after that.
-- `scripts/demo_reset.sh`: reset, then seed (spinach marked "use soon", eggplant present, no ricotta, cottage cheese present, pasta without cream).
+- `scripts/demo_reset.sh`: reset, then seed (spinach marked "use soon", eggplant present, no ricotta, cottage cheese present, pasta without cream). Seed the fridge only and leave the pantry unscanned, so the demo shows the agent asking for it and then scanning it live.
 - 🧑 Real user run #2 on the frozen build.
 - 🧑 Record a backup video of the full demo script (`docs/PRODUCT.md` §12).
 - Write `README.md`: what it is, setup, env vars, how to run, how to run the evals, known limits.
