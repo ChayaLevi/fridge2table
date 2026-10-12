@@ -8,8 +8,8 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T0.2 Schemas
 - [x] T0.3 Static data
 - [ ] T0.4 Model smoke test 🧑
-- [ ] T0.5 Eval set structure 🧑
-- [ ] T1.1 Normalization
+- [~] T0.5 Eval set structure 🧑 (README done; waiting for the human's photos)
+- [x] T1.1 Normalization
 - [ ] T1.2 Store
 - [ ] T1.3 Inventory tools
 - [ ] T1.4 Recognition + vision eval 🧑
@@ -46,6 +46,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - `data/synonyms.json` has 112 entries (flat map, no chains; a test enforces that targets are canonical). Ambiguous keys like bare `pepper` were left out on purpose.
 - `InventoryChange` fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
 - 2026-10-12 (later): PLAN/PRODUCT were updated (pantry coverage). T0.2 re-done: added `ScanState`, `PANTRY_CATEGORIES`, `Ingredient.category`, `MissingReport.check_first`, `AgentReply.check_first`, extended category list. Tests now 6 pass. T0.1/T0.3 unaffected. T0.5 now asks for 4–6 sets (≥2 fridge, ≥2 pantry), folders `<household>_<place>`.
+- Order change (user request, 2026-10-12): the human has no API keys/photos yet, so T0.4 is deferred and P1/P2 are built with mocked models. T0.4, the real run of T1.4 and T1.6, and T2.5 wait for keys/photos.
 - Repo was not a git repo; `git init` done in T0.1.
 
 ## Open issues
@@ -53,6 +54,18 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 (none yet)
 
 ## Log
+
+### 2026-10-12 — T0.5 (README part), T1.1
+- Built: `eval/fridges/README.md`; `app/tools/normalize.py` (`normalize`, `same_ingredient`); `tests/test_normalize.py` (57 tests total pass).
+- Design: synonyms are tried on the full phrase before adjectives are stripped (so "minced beef" -> "ground beef"), then again after stripping; only the last word is singularized; leading quantities ("2", "500 g of") and parentheticals are dropped. `normalize` is idempotent.
+- Human still owes: photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry) and `.env` keys.
+
+**How to verify**
+```
+uv run pytest tests/test_normalize.py -q    # expect: 52 passed
+uv run python -c "from app.tools.normalize import normalize as n; print(n('Fresh Scallions'), n('chicken thighs'), n('tomatoes'))"
+```
+Expected output: `green onion chicken tomato`.
 
 ### 2026-10-12 — T0.1, T0.2, T0.3
 - Built: `pyproject.toml` (uv, deps per plan), folder layout from CLAUDE.md (empty modules), `.env.example`, `app/config.py`, `app/api.py` (`/health`), `app/models.py` (all §7 models + `InventoryChange`, `Constraints`), `data/staples.json` (15), `data/synonyms.json` (112), tests `tests/test_models.py`, `tests/test_data.py`, `tests/test_health.py` (5 pass).
