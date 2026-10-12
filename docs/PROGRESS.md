@@ -62,7 +62,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 **How to verify**
 ```
-uv run pytest tests/test_normalize.py -q    # expect: 52 passed
+uv run pytest tests/test_normalize.py -q    # expect: 51 passed
 uv run python -c "from app.tools.normalize import normalize as n; print(n('Fresh Scallions'), n('chicken thighs'), n('tomatoes'))"
 ```
 Expected output: `green onion chicken tomato`.
