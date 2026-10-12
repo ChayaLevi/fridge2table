@@ -34,6 +34,13 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [ ] P6 Fixes (+ T6.1, T6.2 if the decision point passed)
 - [ ] P7 Freeze 🧑
 
+## Next up
+
+- **Next task: T1.2 Store** (`app/store.py`; include `scan_state` table and its functions per the updated PLAN). Then T1.3, T1.5, T1.7, then T1.4/T1.6 with mocked models, then P2/P3.
+- **Blocked on the human (do not wait for these, build with mocks):** API keys in `.env` (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) for T0.4; eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry) for T0.5/T1.4.
+- Deferred and to be done once keys exist: T0.4 smoke test (verify exact model IDs/format, replace provisional defaults in `app/config.py`), the real runs of T1.4 and T1.6, T2.5.
+- State at hand-off: 57 tests pass, last commit is "T0.5 (README), T1.1". `app/store.py`, `app/llm.py`, `app/agent.py` and the other `app/tools/*` modules are still empty files.
+
 ## Current model settings
 
 - VISION_MODEL: Gemini 3.5 Flash (to confirm in T5.1)
