@@ -26,7 +26,8 @@ Read `CLAUDE.md` and `docs/PRODUCT.md` first. Work through the tasks **in order*
 ### T0.1 Scaffold
 - `uv init`; dependencies: `pydantic-ai`, `fastapi`, `uvicorn[standard]`, `python-multipart`, `pillow`, `pyyaml`, `python-dotenv`; dev: `pytest`, `pytest-asyncio`.
 - Create the folder layout from `CLAUDE.md` (empty modules are fine).
-- `.env.example` with: `GOOGLE_API_KEY=`, `ANTHROPIC_API_KEY=`, `OPENAI_API_KEY=` (optional), `VISION_MODEL=`, `AGENT_MODEL=`, `RECIPE_MODEL=` (defaults to `AGENT_MODEL`), `DB_PATH=data/app.db`, `UNCERTAIN_THRESHOLD=0.6`.
+- `.env.example` with: `DEEPSEEK_API_KEY=`, `DEEPSEEK_BASE_URL=https://api.deepseek.com`, `QWEN_API_KEY=` (empty for now; for Qwen3.8 Max later), `VISION_MODEL=deepseek-v4-flash-vision-exp`, `AGENT_MODEL=deepseek-v4-pro`, `RECIPE_MODEL=deepseek-v4-flash`, `VISION_TILES=1`, `DB_PATH=data/app.db`, `UNCERTAIN_THRESHOLD=0.6`.
+- Only Chinese models may be used (see `docs/PRODUCT.md` §9). Do not add other providers.
 - `app/config.py` loads these with defaults.
 - **Done when:** `uv run pytest -q` runs (zero tests is fine) and `uv run uvicorn app.api:app` serves a `/health` route returning `{"ok": true}`.
 
@@ -40,10 +41,11 @@ Read `CLAUDE.md` and `docs/PRODUCT.md` first. Work through the tasks **in order*
 - **Done when:** both files load and validate in a test.
 
 ### T0.4 Model smoke test 🧑
-- 🧑 Ask the human for API keys in `.env`.
-- `app/llm.py`: factories that build Pydantic AI models from the env strings. Check the installed Pydantic AI docs for the model string format for Google and Anthropic, and verify the exact current model IDs for Gemini 3.5 Flash and Claude Sonnet 5.5 in the providers' docs.
+- 🧑 Ask the human for the DeepSeek API key in `.env`.
+- `app/llm.py`: factories that build Pydantic AI models from the env strings. Check the installed Pydantic AI docs for how to connect to DeepSeek (a DeepSeek provider, or an OpenAI-compatible provider with `DEEPSEEK_BASE_URL`), and verify the current model IDs in DeepSeek's API docs. Keep the factory generic (provider + model + base URL + key), so Qwen can be added later by config.
+- Also check in the smoke test that `AGENT_MODEL` supports **tool calling** and **structured output** through Pydantic AI (one tiny tool + one tiny Pydantic output). This is what the agent depends on.
 - `scripts/smoke.py`: send one image (any food photo) to `VISION_MODEL` asking for a list of items; send one text prompt to `AGENT_MODEL`.
-- **Done when:** both calls return sensible output, and the script prints latency for each.
+- **Done when:** both calls return sensible output, the tool call and structured output work, and the script prints latency for each.
 
 ### T0.5 Eval set structure 🧑
 - Create `eval/fridges/README.md` explaining the format:
@@ -89,9 +91,10 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
   - Quantity: `plenty` / `some` / `low` from what is visible.
   - Do not list non-food items.
 - After the call: `normalize` names, merge duplicates across images (keep the higher confidence), set `uncertain = confidence < UNCERTAIN_THRESHOLD`.
-- `eval/run_vision_eval.py --model <id>`: for each folder in `eval/fridges/`, run recognition (with the folder's `location` as the tag), match predictions to labels with `same_ingredient` (and `alt`), and print a markdown table: per set, **per place (fridge / pantry / freezer)** and overall **recall** (labelled items found), **hallucinations per photo** (predicted items matching no label, excluding items flagged uncertain), **mean latency per photo**. Save the results as JSON in `eval/results/`.
+- **Tiling** (`VISION_TILES`, default 1): when 2 or 4, split each image into that many crops with ~10% overlap (2 = top/bottom halves, 4 = quadrants), send each crop as its own call in parallel, and merge by canonical name (max confidence, the higher `qty_level`). Needed because the DeepSeek vision model caps each image at about 384 tokens. Keep it a pure function (`split_tiles(image, n)`) with a unit test.
+- `eval/run_vision_eval.py --model <id> --tiles <1|2|4>`: for each folder in `eval/fridges/`, run recognition (with the folder's `location` as the tag), match predictions to labels with `same_ingredient` (and `alt`), and print a markdown table: per set, **per place (fridge / pantry / freezer)** and overall **recall** (labelled items found), **hallucinations per photo** (predicted items matching no label, excluding items flagged uncertain), **mean latency per photo**. Save the results as JSON in `eval/results/`.
 - 🧑 Needs the photos from T0.5. If they are not there yet, build and test with 1–2 public food photos and say so.
-- **Done when:** unit tests pass with a mocked model, and the eval script prints a first table on the real eval set. Report the numbers to the human.
+- **Done when:** unit tests pass with a mocked model, and the eval script prints a first table on the real eval set **for tiles = 1, 2 and 4**. Set `VISION_TILES` in `.env.example` to the best one and report the numbers to the human. If recall is far below 70% even with tiling, say so clearly: it is the signal to push for the Qwen license.
 
 ### T1.5 Checks — `app/tools/checks.py` (no LLM)
 - `compute_missing(recipe, inventory, scan_state) -> MissingReport` using the matching rule and the **unscanned pantry rule** in `docs/PRODUCT.md` §7.
@@ -210,12 +213,12 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 ## P5 — Evaluation and the real user (Tue Oct 20)
 
 ### T5.1 Vision model comparison
-- Run `eval/run_vision_eval.py` with Gemini 3.5 Flash and Claude Opus 5.5 (optionally Qwen3.8 Max). Write `eval/RESULTS.md`: a table of recall, hallucinations per photo, latency and cost per photo, plus a recommendation.
+- Run `eval/run_vision_eval.py` with the DeepSeek vision model at its best tile setting and, if the Qwen license has arrived, with Qwen3.8 Max (tiles = 1 and 2; optionally Qwen3.8 Flash). Only Chinese models. Write `eval/RESULTS.md`: a table of recall, hallucinations per photo, latency and cost per photo, plus a recommendation.
 - Update the acceptance targets in `docs/PRODUCT.md` §10 if the data says they are off.
 - **Done when:** the human picks the model and `.env` is updated.
 
 ### T5.2 Latency
-- Measure: photos → inventory; a Mode A turn; a Mode B turn (use the timings from T2.3). If a Mode A turn takes > 25 s: lower `n` in `suggest_meals`, run `validate_suggestion` for all candidates in one tool call (accept a list), or try a faster agent model. Stream the message text if not done yet.
+- Measure: photos → inventory; a Mode A turn; a Mode B turn (use the timings from T2.3). If a Mode A turn takes > 25 s: lower `n` in `suggest_meals`, run `validate_suggestion` for all candidates in one tool call (accept a list), or switch `AGENT_MODEL` to `deepseek-v4-flash` and rerun the scenarios to check quality holds. Stream the message text if not done yet.
 - **Done when:** the numbers are in `eval/RESULTS.md` and meet the targets, or the gap is explained.
 
 ### T5.3 Real user run #1 🧑

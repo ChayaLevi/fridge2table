@@ -43,8 +43,12 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Current model settings
 
-- VISION_MODEL: Gemini 3.5 Flash (to confirm in T5.1)
-- AGENT_MODEL: Claude Sonnet 5.5
+Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=https://api.deepseek.com`); model IDs still to be verified in T0.4.
+
+- VISION_MODEL: `deepseek-v4-flash-vision-exp` (temporary; swap to Qwen3.8 Max once that license is approved; decided on our photos in T1.4/T5.1)
+- AGENT_MODEL: `deepseek-v4-pro` (try `deepseek-v4-flash` only if turns are too slow, T5.2)
+- RECIPE_MODEL: `deepseek-v4-flash`
+- VISION_TILES: 1 (best value chosen in T1.4)
 
 ## Decisions and deviations from the plan
 
@@ -61,6 +65,22 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 (none yet)
 
 ## Log
+
+### 2026-10-12 — Switch to DeepSeek models (docs change, no task)
+- Why: the human replaced `CLAUDE.md`, `docs/PRODUCT.md` (§3, §9) and `docs/PLAN.md` (T0.1, T0.4, T1.4, T5.1, T5.2): only Chinese models are allowed; DeepSeek for now, Qwen3.8 Max for vision later.
+- Changed: `.env.example` (now `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `QWEN_API_KEY`, `VISION_MODEL=deepseek-v4-flash-vision-exp`, `AGENT_MODEL=deepseek-v4-pro`, `RECIPE_MODEL=deepseek-v4-flash`, `VISION_TILES=1`; `GOOGLE_API_KEY`/`ANTHROPIC_API_KEY`/`OPENAI_API_KEY` removed); `app/config.py` (same defaults, new `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `QWEN_API_KEY`, `VISION_TILES`; `RECIPE_MODEL` no longer falls back to `AGENT_MODEL`).
+- Model values are now bare model IDs (no `provider:` prefix); T0.4 `app/llm.py` builds the Pydantic AI model from ID + `DEEPSEEK_BASE_URL` + key.
+- Next tasks must know: older entries in this file that mention Gemini/Claude, `GOOGLE_API_KEY`/`ANTHROPIC_API_KEY` or the `google-gla:`/`anthropic:` defaults are superseded by this entry. T1.4 now also needs tiling (`split_tiles`, `VISION_TILES`). The human now owes only `DEEPSEEK_API_KEY` for T0.4.
+- Not changed: `pyproject.toml`/`uv.lock` still install the full `pydantic-ai` (which pulls the Google/Anthropic SDKs as optional extras); harmless, nothing uses them.
+- Open issues: none.
+
+**How to verify**
+```
+uv run pytest -q
+uv run python -c "from app import config; print(config.VISION_MODEL, config.AGENT_MODEL, config.RECIPE_MODEL, config.DEEPSEEK_BASE_URL, config.VISION_TILES)"
+```
+Expected: `157 passed`; then `deepseek-v4-flash-vision-exp deepseek-v4-pro deepseek-v4-flash https://api.deepseek.com 1` (if your `.env` sets other values, those are printed instead).
+Manual check: open `.env.example`; it names only DeepSeek/Qwen keys and the three DeepSeek model IDs.
 
 ### 2026-10-12 — T1.3 Inventory tools
 - Built: `app/tools/inventory.py` (`staple_names`, `get_inventory`, `update_inventory`, `merge_recognized`, `inventory_summary`), `tests/test_inventory.py` (30 tests; 157 total pass).

@@ -7,9 +7,14 @@ load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 
-VISION_MODEL = os.getenv("VISION_MODEL") or "google-gla:gemini-3.5-flash"
-AGENT_MODEL = os.getenv("AGENT_MODEL") or "anthropic:claude-sonnet-5-5"
-RECIPE_MODEL = os.getenv("RECIPE_MODEL") or AGENT_MODEL
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY") or None
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com"
+QWEN_API_KEY = os.getenv("QWEN_API_KEY") or None
+
+VISION_MODEL = os.getenv("VISION_MODEL") or "deepseek-v4-flash-vision-exp"
+AGENT_MODEL = os.getenv("AGENT_MODEL") or "deepseek-v4-pro"
+RECIPE_MODEL = os.getenv("RECIPE_MODEL") or "deepseek-v4-flash"
+VISION_TILES = int(os.getenv("VISION_TILES") or 1)
 DB_PATH = Path(os.getenv("DB_PATH") or "data/app.db")
 if not DB_PATH.is_absolute():
     DB_PATH = ROOT / DB_PATH

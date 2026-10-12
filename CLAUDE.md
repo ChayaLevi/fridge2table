@@ -17,9 +17,11 @@ A demo of a **kitchen agent**: the user photographs their fridge/pantry, the age
 - **Pydantic AI** (v2.x) for the agent loop, tools, structured output and output validation. Before writing agent code, check the installed version's docs for the exact API (model string format, `RunContext`, `output_validator`, `ModelRetry`, message history, dynamic instructions). Do not rely on memory for this API.
 - FastAPI + uvicorn. One static HTML page (`app/static/index.html`) with plain JS, no frontend framework, no build step.
 - Storage: SQLite via the standard `sqlite3` module (or a single JSON file if simpler). Single household, no auth.
-- Models via commercial APIs, configured by env vars (see `.env.example`):
-  - `VISION_MODEL` — recognition of items in photos. Default: Gemini 3.5 Flash.
-  - `AGENT_MODEL` — the agent loop and recipe generation. Default: Claude Sonnet 5.5.
+- **Only Chinese models are allowed.** Models via API, configured by env vars (see `.env.example`):
+  - `VISION_MODEL` — recognition of items in photos. Default: `deepseek-v4-flash-vision-exp` (temporary; it will be swapped for Qwen3.8 Max once that license is approved).
+  - `AGENT_MODEL` — the agent loop. Default: `deepseek-v4-pro` (switch to `deepseek-v4-flash` only if turns are too slow).
+  - `RECIPE_MODEL` — recipe generation inside `suggest_meals` / `get_recipe`. Default: `deepseek-v4-flash` (simple structured generation; speed matters more).
+  - The DeepSeek API is OpenAI-compatible (base URL `https://api.deepseek.com`). Connect through Pydantic AI's DeepSeek or OpenAI-compatible provider; check the installed version's docs for which one exists and how to set the base URL. Images go as OpenAI-style multimodal content blocks in the user message, and only the vision model accepts them.
   - Both must be swappable by changing the env var only. Verify exact model IDs against the providers' current docs before use.
 - No Ascend, no openJiuwen, no LangChain/LangGraph, no vector DB, no Docker in this demo.
 
