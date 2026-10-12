@@ -71,11 +71,11 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 **How to verify**
 ```
-uv run pytest -q                            # expect: 119 passed
-uv run pytest tests/test_normalize.py -q    # expect: 113 passed
+uv run pytest -q
+uv run pytest tests/test_normalize.py -q
 uv run python -c "from app.tools.normalize import normalize as n; print(n('Fresh Scallions'), '|', n('a can of chickpeas'), '|', n('chilli flakes'), '|', n('tomatoes, canned'))"
 ```
-Expected output: `green onion | chickpea | chili flakes | canned tomato`.
+Expected: `119 passed`; then `113 passed`; then `green onion | chickpea | chili flakes | canned tomato`.
 Manual check: in `uv run python`, run `from app.tools.normalize import same_ingredient` and then `same_ingredient("2 large eggs", "egg")` (True) and `same_ingredient("cloves", "garlic")` (False).
 
 ### 2026-10-12 — T0.5 (README part), T1.1
@@ -85,10 +85,10 @@ Manual check: in `uv run python`, run `from app.tools.normalize import same_ingr
 
 **How to verify**
 ```
-uv run pytest tests/test_normalize.py -q    # expect: 51 passed
+uv run pytest tests/test_normalize.py -q
 uv run python -c "from app.tools.normalize import normalize as n; print(n('Fresh Scallions'), n('chicken thighs'), n('tomatoes'))"
 ```
-Expected output: `green onion chicken tomato`.
+Expected (at the time): `51 passed`; then `green onion chicken tomato`.
 
 ### 2026-10-12 — T0.1, T0.2, T0.3
 - Built: `pyproject.toml` (uv, deps per plan), folder layout from CLAUDE.md (empty modules), `.env.example`, `app/config.py`, `app/api.py` (`/health`), `app/models.py` (all §7 models + `InventoryChange`, `Constraints`), `data/staples.json` (15), `data/synonyms.json` (112), tests `tests/test_models.py`, `tests/test_data.py`, `tests/test_health.py` (5 pass).
@@ -98,8 +98,9 @@ Expected output: `green onion chicken tomato`.
 **How to verify**
 ```
 uv sync
-uv run pytest -q          # expect: 5 passed
+uv run pytest -q
 uv run uvicorn app.api:app --port 8000
-curl localhost:8000/health   # expect: {"ok":true}
+curl localhost:8000/health
 ```
+Expected (at the time): `5 passed`; the last command (in a second terminal) prints `{"ok":true}`.
 Manual check: open http://localhost:8000/docs in a browser and call `GET /health` from there.
