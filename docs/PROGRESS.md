@@ -7,7 +7,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T0.1 Scaffold
 - [x] T0.2 Schemas
 - [x] T0.3 Static data
-- [ ] T0.4 Model smoke test 🧑
+- [x] T0.4 Model smoke test 🧑 (skipped at first for lack of a key; done 2026-10-12)
 - [~] T0.5 Eval set structure 🧑 (README done; waiting for the human's photos)
 - [x] T1.1 Normalization
 - [x] T1.2 Store
@@ -36,23 +36,24 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.5 Checks** (`app/tools/checks.py`; T1.4 needs photos, so it is skipped for now). Then T1.7, then T1.4/T1.6 with mocked models, then P2/P3.
-- **Blocked on the human (do not wait for these, build with mocks):** API keys in `.env` (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) for T0.4; eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry) for T0.5/T1.4.
-- Deferred and to be done once keys exist: T0.4 smoke test (verify exact model IDs/format, replace provisional defaults in `app/config.py`), the real runs of T1.4 and T1.6, T2.5.
-- State: 157 tests pass. `app/llm.py`, `app/agent.py` and `app/tools/{recognize,recipes,checks,preferences}.py` are still empty files.
+- **Next task: T1.4 Recognition** (code, `split_tiles` and unit tests with a mocked model now; the real eval run needs photos). Then T1.5, T1.6, T1.7, then P2/P3.
+- **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5/T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty.
+- The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps (T1.4 eval, T1.6 manual run, T2.5) are no longer blocked by keys.
+- State: 162 tests pass. `app/agent.py` and `app/tools/{recognize,recipes,checks,preferences}.py` are still empty files.
 
 ## Current model settings
 
-Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=https://api.deepseek.com`); model IDs still to be verified in T0.4.
+Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=https://api.deepseek.com`); IDs verified in T0.4 (2026-10-12) against `GET /models` and DeepSeek's pricing page.
 
-- VISION_MODEL: `deepseek-v4-flash-vision-exp` (temporary; swap to Qwen3.8 Max once that license is approved; decided on our photos in T1.4/T5.1)
-- AGENT_MODEL: `deepseek-v4-pro` (try `deepseek-v4-flash` only if turns are too slow, T5.2)
-- RECIPE_MODEL: `deepseek-v4-flash`
+- VISION_MODEL: `deepseek-flash` (DeepSeek-V4.1-Flash, the only DeepSeek model that accepts images; temporary, swap to Qwen3.8 Max once that license is approved; decided on our photos in T1.4/T5.1)
+- AGENT_MODEL: `deepseek-v4-pro` (text only; try `deepseek-flash` only if turns are too slow, T5.2)
+- RECIPE_MODEL: `deepseek-flash`
+- `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired aliases: still accepted, served by `deepseek-flash`.
 - VISION_TILES: 1 (best value chosen in T1.4)
 
 ## Decisions and deviations from the plan
 
-- Model defaults in `app/config.py` are provisional strings (`google-gla:gemini-3.5-flash`, `anthropic:claude-sonnet-5-5`); exact IDs/format are verified in T0.4. `.env.example` leaves `VISION_MODEL`/`AGENT_MODEL` empty per the plan.
+- ~~Model defaults were provisional Gemini/Claude strings~~ (superseded by the DeepSeek switch and T0.4; model values are bare DeepSeek IDs, see "Current model settings").
 - Extras beyond the plan (small): `.gitignore`, `pytest.ini` (asyncio_mode=auto), `httpx` dev dependency (needed by FastAPI TestClient), `LOG_LEVEL`/`LOGFIRE_TOKEN` in `.env.example` (CLAUDE.md debugging aids).
 - `data/synonyms.json` has 115 entries (112 + 3 added in the T1.1 redo) (flat map, no chains; a test enforces that targets are canonical). Ambiguous keys like bare `pepper` were left out on purpose.
 - `InventoryChange` fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
@@ -62,9 +63,34 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
-(none yet)
+- (T0.4) The human's `.env` still sets `VISION_MODEL=deepseek-v4-flash-vision-exp` / `RECIPE_MODEL=deepseek-v4-flash` (retired aliases, still served by `deepseek-flash`). Change both to `deepseek-flash`.
+- (T0.4) `CLAUDE.md`, `docs/PRODUCT.md` §9 and `docs/PLAN.md` still name the old model IDs; the human should update them or confirm the new defaults.
+- (T0.5) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty.
 
 ## Log
+
+### 2026-10-12 — T0.4 Model smoke test (was skipped, now done)
+- Built: `app/llm.py` (`build_model(model_id, provider="deepseek"|"openai-compatible", base_url, api_key)`, `vision_model()`, `agent_model()`, `recipe_model()`, `setup_observability()`), `scripts/smoke.py`, `tests/test_llm.py` (5 tests, no network; 162 total pass), `tests/fixtures/coffee.jpg` (scikit-image sample photo `coffee.png`, CC0, converted to JPEG).
+- Model IDs verified: `GET https://api.deepseek.com/models` lists only `deepseek-flash` (V4.1-Flash, text + image input) and `deepseek-v4-pro` (text only). DeepSeek's pricing page says `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired names that are still accepted and served by `deepseek-flash` (no end date given).
+- Deviation (needs the human's OK, see open issues): defaults in `app/config.py` and `.env.example` changed to `VISION_MODEL=deepseek-flash`, `RECIPE_MODEL=deepseek-flash` (`AGENT_MODEL=deepseek-v4-pro` unchanged). `CLAUDE.md`, `docs/PRODUCT.md` §9 and `docs/PLAN.md` still name the old IDs; not edited (human-owned).
+- Design:
+  - Pydantic AI 2.55's `DeepSeekProvider` hardcodes its base URL, so `build_model` gives it our own `AsyncOpenAI(base_url=DEEPSEEK_BASE_URL, api_key=...)`; it still gets DeepSeek's profile (thinking field, tool-choice rules).
+  - pydantic-ai 2.55 does not know `deepseek-flash`; with the default profile it forces `tool_choice` and DeepSeek answers 400 "Thinking mode does not support this tool_choice" (reproduced). `_DEEPSEEK_PROFILE_ALIASES` gives `deepseek-flash` the `deepseek-v4-flash` profile; tool calls and structured output then work (tested live).
+  - Images go as `BinaryContent(data, media_type="image/jpeg")` in the user prompt list; resized so the long side is at most 1600 px.
+  - `setup_observability()`: `logging.basicConfig(LOG_LEVEL)`, httpx/openai request logs only at DEBUG, Logfire only if `LOGFIRE_TOKEN` is set and `logfire` is installed (it is not a dependency). Sets `PYDANTIC_AI_NO_BANNER=1`.
+- Smoke results (2026-10-12, with `deepseek-flash` for vision and recipes): vision 2.8 s ("coffee" for the coffee-cup photo); agent text 2.7 s; agent tool + structured output 3.8 s (called `count_on_shelf`, returned `ShelfCount(item='eggs', count=7)`); recipe structured output 1.7 s. The same four checks also pass with `deepseek-flash` as `AGENT_MODEL` (tool call 2.5 s), and with the old alias IDs.
+- Network note: from this machine only `api.deepseek.com` is reachable (Wikimedia, GitHub, jsDelivr time out), so public food photos for T1.4 cannot be downloaded; the coffee photo came from a locally installed package.
+- Next tasks must know: build agents with `Agent(agent_model(), ...)`; call `setup_observability()` once at app/script start. T1.4 can reuse the image loading in `scripts/smoke.py` (`load_jpeg`). For DeepSeek V4 models, pydantic-ai sends `reasoning_content` back in later turns (required by DeepSeek with tools); keep message history intact.
+- Open issues: (1) the human's `.env` still sets the old alias IDs; they work, but should be changed to `deepseek-flash`. (2) `CLAUDE.md`/`PRODUCT.md`/`PLAN.md` mention the old IDs.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_llm.py -q
+uv run python scripts/smoke.py
+```
+Expected: `162 passed`; then `5 passed`; then four `[ OK ]` lines (vision, agent text, agent tool + structured output, recipe structured output), each with its latency in seconds and token counts, the tool line showing `tool calls: ['count_on_shelf', 'final_result']; output: ShelfCount(item='eggs', count=7)`, and a last line `ALL OK`. The model names in brackets are the ones in your `.env`.
+Manual check: run `uv run python scripts/smoke.py --image path	onyood_photo.jpg` with a photo from your phone; the vision line should list the foods in it.
 
 ### 2026-10-12 — Switch to DeepSeek models (docs change, no task)
 - Why: the human replaced `CLAUDE.md`, `docs/PRODUCT.md` (§3, §9) and `docs/PLAN.md` (T0.1, T0.4, T1.4, T5.1, T5.2): only Chinese models are allowed; DeepSeek for now, Qwen3.8 Max for vision later.
