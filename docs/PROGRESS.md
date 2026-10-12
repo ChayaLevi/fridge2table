@@ -10,7 +10,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [ ] T0.4 Model smoke test 🧑
 - [~] T0.5 Eval set structure 🧑 (README done; waiting for the human's photos)
 - [x] T1.1 Normalization
-- [ ] T1.2 Store
+- [x] T1.2 Store
 - [ ] T1.3 Inventory tools
 - [ ] T1.4 Recognition + vision eval 🧑
 - [ ] T1.5 Checks
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.2 Store** (`app/store.py`; include `scan_state` table and its functions per the updated PLAN). Then T1.3, T1.5, T1.7, then T1.4/T1.6 with mocked models, then P2/P3.
+- **Next task: T1.3 Inventory tools** (`app/tools/inventory.py`). Then T1.5, T1.7, then T1.4/T1.6 with mocked models, then P2/P3.
 - **Blocked on the human (do not wait for these, build with mocks):** API keys in `.env` (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) for T0.4; eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry) for T0.5/T1.4.
 - Deferred and to be done once keys exist: T0.4 smoke test (verify exact model IDs/format, replace provisional defaults in `app/config.py`), the real runs of T1.4 and T1.6, T2.5.
-- State at hand-off: 119 tests pass, last commit is "T1.1: redo normalize". `app/store.py`, `app/llm.py`, `app/agent.py` and the other `app/tools/*` modules are still empty files.
+- State: 127 tests pass. `app/llm.py`, `app/agent.py` and the other `app/tools/*` modules (except normalize) are still empty files.
 
 ## Current model settings
 
@@ -61,6 +61,22 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 (none yet)
 
 ## Log
+
+### 2026-10-12 — T1.2 Store
+- Built: `app/store.py` (class `Store`), `tests/test_store.py` (8 tests; 127 total pass).
+- Design: one `Store(path=None)` per DB file (default `config.DB_PATH`, parent dir created), one SQLite connection, `close()`. Methods are the plan's functions: `load_inventory`, `save_inventory` (replaces all, keeps order), `load_preferences`, `add_preference(pref: Preference)` (insert-or-replace by id), `load_scan_state`, `mark_scanned(location, when=None)`, `set_freezer_declined(declined=True)`, `load_session_messages(session_id)`, `save_session_messages(session_id, messages)`, `reset_all`. Rows hold the Pydantic models as JSON; messages use `ModelMessagesTypeAdapter` (pydantic-ai 2.55.0).
+- Deviation (small): added `load_removed_staples()` and `set_staple_removed(name, removed=True)` for the `staples_state` table; T1.3 needs them.
+- Next tasks must know: the store holds only stored items. Staples are not in `inventory`; T1.3 `get_inventory` adds them. `add_preference` does not dedupe; `save_preference` (T1.7) does. `Deps` (T2.1) should hold a `Store` instance; tests should use `Store(tmp_path / "x.db")`.
+- Open issues: none.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_store.py -q
+uv run python -c "from app.store import Store; s=Store(':memory:'); s.mark_scanned('fridge'); print(s.load_scan_state())"
+```
+Expected: `127 passed`; then `8 passed`; then a line starting with `scanned={'fridge': datetime.datetime(`.
+Manual check: in `uv run python`, create `Store("demo.db")`, call `mark_scanned("pantry")`, `close()`, open `Store("demo.db")` again and print `load_scan_state()`; pantry is still there. Delete `demo.db` afterwards.
 
 ### 2026-10-12 — T1.1 redone (normalization)
 - Why: the user asked for T1.1 to be redone with a stronger model. The first version had matching bugs: the staple `chili flakes` became `chili flake` while `chilli flakes` became `chili flakes` (no match); accents were mangled (`jalapeños` -> `jalape os`); `chilies` -> `chily`, `quiches` -> `quich`, `kiwis` was not singularized; quantity words were not stripped (`a can of chickpeas`, `3 cloves garlic`, `a dozen eggs`, `milk 1l`); `all purpose flour` did not equal `all-purpose flour`.
