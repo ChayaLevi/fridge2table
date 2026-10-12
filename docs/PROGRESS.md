@@ -11,7 +11,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [~] T0.5 Eval set structure 🧑 (README done; waiting for the human's photos)
 - [x] T1.1 Normalization
 - [x] T1.2 Store
-- [ ] T1.3 Inventory tools
+- [x] T1.3 Inventory tools
 - [ ] T1.4 Recognition + vision eval 🧑
 - [ ] T1.5 Checks
 - [ ] T1.6 Recipes
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.3 Inventory tools** (`app/tools/inventory.py`). Then T1.5, T1.7, then T1.4/T1.6 with mocked models, then P2/P3.
+- **Next task: T1.5 Checks** (`app/tools/checks.py`; T1.4 needs photos, so it is skipped for now). Then T1.7, then T1.4/T1.6 with mocked models, then P2/P3.
 - **Blocked on the human (do not wait for these, build with mocks):** API keys in `.env` (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) for T0.4; eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry) for T0.5/T1.4.
 - Deferred and to be done once keys exist: T0.4 smoke test (verify exact model IDs/format, replace provisional defaults in `app/config.py`), the real runs of T1.4 and T1.6, T2.5.
-- State: 127 tests pass. `app/llm.py`, `app/agent.py` and the other `app/tools/*` modules (except normalize) are still empty files.
+- State: 157 tests pass. `app/llm.py`, `app/agent.py` and `app/tools/{recognize,recipes,checks,preferences}.py` are still empty files.
 
 ## Current model settings
 
@@ -61,6 +61,26 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 (none yet)
 
 ## Log
+
+### 2026-10-12 — T1.3 Inventory tools
+- Built: `app/tools/inventory.py` (`staple_names`, `get_inventory`, `update_inventory`, `merge_recognized`, `inventory_summary`), `tests/test_inventory.py` (30 tests; 157 total pass).
+- Deviation: every function takes the `Store` as its first argument (`get_inventory(store)`, `update_inventory(store, changes, source="chat")`, `merge_recognized(store, items)`); the plan's signatures had no store. The agent wrappers (T2.1) pass `ctx.deps.store`.
+- Design:
+  - Staples are virtual: `get_inventory` = stored items, then every staple not removed and not already stored (a stored item wins). Staples get location `pantry`, `qty_level="plenty"`, a category from `STAPLE_CATEGORIES`, id `staple:<name>`.
+  - `update_inventory(..., source)`: `"manual"` for the side panel (T3.1 `PATCH /inventory`), `"chat"` for the agent. Every edit sets `confidence=1.0`, `uncertain=False`. `add` of an existing canonical name updates only the fields given; `add` of a removed staple restores it. `remove` of a staple records it in `staples_state`. **`set_qty` with `qty_level=None` means "below low" and removes the item** (QtyLevel has no "none" value). `set_qty`/`set_use_soon`/`rename` on a staple turns it into a stored item (`is_staple=True`). `rename` onto a name that already exists merges into that item. Unknown names in remove/set_qty/set_use_soon/rename are ignored silently.
+  - `merge_recognized`: dedupes the incoming list by canonical name (higher confidence wins, `use_soon` OR'd), adds new names, updates `qty_level`/`confidence`/`uncertain` of existing ones, never clears `use_soon`, skips `source="manual"` items, never removes.
+  - `inventory_summary`: one line per place, `fridge (scanned 2026-10-12): ...` or `pantry (NOT SCANNED): ...` (freezer: `NOT SCANNED, user declined`), items as `name (qty[, USE SOON][, UNCERTAIN])`, uncertain then use-soon first; last line lists the staples. 60 items fit under 1,500 characters (tested).
+- Next tasks must know: T1.5 checks can use `staple_names()` and `get_inventory()` (staples already appear as items with `is_staple=True`, removed ones are absent). T1.4 should call `merge_recognized(store, items)` and then `mark_scanned`.
+- Open issues: none.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_inventory.py -q
+uv run python -c "from app.store import Store; from app.models import InventoryChange as C; from app.tools.inventory import update_inventory, inventory_summary; s=Store(':memory:'); s.mark_scanned('fridge'); inv=update_inventory(s,[C(op='add',name='Fresh Scallions'),C(op='add',name='spinach',use_soon=True,qty_level='low'),C(op='remove',name='soy sauce')]); print(inventory_summary(inv, s.load_scan_state()))"
+```
+Expected: `157 passed`; then `30 passed`; then four lines: `fridge (scanned <today>): spinach (low, USE SOON), green onion (some)`, `freezer (NOT SCANNED): nothing`, `pantry (NOT SCANNED): nothing`, and a staples line without `soy sauce`.
+Manual check: in `uv run python`, create `s = Store(':memory:')`, store an item with `source="manual"` via `update_inventory(s, [InventoryChange(op="add", name="cheddar", qty_level="plenty")], source="manual")`, then call `merge_recognized` with a cheddar item at `qty_level="low"`; `get_inventory(s)` still shows cheddar as `plenty`.
 
 ### 2026-10-12 — T1.2 Store
 - Built: `app/store.py` (class `Store`), `tests/test_store.py` (8 tests; 127 total pass).

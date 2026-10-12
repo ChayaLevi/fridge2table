@@ -1,0 +1,288 @@
+from datetime import datetime
+
+import pytest
+
+from app.models import InventoryChange, InventoryItem, ScanState
+from app.store import Store
+from app.tools.inventory import (
+    get_inventory,
+    inventory_summary,
+    merge_recognized,
+    staple_names,
+    update_inventory,
+)
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = Store(tmp_path / "inv.db")
+    yield s
+    s.close()
+
+
+def item(name, **kw):
+    base = dict(
+        id=f"id-{name}", name=name, display_name=name.title(), category="vegetable",
+        qty_level="some", location="fridge", confidence=0.9, uncertain=False,
+        source="photo", updated_at=datetime(2026, 10, 12, 12, 0),
+    )
+    base.update(kw)
+    return InventoryItem(**base)
+
+
+def add(name, **kw):
+    return InventoryChange(op="add", name=name, **kw)
+
+
+def by_name(items):
+    return {i.name: i for i in items}
+
+
+def stored_names(store):
+    return [i.name for i in store.load_inventory()]
+
+
+# get_inventory
+
+def test_empty_store_has_all_staples(store):
+    inv = get_inventory(store)
+    assert [i.name for i in inv] == list(staple_names())
+    assert len(inv) == 15
+    for i in inv:
+        assert i.is_staple and i.source == "staple" and i.qty_level == "plenty" and i.confidence == 1.0
+
+
+def test_staple_names_are_canonical():
+    assert "chili flakes" in staple_names()
+    assert "all-purpose flour" in staple_names()
+
+
+def test_stored_items_come_first(store):
+    store.save_inventory([item("spinach"), item("milk")])
+    inv = get_inventory(store)
+    assert [i.name for i in inv[:2]] == ["spinach", "milk"]
+    assert len(inv) == 17
+
+
+def test_removed_staple_is_hidden(store):
+    store.set_staple_removed("soy sauce")
+    assert "soy sauce" not in by_name(get_inventory(store))
+
+
+# update_inventory: add
+
+def test_add_normalizes_name(store):
+    inv = update_inventory(store, [add("Fresh Scallions", location="fridge", qty_level="low")])
+    gi = by_name(inv)["green onion"]
+    assert gi.display_name == "Fresh Scallions"
+    assert gi.qty_level == "low" and gi.source == "chat" and gi.confidence == 1.0
+
+
+def test_add_defaults(store):
+    update_inventory(store, [add("ricotta")])
+    r = store.load_inventory()[0]
+    assert (r.qty_level, r.location, r.category, r.use_soon, r.uncertain) == ("some", "fridge", "other", False, False)
+
+
+def test_add_existing_updates_instead_of_duplicating(store):
+    store.save_inventory([item("tomato", qty_level="low", confidence=0.5, uncertain=True)])
+    update_inventory(store, [add("tomatoes", qty_level="plenty", use_soon=True)])
+    stored = store.load_inventory()
+    assert len(stored) == 1
+    t = stored[0]
+    assert t.qty_level == "plenty" and t.use_soon and not t.uncertain and t.confidence == 1.0
+    assert t.display_name == "Tomato"  # not given in the change, so kept
+
+
+def test_add_twice_in_one_call_gives_one_item(store):
+    update_inventory(store, [add("egg"), add("2 large eggs", qty_level="plenty")])
+    assert stored_names(store) == ["egg"]
+    assert store.load_inventory()[0].qty_level == "plenty"
+
+
+def test_manual_source(store):
+    update_inventory(store, [add("milk")], source="manual")
+    assert store.load_inventory()[0].source == "manual"
+
+
+def test_add_removed_staple_restores_it(store):
+    store.set_staple_removed("salt")
+    inv = update_inventory(store, [add("salt")])
+    assert "salt" in by_name(inv)
+    assert "salt" not in store.load_removed_staples()
+
+
+# update_inventory: remove / set_qty / set_use_soon / rename
+
+def test_remove(store):
+    store.save_inventory([item("spinach"), item("milk")])
+    inv = update_inventory(store, [InventoryChange(op="remove", name="Spinach")])
+    assert stored_names(store) == ["milk"]
+    assert "spinach" not in by_name(inv)
+
+
+def test_remove_unknown_is_ignored(store):
+    store.save_inventory([item("milk")])
+    update_inventory(store, [InventoryChange(op="remove", name="caviar")])
+    assert stored_names(store) == ["milk"]
+
+
+def test_remove_staple_records_it(store):
+    inv = update_inventory(store, [InventoryChange(op="remove", name="olive oil")])
+    assert "olive oil" not in by_name(inv)
+    assert store.load_removed_staples() == {"olive oil"}
+    assert store.load_inventory() == []
+    assert "olive oil" not in by_name(get_inventory(store))  # still gone on the next read
+
+
+def test_remove_staple_by_variant(store):
+    update_inventory(store, [InventoryChange(op="remove", name="chilli flakes")])
+    assert store.load_removed_staples() == {"chili flakes"}
+
+
+def test_set_qty(store):
+    store.save_inventory([item("milk", qty_level="plenty")])
+    update_inventory(store, [InventoryChange(op="set_qty", name="milk", qty_level="low")])
+    assert store.load_inventory()[0].qty_level == "low"
+
+
+def test_set_qty_below_low_removes(store):
+    store.save_inventory([item("milk", qty_level="low")])
+    update_inventory(store, [InventoryChange(op="set_qty", name="milk", qty_level=None)])
+    assert store.load_inventory() == []
+
+
+def test_set_qty_on_staple_materializes_it(store):
+    inv = update_inventory(store, [InventoryChange(op="set_qty", name="sugar", qty_level="low")])
+    assert by_name(inv)["sugar"].qty_level == "low"
+    assert [i.name for i in inv].count("sugar") == 1
+    s = store.load_inventory()[0]
+    assert s.name == "sugar" and s.is_staple and s.source == "chat"
+
+
+def test_set_use_soon(store):
+    store.save_inventory([item("spinach")])
+    update_inventory(store, [InventoryChange(op="set_use_soon", name="spinach", use_soon=True)])
+    assert store.load_inventory()[0].use_soon
+    update_inventory(store, [InventoryChange(op="set_use_soon", name="spinach", use_soon=False)])
+    assert not store.load_inventory()[0].use_soon
+
+
+def test_rename_resolves_uncertain_item(store):
+    store.save_inventory([item("white container", confidence=0.3, uncertain=True)])
+    update_inventory(store, [InventoryChange(op="rename", name="white container", new_name="Leftover Rice")])
+    r = store.load_inventory()[0]
+    assert r.name == "leftover rice" and r.display_name == "Leftover Rice"
+    assert not r.uncertain and r.confidence == 1.0
+
+
+def test_rename_onto_existing_merges(store):
+    store.save_inventory([item("white container", use_soon=True), item("rice")])
+    update_inventory(store, [InventoryChange(op="rename", name="white container", new_name="rice")])
+    stored = store.load_inventory()
+    assert [i.name for i in stored] == ["rice"]
+    assert stored[0].use_soon
+
+
+# merge_recognized
+
+def test_merge_adds_new_items(store):
+    inv = merge_recognized(store, [item("Tomatoes"), item("Scallion")])
+    assert {"tomato", "green onion"} <= set(by_name(inv))
+    assert stored_names(store) == ["tomato", "green onion"]
+
+
+def test_merge_updates_qty_and_confidence(store):
+    store.save_inventory([item("milk", id="m1", qty_level="plenty", confidence=0.9)])
+    merge_recognized(store, [item("milk", id="new", qty_level="low", confidence=0.5, uncertain=True)])
+    stored = store.load_inventory()
+    assert len(stored) == 1
+    m = stored[0]
+    assert m.id == "m1" and m.qty_level == "low" and m.confidence == 0.5 and m.uncertain
+
+
+def test_merge_never_clears_use_soon(store):
+    store.save_inventory([item("spinach", use_soon=True, source="chat")])
+    merge_recognized(store, [item("spinach", use_soon=False, qty_level="plenty")])
+    s = store.load_inventory()[0]
+    assert s.use_soon and s.qty_level == "plenty"
+
+
+def test_merge_never_overrides_manual(store):
+    store.save_inventory([item("cheddar", source="manual", qty_level="plenty", confidence=1.0)])
+    merge_recognized(store, [item("cheddar", qty_level="low", confidence=0.4, uncertain=True)])
+    c = store.load_inventory()[0]
+    assert (c.qty_level, c.confidence, c.uncertain, c.source) == ("plenty", 1.0, False, "manual")
+
+
+def test_merge_never_removes(store):
+    store.save_inventory([item("milk"), item("butter")])
+    merge_recognized(store, [item("egg")])
+    assert stored_names(store) == ["milk", "butter", "egg"]
+
+
+def test_merge_duplicates_keep_higher_confidence(store):
+    merge_recognized(store, [
+        item("egg", id="a", confidence=0.5, use_soon=True),
+        item("eggs", id="b", confidence=0.95, qty_level="plenty"),
+    ])
+    stored = store.load_inventory()
+    assert len(stored) == 1
+    e = stored[0]
+    assert e.id == "b" and e.confidence == 0.95 and e.qty_level == "plenty" and e.use_soon
+
+
+def test_merge_recognized_staple(store):
+    inv = merge_recognized(store, [item("olive oil", category="condiment", location="pantry")])
+    assert [i.name for i in inv].count("olive oil") == 1
+    assert store.load_inventory()[0].is_staple
+
+
+# inventory_summary
+
+def test_summary_marks_places_and_flags(store):
+    store.save_inventory([
+        item("milk"),
+        item("spinach", use_soon=True, qty_level="low"),
+        item("white container", uncertain=True, confidence=0.3),
+        item("peas", location="freezer"),
+    ])
+    scan = ScanState(scanned={"fridge": datetime(2026, 10, 12, 9, 0)})
+    text = inventory_summary(get_inventory(store), scan)
+    lines = text.splitlines()
+    assert lines[0].startswith("fridge (scanned 2026-10-12): white container (some, UNCERTAIN)")
+    assert "spinach (low, USE SOON)" in lines[0]
+    assert "milk (some)" in lines[0]
+    assert lines[1] == "freezer (NOT SCANNED): peas (some)"
+    assert lines[2] == "pantry (NOT SCANNED): nothing"
+    assert lines[3].startswith("staples (assumed present): salt, black pepper")
+
+
+def test_summary_freezer_declined_and_removed_staple(store):
+    store.set_staple_removed("salt")
+    text = inventory_summary(get_inventory(store), ScanState(scanned={}, freezer_declined=True))
+    assert "freezer (NOT SCANNED, user declined)" in text
+    assert "salt" not in text.splitlines()[-1].split(": ")[1].split(", ")
+
+
+def test_summary_length_for_60_items(store):
+    names = [
+        "milk", "egg", "butter", "cheddar", "greek yogurt", "cream cheese", "parmesan", "mozzarella",
+        "spinach", "carrot", "broccoli", "cucumber", "tomato", "bell pepper", "zucchini", "eggplant",
+        "lettuce", "green onion", "lemon", "lime", "apple", "orange juice", "chicken", "ground beef",
+        "bacon", "ham", "salmon", "tofu", "hummus", "ketchup", "mayonnaise", "mustard", "jam",
+        "peas", "corn", "ice cream", "frozen berries", "fish sticks", "pizza", "dumpling",
+        "pasta", "rice", "oats", "lentil", "chickpea", "canned tomato", "tuna", "coconut milk",
+        "peanut butter", "honey", "bread", "tortilla", "crackers", "cereal", "almond", "walnut",
+        "raisin", "breadcrumbs", "cornstarch", "white container",
+    ]
+    locs = ["fridge"] * 33 + ["freezer"] * 7 + ["pantry"] * 20
+    store.save_inventory([
+        item(n, id=str(k), location=loc, use_soon=k % 9 == 0, uncertain=k % 13 == 0)
+        for k, (n, loc) in enumerate(zip(names, locs))
+    ])
+    scan = ScanState(scanned={loc: datetime(2026, 10, 12) for loc in ("fridge", "freezer", "pantry")})
+    text = inventory_summary(get_inventory(store), scan)
+    assert len(names) == 60
+    assert all(n in text for n in names)
+    assert len(text) < 1500, len(text)
