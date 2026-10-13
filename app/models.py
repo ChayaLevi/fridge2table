@@ -84,6 +84,8 @@ class ValidationResult(BaseModel):
     ok: bool
     missing_essential: list[str]
     violated_preferences: list[str]
+    check_first: list[str] = []  # pantry-type essentials not confirmed because the pantry was not scanned
+    reason: str = ""  # one line for the agent, e.g. "pantry not scanned: pasta not confirmed"
 
 
 class Substitution(BaseModel):

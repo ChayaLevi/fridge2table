@@ -13,7 +13,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T1.2 Store
 - [x] T1.3 Inventory tools
 - [~] T1.4 Recognition + vision eval 🧑 (code + tests done; real eval waits for photos)
-- [ ] T1.5 Checks
+- [x] T1.5 Checks
 - [ ] T1.6 Recipes
 - [ ] T1.7 Preferences
 - [ ] T2.1 Agent
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.5 Checks** (no LLM, no human input needed). Then T1.6, T1.7, then P2/P3.
+- **Next task: T1.6 Recipes** (needs the DeepSeek key, already in `.env`, for the one manual run). Then T1.7, then P2/P3.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 179 tests pass. `app/agent.py` and `app/tools/{recipes,checks,preferences}.py` are still empty files.
+- State: 218 tests pass. `app/agent.py` and `app/tools/{recipes,preferences}.py` are still empty files.
 
 ## Current model settings
 
@@ -68,6 +68,27 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T1.5 Checks
+- Built: `app/tools/checks.py` (`compute_missing`, `validate_suggestion`, `fill_uses_from_inventory`), `tests/test_checks.py` (39 tests; 218 total pass).
+- Deviation (schema): `ValidationResult` got two fields with defaults: `check_first: list[str] = []` and `reason: str = ""`. `missing_essential` holds only definite misses; pantry-type items not confirmed because the pantry is unscanned are in `check_first` (they still make `ok=False`). `reason` is one line for the agent / `ModelRetry`, e.g. `missing: ground beef; pantry not scanned: pasta not confirmed; violates preferences: eggplant (kids dislike eggplant)`. When only `check_first` items fail, it starts with `pantry not scanned`.
+- Design:
+  - Signatures take data, not the store: `compute_missing(recipe, inventory, scan_state)`, `validate_suggestion(recipe, inventory, preferences, scan_state)`, `fill_uses_from_inventory(recipe, inventory)`. `inventory` must be `get_inventory(store)` (it already contains the non-removed staples); checks do not add staples themselves, so a removed staple is missing.
+  - Matching: `normalize()` on both sides, set membership (synonyms/plurals resolved by `normalize`). Any `qty_level` counts, uncertain items count too. Output names are canonical and deduped, in recipe order.
+  - Pantry rule: pantry absent from `scan_state.scanned` + essential + category in `PANTRY_CATEGORIES` -> `check_first`. Optional ingredients always go to `missing_optional`, never fail validation.
+  - Preferences: every ingredient (essential or optional) is checked against every `avoid`; `violated_preferences` entries read `"<ingredient> (<preference text>)"`.
+  - `fill_uses_from_inventory` returns a copy; lists non-staple (`is_staple=False`) inventory items used, use-soon first, otherwise recipe order; it overwrites whatever the model put there.
+- Next tasks must know: T1.6 calls `fill_uses_from_inventory(recipe, get_inventory(store))`. T2.2's validator: Mode A -> `res = validate_suggestion(...)`, `if not res.ok: raise ModelRetry(f"{meal.name}: {res.reason}. ...")`; Mode B -> `compute_missing` gives `missing_essential` / `check_first`. Remember `spaghetti` normalizes to `pasta`.
+- Open issues: none new.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_checks.py -q
+uv run python -c "from datetime import datetime as D; from app.models import Recipe, Ingredient as I, ScanState as S; from app.store import Store; from app.tools.inventory import get_inventory; from app.tools.checks import validate_suggestion as v; r=Recipe(name='bolognese',ingredients=[I(name='spaghetti',amount='400 g',essential=True,category='pasta'),I(name='minced beef',amount='500 g',essential=True,category='meat'),I(name='salt',amount='1 tsp',essential=True,category='spice')],steps=['cook'],time_minutes=40); inv=get_inventory(Store(':memory:')); print(v(r,inv,[],S(scanned={'fridge':D.now()}))); print(v(r,inv,[],S(scanned={'fridge':D.now(),'pantry':D.now()})))"
+```
+Expected: `218 passed`; then `39 passed`; then two lines. Pantry not scanned: `ok=False missing_essential=['ground beef'] violated_preferences=[] check_first=['pasta'] reason='missing: ground beef; pantry not scanned: pasta not confirmed'`. Pantry scanned: `ok=False missing_essential=['pasta', 'ground beef'] violated_preferences=[] check_first=[] reason='missing: pasta, ground beef'`. Salt never appears (staple).
+Manual check: in `uv run python`, build a recipe with an ingredient `aubergines` (category `vegetable`) and call `validate_suggestion(recipe, [], [Preference(id="1", text="kids hate eggplant", avoid=["eggplant"], created_at=datetime.now())], ScanState(scanned={}))`; `violated_preferences` is `['eggplant (kids hate eggplant)']`.
 
 ### 2026-10-13 — T1.4 Recognition + vision eval (code done; real eval waits for photos)
 - Built: `app/tools/recognize.py`, `eval/run_vision_eval.py`, `tests/test_recognize.py` (15 tests), `tests/test_vision_eval.py` (2 tests); `CATEGORIES` tuple added to `app/models.py`. 179 tests pass.
