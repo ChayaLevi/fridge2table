@@ -14,7 +14,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T1.3 Inventory tools
 - [~] T1.4 Recognition + vision eval 🧑 (code + tests done; real eval waits for photos)
 - [x] T1.5 Checks
-- [ ] T1.6 Recipes
+- [x] T1.6 Recipes
 - [ ] T1.7 Preferences
 - [ ] T2.1 Agent
 - [ ] T2.2 Output validator
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.6 Recipes** (needs the DeepSeek key, already in `.env`, for the one manual run). Then T1.7, then P2/P3.
+- **Next task: T1.7 Preferences** (nothing needed from the human). Then P2/P3.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 218 tests pass. `app/agent.py` and `app/tools/{recipes,preferences}.py` are still empty files.
+- State: 246 tests pass. `app/agent.py` and `app/tools/preferences.py` are still empty files.
 
 ## Current model settings
 
@@ -63,11 +63,36 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
+- (T1.6) `suggest_meals` takes ~28 s with `deepseek-flash` for 5 full recipes (`get_recipe` ~10 s). Too slow for the 25 s Mode A target once the agent's own calls are added; T5.2 should lower `n` or drop `steps` from the candidates.
+- (T1.6) `lasagna noodle` does not normalize to `pasta` (no synonym), so plain pasta in the inventory does not cover lasagna sheets. Arguably right; revisit if Mode B looks wrong in scenarios.
+
 - (T0.4) The human's `.env` still sets `VISION_MODEL=deepseek-v4-flash-vision-exp` / `RECIPE_MODEL=deepseek-v4-flash` (retired aliases, still served by `deepseek-flash`). Change both to `deepseek-flash`.
 - (T0.4) `CLAUDE.md`, `docs/PRODUCT.md` §9 and `docs/PLAN.md` still name the old model IDs; the human should update them or confirm the new defaults.
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T1.6 Recipes
+- Built: `app/tools/recipes.py` (`suggest_meals`, `get_recipe`, prompts `SUGGEST_PROMPT` / `RECIPE_PROMPT` / `INGREDIENT_RULES`), `tests/test_recipes.py` (28 tests; 246 total pass), `scripts/try_recipes.py` (manual run on a built-in demo inventory, in-memory store). `app/tools/recognize.py`: `coerce_category` now also maps plurals and common off-list names (`CATEGORY_ALIASES`: produce, poultry, seafood, cheese, noodles, canned goods, oil, ...) instead of sending them all to `other`; recognition uses it too.
+- API (async, store first like the other tools): `await suggest_meals(store, constraints=None, n=5, exclude=None, *, model=None) -> list[Recipe]`, `await get_recipe(store, dish, *, model=None) -> Recipe`. `model` defaults to `recipe_model()`.
+- Design:
+  - One `Agent(model, output_type=..., instructions=PROMPT)` call each. The model returns `RecipeDraft` (a `Recipe` without `uses_from_inventory`); `MealIdeas` wraps the list for `suggest_meals`.
+  - Prompt data: `inventory_summary(get_inventory(store), scan_state)` (staples line included, NOT SCANNED places marked) and the preferences as `text (avoid: a, b)`. `suggest_meals` adds the request text, `max_minutes`, `n` and the exclude list.
+  - `get_recipe` gets the same context but is told to write the usual version of the dish and not to drop/replace ingredients the household lacks (substitutions are the agent's job, Mode B); it only leaves out optional extras that conflict with preferences.
+  - After the call, code: `normalize` every ingredient name, merge duplicate ingredients (essential if any copy is), drop empty names, `coerce_category`, then `fill_uses_from_inventory` (overwrites anything the model said).
+  - Deviation (small, deterministic): `suggest_meals` also drops, in code, dishes named in `exclude` (case/space-insensitive), duplicate dish names and dishes over `max_minutes`, then caps at `n`. So it can return fewer than `n`.
+- Real-model run (2026-10-13, `deepseek-flash`, `scripts/try_recipes.py --dish lasagna --minutes 40`): 5 candidates in 28 s, all pass `validate_suggestion`: creamy spinach & mushroom pasta, chicken & bell pepper stir-fry, bacon spinach tomato frittata, tomato cheddar soup, cottage cheese apple pancakes. Spinach (use soon) used in 2; eggplant (use soon but avoided) in none. `get_recipe("lasagna")` in 10 s: standard recipe; check fails with `missing: ground beef, ricotta, mozzarella; pantry not scanned: lasagna noodle, canned tomato not confirmed`.
+- Next tasks must know: T1.7 should replace the private `_preferences_text` in `recipes.py` with `preferences_summary()`. T2.1 wrappers: `await suggest_meals(ctx.deps.store, constraints, n, exclude)` / `await get_recipe(ctx.deps.store, dish)`. The candidates are not validated; the agent must call `validate_suggestion`.
+- Open issues: suggest_meals latency (28 s), `lasagna noodle` vs `pasta` (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_recipes.py -q
+uv run python scripts/try_recipes.py --dish lasagna --minutes 40
+```
+Expected: `246 passed`; then `28 passed`; then (about 30-40 s, real model) `suggest_meals with deepseek-flash`, `5 candidates in ...s` (sometimes fewer if one was over 40 min), one `[OK  ]` line per dish with its time, the inventory items it uses and its ingredients (`?` = optional), none containing eggplant; then `get_recipe('lasagna')` with a `[FAIL]` line whose check lists ricotta, mozzarella and ground beef as missing and the pasta/canned items as "pantry not scanned". Dishes differ from run to run.
+Manual check: run `uv run python scripts/try_recipes.py --minutes 15`; every dish listed is 15 minutes or less (longer ones are dropped by code, so you may see fewer than 5).
 
 ### 2026-10-13 — T1.5 Checks
 - Built: `app/tools/checks.py` (`compute_missing`, `validate_suggestion`, `fill_uses_from_inventory`), `tests/test_checks.py` (39 tests; 218 total pass).

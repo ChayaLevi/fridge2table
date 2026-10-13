@@ -114,9 +114,25 @@ def to_jpeg(image: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+# Common off-list categories models return, mapped onto CATEGORIES (the pantry rule depends on them).
+CATEGORY_ALIASES = {
+    "produce": "vegetable", "veg": "vegetable", "veggie": "vegetable", "herb": "vegetable",
+    "fresh herb": "vegetable", "poultry": "meat", "seafood": "fish", "shellfish": "fish",
+    "cheese": "dairy", "milk": "dairy", "rice": "grain", "bread": "grain", "cereal": "grain",
+    "noodle": "pasta", "canned good": "canned", "legume": "canned", "bean": "canned", "oil": "condiment", "fat": "condiment", "vinegar": "condiment",
+    "dried herb": "spice", "seasoning": "spice", "nut": "snack", "seed": "snack", "beverage": "drink",
+}
+
+
 def coerce_category(category: str) -> str:
-    c = category.strip().lower()
-    return c if c in CATEGORIES else "other"
+    """A category from CATEGORIES: exact, singular, or via CATEGORY_ALIASES; anything else is "other"."""
+    c = " ".join(category.strip().lower().split())
+    for key in (c, c[:-1] if c.endswith("s") else c):
+        if key in CATEGORIES:
+            return key
+        if key in CATEGORY_ALIASES:
+            return CATEGORY_ALIASES[key]
+    return "other"
 
 
 def merge_items(items: list[RecognizedItem]) -> list[RecognizedItem]:
