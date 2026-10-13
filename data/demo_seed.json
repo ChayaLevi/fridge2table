@@ -1,0 +1,135 @@
+{
+ "inventory": [
+  {
+   "name": "spinach",
+   "category": "vegetable",
+   "qty_level": "some",
+   "location": "fridge",
+   "use_soon": true
+  },
+  {
+   "name": "egg",
+   "category": "egg",
+   "qty_level": "plenty",
+   "location": "fridge"
+  },
+  {
+   "name": "milk",
+   "category": "dairy",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "cheddar",
+   "category": "dairy",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "butter",
+   "category": "dairy",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "greek yogurt",
+   "category": "dairy",
+   "qty_level": "low",
+   "location": "fridge"
+  },
+  {
+   "name": "cottage cheese",
+   "category": "dairy",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "chicken",
+   "category": "meat",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "bacon",
+   "category": "meat",
+   "qty_level": "low",
+   "location": "fridge"
+  },
+  {
+   "name": "tomato",
+   "category": "vegetable",
+   "qty_level": "plenty",
+   "location": "fridge"
+  },
+  {
+   "name": "onion",
+   "category": "vegetable",
+   "qty_level": "plenty",
+   "location": "fridge"
+  },
+  {
+   "name": "garlic",
+   "category": "vegetable",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "carrot",
+   "category": "vegetable",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "bell pepper",
+   "category": "vegetable",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "eggplant",
+   "category": "vegetable",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "zucchini",
+   "category": "vegetable",
+   "qty_level": "low",
+   "location": "fridge"
+  },
+  {
+   "name": "lemon",
+   "category": "fruit",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "apple",
+   "category": "fruit",
+   "qty_level": "plenty",
+   "location": "fridge"
+  },
+  {
+   "name": "mushroom",
+   "category": "vegetable",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "pasta",
+   "category": "pasta",
+   "qty_level": "some",
+   "location": "fridge"
+  },
+  {
+   "name": "ketchup",
+   "category": "condiment",
+   "qty_level": "some",
+   "location": "fridge"
+  }
+ ],
+ "scanned": [
+  "fridge"
+ ],
+ "preferences": []
+}

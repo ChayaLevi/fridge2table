@@ -22,7 +22,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T2.3 Trace capture
 - [x] T2.4 Terminal chat
 - [x] T2.5 Scenario suite
-- [ ] T3.1 API
+- [x] T3.1 API
 - [ ] T3.2 Web page
 - [ ] T3.3 First real-fridge run + internal demo 🧑
 - [ ] T4.1 Proactive opening
@@ -37,10 +37,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T3.1 API** (nothing needed from the human). `run_turn` returns `TurnResult` with `.reply`, `.trace`, `.usage`; it can raise `UnexpectedModelBehavior` (3 bad replies), `UsageLimitExceeded` and `ModelAPIError` (network; seen once in T2.5): return a clear error to the page instead of a 500 traceback. After a prompt or tool change, rerun `uv run python eval/run_scenarios.py` (about 3 min).
+- **Next task: T3.2 Web page** (nothing needed from the human until the phone check). The API is in `app/api.py`; every route returns the panel state (`inventory` + `scan_state`) so the page can redraw it after any call; `/chat` and `/opening` share one response shape (`reply`, `trace`, `usage`, `inventory`, `scan_state`). Errors come back as `{"detail": "..."}` (400 bad input, 502 agent failed, 503 model service down): show `detail` in the chat. Replace the placeholder `app/static/index.html`.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 334 tests pass. Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
+- State: 353 tests pass. The FastAPI app (`app/api.py`) serves all T3.1 routes. Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
 
 ## Current model settings
 
@@ -67,8 +67,8 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 - (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
 - (T2.5) Turn latency varies with the API: the same Mode A turn took 11 s and 21 s on the same day, sequentially. With `--jobs 4` turns take 20-36 s (parallel load), so use `--jobs 1` for latency numbers (T5.2).
-- (T2.5) `ModelAPIError: Connection error` happened once in about 45 real turns; `run_turn` does not retry it. T3.1 should show a "try again" message.
-- (T2.4) Recipe ids are per run (`Deps.recipes`): when the user refers back to a dish from an earlier turn, the agent sometimes reuses the old id, gets an "unknown meal id" output-check retry, and then calls `get_recipe` again (seen once in a real run, +5 s). Correct (the validator catches it) but slow; if it shows up often in T2.5, preload `Deps.recipes` with the recipes named in the session's last reply.
+- (T2.5) `ModelAPIError: Connection error` happened once in about 45 real turns; `run_turn` does not retry it. Since T3.1 `/chat` returns 503 with "The model service did not answer. Please try again."
+- (T2.4) Recipe ids are per run (`Deps.recipes`): when the user refers back to a dish from an earlier turn, the agent sometimes reuses the old id, gets an "unknown meal id" output-check retry, and then calls `get_recipe` again (seen once in a real run, +5 s). Correct (the validator catches it) but slow (seen again in T3.1: a photo turn after a Mode A turn reused the 3 old ids, +~8 s, 24 s total); if it shows up often, preload `Deps.recipes` with the recipes named in the session's last reply.
 - ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
 - (T2.1b, for T4.2) Mode B prose: the agent sometimes proposes a substitute only in `message` prose instead of `substitutions`, and the prose can contradict the code-fixed lists (T2.2 real runs: "you'd need to buy ... ricotta" while ricotta is substituted and not in `shopping_list`). The lists are right (code wins); the message text is not checked.
 - ~~(T2.1b) `deepseek-flash` marked ground beef / parmesan optional in lasagna~~ Fixed 2026-10-13 (T2.2): essential defined with examples in `INGREDIENT_RULES` + code rule `force_named_essential`. 3/3 real lasagna runs had all four essentials.
@@ -82,6 +82,33 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T3.1 API
+- Built / changed:
+  - `app/api.py`: `POST /chat` (multipart `session_id`, `message`, up to 4 `images`, `locations` one per image as repeated fields or one comma-separated field, which is what `/docs` sends) -> `ChatResponse` (`reply` with `meals` filled, `trace`, `usage`, `inventory`, `scan_state`). `GET /inventory`, `PATCH /inventory` (list of `InventoryChange`, applied with `source="manual"`) -> `InventoryState` (`inventory` incl. staples, `scan_state`). `GET /recipe/{id}/steps` -> `Recipe` via `recipes.get_steps` (404 unknown id). `GET /opening?session_id=` -> a static greeting in the `ChatResponse` shape (`trace: []`, `usage: null`), so T4.1 can swap in an agent run without changing the page. `POST /admin/seed`, `POST /admin/reset` -> `InventoryState`. `/` serves `app/static/index.html`. Logging/Logfire set up in the app lifespan (`setup_observability`).
+  - Errors: bad input -> 400 with a reason (location count, unknown place, > 4 photos, no message and no photo); `ModelAPIError` -> 503 "The model service did not answer. Please try again."; `UnexpectedModelBehavior` / `UsageLimitExceeded` -> 502 "Sorry, I could not put together a valid answer this time. ..."; steps failures likewise. Always `{"detail": "..."}`.
+  - Dependencies `get_store` (one `Store` per process on `DB_PATH`), `get_turn_runner` (`run_turn`) and `get_recipe_model` (None = config) so tests override them.
+  - `app/config.py`: `DEMO_SEED_PATH` (`data/demo_seed.json`), `UPLOAD_DIR` (env, default `data/uploads/`, git-ignored): uploaded photos are saved there as `<uuid>.<ext>` and passed to the agent with their tags.
+  - `data/demo_seed.json` (new): the 21-item demo fridge of `scripts/try_recipes.py` (spinach use soon, eggplant, cottage cheese, pasta; no ricotta, no cream), `scanned: ["fridge"]` (pantry unscanned), no preferences. Format: `inventory` = `InventoryChange` add fields without `op`, `scanned` = places, `preferences` = `Preference` dicts.
+  - `app/static/index.html`: placeholder page linking to `/docs` (T3.2 replaces it).
+  - `tests/test_api.py` (new, 19 tests): Mode A through the real `run_turn` on a scripted model (meals, trace, inventory, history saved), photo upload with tags (repeated and comma-separated), 5 bad-input cases, 503/502 errors, GET/PATCH inventory (manual source, staple removal, 422 on an unknown op), steps generated once then from the store, 404, opening, index, reset + seed, seed file valid.
+- Decisions / deviations:
+  - `data/demo_seed.json` was created here (the plan puts it in T3.3) because `/admin/seed` needs it; T3.3 may extend it to ~25 items.
+  - `/admin/seed` adds on top of the current state (does not reset): call `/admin/reset` first for a clean demo (as `demo_reset.sh` in P7 will). Seeded items use `source="chat"`, not `manual`, so a photo scan can still update them.
+  - `/chat` nests the agent reply under `reply` instead of flattening `AgentReply` fields into the top level.
+  - Uploaded photos are kept on disk (not deleted after the turn); `/admin/reset` does not delete them.
+- Real run (2026-10-13, uvicorn on a temp DB, real models): seed -> `/chat` "What can I cook tonight in 30 minutes?" 12.4 s, 3 meals, trace `suggest_meals -> 5 candidates`, `output check -> ok`. Steps for the omelette: 3.9 s the first time, 0.24 s the second. `/chat` with `coffee.jpg` tagged pantry: 24 s, pantry marked scanned, but the trace shows the known reused-id retry (see Open issues).
+- Next task must know: T3.2 reads `reply.meals` (full `Recipe` without steps) for the cards and calls `/recipe/{id}/steps` when one opens; `trace[].failed` for the warning colour; send photos as `images` + `locations` fields in the same order.
+- Open issues: reused recipe ids across turns (existing issue, seen again).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_api.py -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `353 passed`; then `19 passed`; then the server logs `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: open http://localhost:8000/docs . Run `POST /admin/reset`, then `POST /admin/seed` (the response lists spinach with `"use_soon": true` and `scan_state` with only `fridge`). Run `POST /chat` with `session_id` = `test` and `message` = `What can I cook tonight?`: after about 10-20 s the response has `reply.message`, 1-3 `reply.meals`, a `trace` ending in `output check` -> `ok`, and the full `inventory`. Copy one meal `id` into `GET /recipe/{recipe_id}/steps`: the first call takes a few seconds and returns `steps`, the second is instant. Note: this uses the real `DB_PATH` (`data/app.db`); reset it afterwards with `POST /admin/reset` if you want an empty app.
 
 ### 2026-10-13 — T2.5 Scenario suite
 - Built / changed:

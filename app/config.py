@@ -28,3 +28,5 @@ LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN") or None
 DATA_DIR = ROOT / "data"
 STAPLES_PATH = DATA_DIR / "staples.json"
 SYNONYMS_PATH = DATA_DIR / "synonyms.json"
+DEMO_SEED_PATH = DATA_DIR / "demo_seed.json"
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or DATA_DIR / "uploads")  # photos sent to /chat
