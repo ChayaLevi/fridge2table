@@ -13,6 +13,7 @@ from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.deepseek import DeepSeekProvider
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 from app import config
 
@@ -46,6 +47,16 @@ def build_model(
             raise RuntimeError(f"provider {provider!r} needs base_url and api_key")
         return OpenAIChatModel(model_id, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
     raise ValueError(f"unknown provider {provider!r}")
+
+
+def thinking_settings(enabled: bool) -> ModelSettings:
+    """Model settings that turn DeepSeek's thinking mode on or off (pydantic-ai's unified `thinking` key).
+
+    DeepSeek V4 models think by default (`thinking_enabled_by_default` in the provider profile); `False`
+    is sent as `reasoning_effort: none`, which the API accepts (checked 2026-10-13). FunctionModels in
+    tests ignore the setting.
+    """
+    return ModelSettings(thinking=enabled)
 
 
 def vision_model() -> OpenAIChatModel:

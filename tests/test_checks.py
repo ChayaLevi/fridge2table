@@ -4,7 +4,7 @@ import pytest
 
 from app.models import Ingredient, InventoryChange, InventoryItem, Preference, Recipe, ScanState
 from app.store import Store
-from app.tools.checks import compute_missing, fill_uses_from_inventory, validate_suggestion
+from app.tools.checks import check_candidates, compute_missing, fill_uses_from_inventory, validate_suggestion
 from app.tools.inventory import get_inventory, update_inventory
 
 NOW = datetime(2026, 10, 13, 18, 0)
@@ -25,7 +25,7 @@ def ing(name, category="other", essential=True):
 
 
 def recipe(*ingredients, name="dish"):
-    return Recipe(name=name, ingredients=list(ingredients), steps=["cook"], time_minutes=20)
+    return Recipe(name=name, ingredients=list(ingredients), time_minutes=20)
 
 
 def pref(text, *avoid):
@@ -215,3 +215,19 @@ def test_fill_uses_skips_edited_staple():
     r = recipe(ing("salt", "spice"), ing("egg", "egg"))
     out = fill_uses_from_inventory(r, [item("salt", is_staple=True), item("egg")])
     assert out.uses_from_inventory == ["egg"]
+
+
+def test_check_candidates_splits_passed_and_failed():
+    inv = [item("egg", category="egg"), item("spinach", use_soon=True), item("salt", is_staple=True)]
+    ok = recipe(ing("egg", "egg"), ing("spinach"), ing("parsley", essential=False), name="Omelette")
+    bad = recipe(ing("egg", "egg"), ing("cream", "dairy"), ing("pasta", "pasta"), name="Carbonara")
+    nope = recipe(ing("eggplant"), name="Moussaka")
+    res = check_candidates([ok, bad, nope], inv + [item("eggplant")], [pref("no eggplant", "eggplant")], FRIDGE_ONLY)
+    assert [c.name for c in res.passed] == ["Omelette"]
+    cand = res.passed[0]
+    assert cand.id == ok.id and cand.time_minutes == 20 and cand.uses_from_inventory == []
+    assert cand.ingredients == ["egg: 1", "spinach: 1", "parsley: 1 (optional)"]
+    assert [(f.id, f.name, f.reason) for f in res.failed] == [
+        (bad.id, "Carbonara", "missing: cream; pantry not scanned: pasta not confirmed"),
+        (nope.id, "Moussaka", "violates preferences: eggplant (no eggplant)"),
+    ]

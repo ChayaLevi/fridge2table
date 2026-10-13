@@ -5,7 +5,8 @@ removed. A staple counts as available only through that list, so a removed stapl
 """
 
 from app.models import (
-    PANTRY_CATEGORIES, InventoryItem, MissingReport, Preference, Recipe, ScanState, ValidationResult,
+    PANTRY_CATEGORIES, FailedCandidate, InventoryItem, MealCandidate, MissingReport, Preference, Recipe,
+    ScanState, SuggestResult, ValidationResult,
 )
 from app.tools.normalize import normalize
 
@@ -78,3 +79,17 @@ def fill_uses_from_inventory(recipe: Recipe, inventory: list[InventoryItem]) -> 
     used = _dedupe([n for n in (normalize(ing.name) for ing in recipe.ingredients) if n in by_name])
     used.sort(key=lambda n: not by_name[n].use_soon)  # stable: recipe order within each group
     return recipe.model_copy(update={"uses_from_inventory": used})
+
+
+def check_candidates(
+    recipes: list[Recipe], inventory: list[InventoryItem], preferences: list[Preference], scan_state: ScanState,
+) -> SuggestResult:
+    """Run validate_suggestion on every candidate: passed ones as MealCandidates, failed ones with the reason."""
+    passed, failed = [], []
+    for recipe in recipes:
+        result = validate_suggestion(recipe, inventory, preferences, scan_state)
+        if result.ok:
+            passed.append(MealCandidate.from_recipe(recipe))
+        else:
+            failed.append(FailedCandidate(id=recipe.id, name=recipe.name, reason=result.reason))
+    return SuggestResult(passed=passed, failed=failed)

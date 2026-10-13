@@ -7,7 +7,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from app.models import Constraints, InventoryChange, Preference
 from app.store import Store
 from app.tools.inventory import update_inventory
-from app.tools.recipes import RECIPE_PROMPT, SUGGEST_PROMPT, get_recipe, suggest_meals
+from app.tools.recipes import RECIPE_PROMPT, STEPS_PROMPT, SUGGEST_PROMPT, get_recipe, get_steps, suggest_meals
 from app.tools.recognize import coerce_category
 
 
@@ -16,7 +16,7 @@ def ing(name, category="other", essential=True, amount="1"):
 
 
 def dish(name, *ingredients, minutes=20):
-    return {"name": name, "ingredients": list(ingredients), "steps": ["cook it"], "time_minutes": minutes}
+    return {"name": name, "ingredients": list(ingredients), "time_minutes": minutes}
 
 
 def fake_model(output):
@@ -168,3 +168,42 @@ def test_prompts_have_the_rules():
 ])
 def test_coerce_category(raw, expected):
     assert coerce_category(raw) == expected
+
+
+# --- no steps in candidates; get_steps on demand -------------------------------------------------
+
+async def test_candidates_have_ids_no_steps_and_are_saved(store):
+    model, _ = fake_model({"recipes": [dish("Omelette", ing("egg", "egg")), dish("Salad", ing("tomato", "vegetable"))]})
+    meals = await suggest_meals(store, model=model)
+    assert [m.steps for m in meals] == [[], []]
+    assert len({m.id for m in meals}) == 2 and all(len(m.id) == 6 for m in meals)
+    for m in meals:
+        assert store.load_recipe(m.id) == m
+    r = await get_recipe(store, "lasagna", model=fake_model(dish("Lasagna", ing("pasta", "pasta")))[0])
+    assert r.steps == [] and store.load_recipe(r.id) == r
+
+
+async def test_get_steps_generates_once_then_reads_from_the_store(store):
+    [m] = await suggest_meals(store, model=fake_model({"recipes": [dish("Omelette", ing("egg", "egg", amount="3"))]})[0])
+    steps_model, calls = fake_model({"steps": ["Whisk the eggs. ", "  Cook   them."]})
+    r = await get_steps(store, m.id, model=steps_model)
+    assert r.id == m.id and r.steps == ["Whisk the eggs.", "Cook them."]
+    instructions, prompt = calls[0]
+    assert "cooking steps" in instructions and "Recipe: Omelette" in prompt and "- egg: 3" in prompt
+    # second call: no model call, same steps
+    again = await get_steps(store, m.id, model=fake_model({"steps": ["other"]})[0])
+    assert again.steps == ["Whisk the eggs.", "Cook them."] and len(calls) == 1
+    assert store.load_recipe(m.id).steps == ["Whisk the eggs.", "Cook them."]
+
+
+async def test_get_steps_unknown_id_and_empty_steps(store):
+    with pytest.raises(KeyError):
+        await get_steps(store, "nope", model=fake_model({"steps": ["x"]})[0])
+    [m] = await suggest_meals(store, model=fake_model({"recipes": [dish("Omelette", ing("egg", "egg"))]})[0])
+    with pytest.raises(ValueError):
+        await get_steps(store, m.id, model=fake_model({"steps": ["  "]})[0])
+
+
+def test_steps_prompt_has_the_rules():
+    assert "3 to 8" in STEPS_PROMPT and "only the ingredients listed" in STEPS_PROMPT
+    assert "Do not write cooking steps" in SUGGEST_PROMPT and "Do not write cooking steps" in RECIPE_PROMPT

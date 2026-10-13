@@ -1,7 +1,10 @@
-"""Recipe generation: meal ideas from the inventory (Mode A) and a standard recipe for a dish (Mode B).
+"""Recipe generation: meal ideas from the inventory (Mode A), a standard recipe for a dish (Mode B), and
+the cooking steps of a recipe on demand (when the user opens a card).
 
 One structured call to RECIPE_MODEL each. The output is never trusted: names are normalized,
 categories coerced, `uses_from_inventory` filled by code, and the checks in `checks.py` decide.
+Candidates carry no steps (they cost most of the generation time); `get_steps(store, recipe_id)` adds
+them later. Every recipe returned is saved in the store by id, so steps can be generated after the run.
 """
 
 import logging
@@ -11,6 +14,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 
+from app import config
+from app.llm import thinking_settings
 from app.models import CATEGORIES, Constraints, Ingredient, Recipe
 from app.store import Store
 from app.tools.checks import fill_uses_from_inventory
@@ -42,7 +47,7 @@ if a dish truly needs one extra ingredient, mark it essential honestly.
 - Places marked NOT SCANNED may hold things you cannot see; do not count on them.
 - Simple home cooking, the kind a parent makes on a weekday. Realistic time_minutes (prep + cooking).
 - Distinct dishes: do not repeat a dish or a near-variant of it.
-- steps: short, numbered in order, 3 to 8 of them.
+- Do not write cooking steps: only name, ingredients, time and servings.
 """ + INGREDIENT_RULES
 
 RECIPE_PROMPT = """\
@@ -51,18 +56,28 @@ Rules:
 - Write the usual version of the dish. Do not drop or replace ingredients because the household lacks \
 them; the inventory is shown only so you name ingredients the same way.
 - Leave out optional extras that conflict with the household's preferences.
-- Realistic time_minutes (prep + cooking). steps: short, in order, 3 to 10 of them.
+- Realistic time_minutes (prep + cooking). Do not write cooking steps: only name, ingredients, time and servings.
 """ + INGREDIENT_RULES
+
+STEPS_PROMPT = """\
+You write the cooking steps for a home recipe whose name, ingredients, time and servings are given.
+Rules:
+- 3 to 8 short steps, in order, each one action a home cook can follow. Use only the ingredients listed.
+- Fit the total time given. No introduction, no tips, no step numbers in the text.
+"""
 
 
 class RecipeDraft(BaseModel):
-    """What the model returns: a Recipe without the code-filled fields."""
+    """What the model returns: a Recipe without the code-filled fields and without steps."""
 
     name: str
     ingredients: list[Ingredient]
-    steps: list[str]
     time_minutes: int
     servings: int = 4
+
+
+class StepsDraft(BaseModel):
+    steps: list[str] = Field(description="the cooking steps in order, 3 to 8")
 
 
 class MealIdeas(BaseModel):
@@ -83,7 +98,7 @@ def _clean(draft: RecipeDraft) -> Recipe:
             continue
         ingredients[name] = ing.model_copy(update={"name": name, "category": coerce_category(ing.category)})
     return Recipe(
-        name=draft.name.strip(), ingredients=list(ingredients.values()), steps=draft.steps,
+        name=draft.name.strip(), ingredients=list(ingredients.values()),
         time_minutes=draft.time_minutes, servings=draft.servings,
     )
 
@@ -101,7 +116,7 @@ def _context(store: Store) -> str:
 
 async def _run(agent: Agent, prompt: str, what: str):
     start = time.perf_counter()
-    result = await agent.run(prompt)
+    result = await agent.run(prompt, model_settings=thinking_settings(config.RECIPE_THINKING))
     usage = result.usage
     log.debug("recipe call (%s): %d chars, %.1fs, %s in / %s out tokens", what, len(prompt),
               time.perf_counter() - start, usage.input_tokens, usage.output_tokens)
@@ -116,6 +131,13 @@ def _model(model: Model | None) -> Model:
     return recipe_model()
 
 
+def _finish(store: Store, recipe: Recipe) -> Recipe:
+    """Fill uses_from_inventory and save the recipe by id (for get_steps later)."""
+    recipe = fill_uses_from_inventory(recipe, get_inventory(store))
+    store.save_recipe(recipe)
+    return recipe
+
+
 async def suggest_meals(
     store: Store,
     constraints: Constraints | None = None,
@@ -124,9 +146,10 @@ async def suggest_meals(
     *,
     model: Model | None = None,
 ) -> list[Recipe]:
-    """Up to `n` meal candidates built around the inventory. Not validated: run validate_suggestion on each.
+    """Up to `n` meal candidates (no steps) built around the inventory. Not validated: run validate_suggestion on each.
 
     Code drops dishes named in `exclude`, duplicate names and dishes over `constraints.max_minutes`.
+    Each recipe is saved in the store by id.
     """
     constraints = constraints or Constraints()
     exclude = exclude or []
@@ -141,7 +164,6 @@ async def suggest_meals(
                   instructions=SUGGEST_PROMPT.format(categories=", ".join(CATEGORIES)))
     ideas: MealIdeas = await _run(agent, "\n".join(lines), "suggest_meals")
 
-    inventory = get_inventory(store)
     seen = {_dish_key(e) for e in exclude}
     out = []
     for draft in ideas.recipes:
@@ -152,13 +174,41 @@ async def suggest_meals(
             log.debug("suggest_meals: dropped %r (%d min > %d)", draft.name, draft.time_minutes, constraints.max_minutes)
             continue
         seen.add(key)
-        out.append(fill_uses_from_inventory(_clean(draft), inventory))
+        out.append(_finish(store, _clean(draft)))
     return out[:n]
 
 
 async def get_recipe(store: Store, dish: str, *, model: Model | None = None) -> Recipe:
-    """The standard home recipe for `dish`. Not checked: run compute_missing on it."""
+    """The standard home recipe for `dish` (no steps). Not checked: run compute_missing on it. Saved by id."""
     agent = Agent(_model(model), output_type=RecipeDraft,
                   instructions=RECIPE_PROMPT.format(categories=", ".join(CATEGORIES)))
     draft: RecipeDraft = await _run(agent, f"{_context(store)}\n\nDish: {dish.strip()}", "get_recipe")
-    return fill_uses_from_inventory(_clean(draft), get_inventory(store))
+    return _finish(store, _clean(draft))
+
+
+def _recipe_text(recipe: Recipe) -> str:
+    ingredients = "\n".join(
+        f"- {i.name}: {i.amount}" + ("" if i.essential else " (optional)") for i in recipe.ingredients
+    )
+    return (f"Recipe: {recipe.name}\nTime: {recipe.time_minutes} minutes, serves {recipe.servings}\n"
+            f"Ingredients:\n{ingredients}")
+
+
+async def get_steps(store: Store, recipe_id: str, *, model: Model | None = None) -> Recipe:
+    """The recipe with its cooking steps: generated on first request (one LLM call), then stored.
+
+    Raises KeyError if no recipe with that id was ever returned by suggest_meals / get_recipe.
+    """
+    recipe = store.load_recipe(recipe_id)
+    if recipe is None:
+        raise KeyError(recipe_id)
+    if recipe.steps:
+        return recipe
+    agent = Agent(_model(model), output_type=StepsDraft, instructions=STEPS_PROMPT)
+    draft: StepsDraft = await _run(agent, _recipe_text(recipe), "get_steps")
+    steps = [" ".join(s.split()) for s in draft.steps if s.strip()]
+    if not steps:
+        raise ValueError(f"the model returned no steps for {recipe.name!r}")
+    recipe = recipe.model_copy(update={"steps": steps})
+    store.save_recipe(recipe)
+    return recipe

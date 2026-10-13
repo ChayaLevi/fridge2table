@@ -15,6 +15,9 @@ VISION_MODEL = os.getenv("VISION_MODEL") or "deepseek-flash"
 AGENT_MODEL = os.getenv("AGENT_MODEL") or "deepseek-v4-pro"
 RECIPE_MODEL = os.getenv("RECIPE_MODEL") or "deepseek-flash"
 VISION_TILES = int(os.getenv("VISION_TILES") or 1)
+# DeepSeek V4 models think by default; thinking roughly doubles latency. "on" / "off".
+AGENT_THINKING = (os.getenv("AGENT_THINKING") or "off").lower() == "on"
+RECIPE_THINKING = (os.getenv("RECIPE_THINKING") or "off").lower() == "on"
 DB_PATH = Path(os.getenv("DB_PATH") or "data/app.db")
 if not DB_PATH.is_absolute():
     DB_PATH = ROOT / DB_PATH

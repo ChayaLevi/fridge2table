@@ -128,17 +128,17 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - **Done when:** the agent runs from Python with a fixture inventory and returns a valid `AgentReply`.
 
 ### T2.2 Output validator (the self-correction guarantee)
-- An `@agent.output_validator` that, for every meal in `AgentReply.meals`:
-  - Mode A meals (no shopping list): `validate_suggestion` must be `ok`, otherwise `raise ModelRetry` with the meal name and the reason ("Kung pao chicken needs peanut, not in inventory. Replace it or move it to a Mode B answer with a shopping list.").
+- An `@agent.output_validator` that resolves every id in `AgentReply.meal_ids` from the run's recipe cache (`ctx.deps.recipes`; an unknown id → `ModelRetry` listing the known ids) and, for each resolved meal:
+  - Mode A meals (no shopping list): re-run `validate_suggestion` on the cached recipe (the inventory may have changed since `suggest_meals` checked it); if not `ok`, `raise ModelRetry` with the meal name and the reason ("Kung pao chicken needs peanut, not in inventory. Replace it or move it to a Mode B answer with a shopping list.").
   - Mode B (a shopping list is present): `shopping_list` must equal `missing_essential` minus the substituted items, and `check_first` must equal `MissingReport.check_first`. Fix both in code if the model's lists differ (trust code over the model).
   - Every `Substitution.use_instead` must be in the inventory; otherwise `ModelRetry`.
   - Also enforce: at most 3 meals, at most 3 questions.
-- Re-fill `uses_from_inventory` with code before returning.
-- **Done when:** a test with a mocked model that first returns an invalid meal shows the retry, then a valid final reply.
+- `fill_meals` (already in `app/agent.py`) then fills `AgentReply.meals` from the cache; the validator never asks the model for recipe content.
+- **Done when:** a test with a mocked model that first returns an invalid meal (bad id, or a cached meal that no longer passes) shows the retry, then a valid final reply.
 
 ### T2.3 Trace capture
 - After each run, walk the run's new messages and build `list[ToolTraceItem]` from tool calls and returns. Summaries must be short ("added 2, removed 1", "5 candidates", "FAILED: missing cream"). Validator retries count as a trace item ("output check failed: …").
-- Also record per-turn latency and token usage (for T5.2).
+- Also record per-turn latency and token usage (for T5.2). Per-step timing already exists: `TurnResult.steps` (`list[StepTiming]`, one per model call and tool call, from `app/timing.py`); the trace can carry the seconds of each tool call from it.
 - **Done when:** a test asserts the trace for a mocked run.
 
 ### T2.4 Terminal chat — `scripts/chat.py`
@@ -168,6 +168,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 ### T3.1 API — `app/api.py`
 - `POST /chat` (multipart: `session_id`, `message`, up to 4 `images`, and a matching list of `locations`, one per image) → `AgentReply` + `trace` + `inventory` + `scan_state` (so the panel refreshes after every turn).
 - `GET /inventory`, `PATCH /inventory` (a list of `InventoryChange`; the panel's direct edits, no agent).
+- `GET /recipe/{id}/steps` → the `Recipe` with `steps` filled, via `get_steps(store, id)` (one `RECIPE_MODEL` call the first time, then from the store; 404 for an unknown id). The page calls it when the user opens a meal card.
 - `GET /opening?session_id=` → proactive greeting (implemented in T4.1; return a static greeting for now).
 - `POST /admin/seed` (demo seeding from `data/demo_seed.json`) and `POST /admin/reset`.
 - Serve `app/static/index.html` at `/`.
@@ -178,7 +179,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - Photo attach: `<input type="file" accept="image/*" multiple capture="environment">`. Show thumbnails before sending, each with a place tag (Fridge / Freezer / Pantry) that cycles on tap. Default: the first photo is Fridge; each next photo copies the previous tag.
 - Inventory panel: each location header shows "scanned …" / "not scanned yet" and a camera button that opens the picker pre-tagged with that place.
 - Shopping list block: "To buy" and "Check your pantry first" as two groups.
-- Meal card tap → bottom sheet with the full recipe. Trace line collapsed by default.
+- Meal card tap → bottom sheet with the full recipe; the steps come from `GET /recipe/{id}/steps` (show a spinner for the 2-3 s of the first call). Trace line collapsed by default.
 - Inventory drawer: tap quantity to cycle, "use soon" toggle, delete, add. Each edit calls `PATCH /inventory`.
 - **Done when:** the full flow works in a phone browser on the same network: photos → panel fills → ask for meals → cards → open a recipe → edit the panel → the next answer reflects the edit.
 
@@ -218,7 +219,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - **Done when:** the human picks the model and `.env` is updated.
 
 ### T5.2 Latency
-- Measure: photos → inventory; a Mode A turn; a Mode B turn (use the timings from T2.3). If a Mode A turn takes > 25 s: lower `n` in `suggest_meals`, run `validate_suggestion` for all candidates in one tool call (accept a list), or switch `AGENT_MODEL` to `deepseek-v4-flash` and rerun the scenarios to check quality holds. Stream the message text if not done yet.
+- Measure: photos → inventory; a Mode A turn; a Mode B turn (use `TurnResult.steps`). Mode A and Mode B are already at 10-15 s after the 2026-10-13 latency fix (reply by id, validation inside `suggest_meals`, no steps in candidates, thinking off). If a Mode A turn is again > 25 s: lower `n` in `suggest_meals`, or switch `AGENT_MODEL` to `deepseek-flash` and rerun the scenarios to check quality holds. Stream the message text if not done yet.
 - **Done when:** the numbers are in `eval/RESULTS.md` and meet the targets, or the gap is explained.
 
 ### T5.3 Real user run #1 🧑

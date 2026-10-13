@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 from app import config
-from app.models import InventoryItem, Location, Preference, ScanState
+from app.models import InventoryItem, Location, Preference, Recipe, ScanState
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS inventory (
@@ -33,9 +33,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
     messages TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recipes (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+);
 """
 
-_TABLES = ("inventory", "preferences", "staples_state", "scan_state", "sessions")
+_TABLES = ("inventory", "preferences", "staples_state", "scan_state", "sessions", "recipes")
 
 
 class Store:
@@ -92,6 +96,18 @@ class Store:
                 self._conn.execute("INSERT OR IGNORE INTO staples_state (name) VALUES (?)", (name,))
             else:
                 self._conn.execute("DELETE FROM staples_state WHERE name = ?", (name,))
+
+    # recipes (every recipe a tool returned, by id, so steps can be generated later for a card)
+
+    def save_recipe(self, recipe: Recipe) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO recipes (id, data) VALUES (?, ?)", (recipe.id, recipe.model_dump_json()),
+            )
+
+    def load_recipe(self, recipe_id: str) -> Recipe | None:
+        row = self._conn.execute("SELECT data FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
+        return Recipe.model_validate_json(row[0]) if row else None
 
     # scan state
 

@@ -18,12 +18,15 @@ from pathlib import Path
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput, UsageLimits
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResult
+from pydantic_ai.toolsets import FunctionToolset
 
-from app.llm import agent_model
+from app import config, llm
 from app.models import (
-    AgentReply, Constraints, InventoryChange, Location, MissingReport, Recipe, ValidationResult,
+    AgentReply, Constraints, InventoryChange, Location, MealCandidate, MissingReport, Recipe, StepTiming,
+    SuggestResult, ValidationResult,
 )
 from app.store import Store
+from app.timing import TimedModel, TimedToolset
 from app.tools import checks, inventory, preferences, recipes, recognize
 
 log = logging.getLogger(__name__)
@@ -44,14 +47,15 @@ was returned by a tool in this turn. After update_inventory or recognize_invento
 tool returned.
 2. If the message says the inventory changed ("we're out of eggs", "I bought chicken"), call \
 update_inventory first, then continue with the request.
-3. Mode A: call suggest_meals with the user's constraints, then validate_suggestion for every candidate \
-you want to show. Show only meals whose check is ok, 1 to 3 of them. If a candidate fails, drop it and \
-take another (or call suggest_meals again with exclude), or present it as a Mode B answer with a \
-shopping list. Prefer meals that use items marked USE SOON.
+3. Mode A: call suggest_meals with the user's constraints. It returns candidates already checked by \
+code: "passed" ones may be shown as they are (put 1 to 3 of their ids in meal_ids); "failed" ones must \
+not be shown as Mode A meals: drop them, or call suggest_meals again with exclude if fewer than 1 passed, \
+or present one as a Mode B answer with a shopping list. Prefer meals that use items marked USE SOON.
 4. Mode B: call get_recipe, then compute_missing. For each missing essential ingredient, look in the \
 inventory for a reasonable substitute (cottage cheese for ricotta, yogurt for sour cream) and list it in \
 substitutions; use_instead must be an inventory item. shopping_list = the report's missing_essential \
-minus the substituted items; check_first = the report's check_first. Put the recipe in meals (that one dish). If nothing is missing, say so.
+minus the substituted items; check_first = the report's check_first. Put the recipe's id in meal_ids (that \
+one dish). If nothing is missing, say so.
 5. Pantry rule: while the pantry is NOT SCANNED, never say that a pantry-type ingredient (grains, pasta, \
 canned goods, baking items, sauces, condiments, spices, snacks) is missing; it goes under check_first \
 ("check your pantry first"). In Mode A without a pantry scan, rely only on what was scanned plus the \
@@ -64,8 +68,8 @@ never ask for it again once the user declined.
 eggplant", "we don't eat pork"), call save_preference with the ingredients to avoid, then confirm in one \
 sentence what you will remember.
 8. When the inventory has UNCERTAIN items, you may ask about at most 3 of them, in one message.
-9. Keep message short (1 to 3 sentences). Meals go in meals as the full recipes the tools returned \
-(at most 3), never as prose. At most 3 questions.
+9. Keep message short (1 to 3 sentences). Meals go in meal_ids as the ids the tools returned (at most \
+3); never repeat a recipe's ingredients or steps in message: the user sees the cards. At most 3 questions.
 10. Never order, buy, remove or change anything the user did not ask for.
 11. Use at most about 8 tool calls per turn. If you are stuck, answer with what you have and say what \
 is missing.
@@ -80,12 +84,15 @@ class Deps:
 
     store: Store
     images: list[tuple[Path, Location]] = field(default_factory=list)
-    # Dishes returned by suggest_meals / get_recipe in this run, by name, so that compute_missing and
-    # validate_suggestion take a dish name instead of a whole recipe (fewer tokens, no copy errors).
+    # Every recipe returned by suggest_meals / get_recipe in this run, by id. compute_missing and
+    # validate_suggestion take an id, and AgentReply.meal_ids refers to these; run_turn fills
+    # AgentReply.meals from here, so the model never copies recipe content.
     recipes: dict[str, Recipe] = field(default_factory=dict)
     # Model overrides for the two LLM tools (tests pass FunctionModels; None = from config).
     recipe_model: Model | None = None
     vision_model: Model | None = None
+    # Timing of every model call and tool call in this run, in order (filled by app/timing.py).
+    steps: list[StepTiming] = field(default_factory=list)
 
 
 OUTPUT_TOOL_NAME = "reply"
@@ -93,9 +100,13 @@ OUTPUT_TOOL_NAME = "reply"
 # Explicit tool output. With the default "auto" mode pydantic-ai also tries to parse a plain-text
 # answer as JSON and sends the model a confusing "Invalid JSON" retry; in tool mode a plain-text answer
 # gets "Please include your response in a tool call", which the model follows.
+# The tools live in their own toolset so that TimedToolset can time every call (see app/timing.py).
+toolset: FunctionToolset[Deps] = FunctionToolset(max_retries=2)
+
 agent: Agent[Deps, AgentReply] = Agent(
     None,
     deps_type=Deps,
+    toolsets=[TimedToolset(toolset)],
     output_type=ToolOutput(
         AgentReply, name=OUTPUT_TOOL_NAME,
         description="Your final answer to the user. Every turn must end with a call to this tool, "
@@ -140,19 +151,33 @@ def _dish_key(name: str) -> str:
 
 
 def _remember(ctx: RunContext[Deps], recipe: Recipe) -> Recipe:
-    ctx.deps.recipes[_dish_key(recipe.name)] = recipe
+    ctx.deps.recipes[recipe.id] = recipe
     return recipe
 
 
-def _find_recipe(ctx: RunContext[Deps], dish: str) -> Recipe:
-    recipe = ctx.deps.recipes.get(_dish_key(dish))
+def _find_recipe(ctx: RunContext[Deps], ref: str) -> Recipe:
+    """The run's recipe with that id; a dish name (case/space-insensitive) is accepted as a fallback."""
+    ref = ref.strip()
+    recipe = ctx.deps.recipes.get(ref)
     if recipe is None:
-        known = ", ".join(r.name for r in ctx.deps.recipes.values()) or "none yet"
+        recipe = next((r for r in ctx.deps.recipes.values() if _dish_key(r.name) == _dish_key(ref)), None)
+    if recipe is None:
+        known = ", ".join(f"{r.id} ({r.name})" for r in ctx.deps.recipes.values()) or "none yet"
         raise ModelRetry(
-            f"Unknown dish {dish!r}: call suggest_meals or get_recipe first and use the dish name it "
-            f"returned. Dishes from this turn: {known}."
+            f"Unknown recipe {ref!r}: call suggest_meals or get_recipe first and use the id it returned. "
+            f"Recipes from this turn: {known}."
         )
     return recipe
+
+
+def _recipe_model(ctx: RunContext[Deps]) -> Model:
+    model = ctx.deps.recipe_model or llm.recipe_model()
+    return TimedModel(model, ctx.deps.steps, f"recipe {model.model_name}")
+
+
+def _vision_model(ctx: RunContext[Deps]) -> Model:
+    model = ctx.deps.vision_model or llm.vision_model()
+    return TimedModel(model, ctx.deps.steps, f"vision {model.model_name}")
 
 
 def _inventory_text(store: Store) -> str:
@@ -167,7 +192,7 @@ def _log(tool: str, args: object, result: object) -> None:
 # All async: pydantic-ai runs sync tools in a worker thread, and the store's SQLite connection belongs
 # to the event loop's thread.
 
-@agent.tool
+@toolset.tool
 async def recognize_inventory(ctx: RunContext[Deps]) -> str:
     """Recognize the food in the photos the user attached to this message and merge it into the inventory.
 
@@ -179,7 +204,7 @@ async def recognize_inventory(ctx: RunContext[Deps]) -> str:
     if not images:
         _log("recognize_inventory", "", "no photos")
         return "No photos are attached to this message. Ask the user to attach photos of the fridge, freezer or pantry."
-    items = await recognize.recognize_inventory(images, store=ctx.deps.store, model=ctx.deps.vision_model)
+    items = await recognize.recognize_inventory(images, store=ctx.deps.store, model=_vision_model(ctx))
     inventory.merge_recognized(ctx.deps.store, items)
     ctx.deps.images = []  # the same photos are not processed twice in one run
     uncertain = [i.display_name for i in items if i.uncertain]
@@ -193,7 +218,7 @@ async def recognize_inventory(ctx: RunContext[Deps]) -> str:
     return out
 
 
-@agent.tool
+@toolset.tool
 async def get_inventory(ctx: RunContext[Deps]) -> str:
     """Return the current inventory (items by place, scan state, staples).
 
@@ -205,7 +230,7 @@ async def get_inventory(ctx: RunContext[Deps]) -> str:
     return out
 
 
-@agent.tool
+@toolset.tool
 async def update_inventory(ctx: RunContext[Deps], changes: list[InventoryChange]) -> str:
     """Apply inventory changes the user asked for and return the updated inventory.
 
@@ -222,70 +247,77 @@ async def update_inventory(ctx: RunContext[Deps], changes: list[InventoryChange]
     return out
 
 
-@agent.tool
+@toolset.tool
 async def suggest_meals(
     ctx: RunContext[Deps],
     request: str = "",
     max_minutes: int | None = None,
     n: int = 5,
     exclude: list[str] | None = None,
-) -> list[Recipe]:
-    """Generate up to n meal candidates from the inventory (Mode A). They are NOT checked yet.
+) -> SuggestResult:
+    """Generate up to n meal candidates from the inventory (Mode A), already checked by code.
 
     request: the user's wishes in free text ("quick, kids are eating, vegetarian"). max_minutes: time
     limit if the user gave one. exclude: dish names already shown or rejected. Candidates are built
-    around inventory items and prefer USE SOON ones. Run validate_suggestion on each candidate you want
-    to show; show only the ok ones.
+    around inventory items and prefer USE SOON ones. "passed" candidates use only inventory items and
+    staples and respect the preferences: show them by putting their ids in meal_ids. "failed" ones say
+    why (missing items, pantry not scanned, a violated preference) and must not be shown as Mode A meals.
     """
     constraints = Constraints(text=request, max_minutes=max_minutes)
-    found = await recipes.suggest_meals(ctx.deps.store, constraints, n=n, exclude=exclude, model=ctx.deps.recipe_model)
-    out = [_remember(ctx, r) for r in found]
-    _log("suggest_meals", f"{request!r} max={max_minutes} n={n} exclude={exclude}", [r.name for r in out])
+    store = ctx.deps.store
+    found = await recipes.suggest_meals(store, constraints, n=n, exclude=exclude, model=_recipe_model(ctx))
+    for r in found:
+        _remember(ctx, r)
+    out = checks.check_candidates(found, inventory.get_inventory(store), store.load_preferences(), store.load_scan_state())
+    _log("suggest_meals", f"{request!r} max={max_minutes} n={n} exclude={exclude}",
+         f"passed {[c.name for c in out.passed]} failed {[(c.name, c.reason) for c in out.failed]}")
     return out
 
 
-@agent.tool
-async def get_recipe(ctx: RunContext[Deps], dish: str) -> Recipe:
+@toolset.tool
+async def get_recipe(ctx: RunContext[Deps], dish: str) -> MealCandidate:
     """The standard home recipe for a dish the user named (Mode B). Not checked: call compute_missing next.
 
-    dish: the dish name as the user said it ("lasagna", "spaghetti bolognese").
+    dish: the dish name as the user said it ("lasagna", "spaghetti bolognese"). Returns the recipe's id,
+    ingredients and time; put the id in meal_ids when you present the dish.
     """
-    recipe = _remember(ctx, await recipes.get_recipe(ctx.deps.store, dish, model=ctx.deps.recipe_model))
-    _log("get_recipe", dish, f"{recipe.name}: {len(recipe.ingredients)} ingredients, {recipe.time_minutes} min")
-    return recipe
+    recipe = _remember(ctx, await recipes.get_recipe(ctx.deps.store, dish, model=_recipe_model(ctx)))
+    _log("get_recipe", dish, f"{recipe.id} {recipe.name}: {len(recipe.ingredients)} ingredients, {recipe.time_minutes} min")
+    return MealCandidate.from_recipe(recipe)
 
 
-@agent.tool
-async def compute_missing(ctx: RunContext[Deps], dish: str) -> MissingReport:
-    """What the household lacks for a dish returned by get_recipe or suggest_meals in this turn (code, exact).
+@toolset.tool
+async def compute_missing(ctx: RunContext[Deps], recipe_id: str) -> MissingReport:
+    """What the household lacks for a recipe returned by get_recipe or suggest_meals in this turn (code, exact).
 
-    dish: the dish name exactly as the tool returned it. missing_essential = definitely missing ("to
+    recipe_id: the id the tool returned. missing_essential = definitely missing ("to
     buy"); check_first = pantry-type ingredients not confirmed because the pantry was not scanned ("check
     your pantry first"); missing_optional = optional extras. Staples, synonyms and plurals are handled.
     """
     store = ctx.deps.store
-    report = checks.compute_missing(_find_recipe(ctx, dish), inventory.get_inventory(store), store.load_scan_state())
-    _log("compute_missing", dish, report)
+    report = checks.compute_missing(_find_recipe(ctx, recipe_id), inventory.get_inventory(store), store.load_scan_state())
+    _log("compute_missing", recipe_id, report)
     return report
 
 
-@agent.tool
-async def validate_suggestion(ctx: RunContext[Deps], dish: str) -> ValidationResult:
-    """Check a candidate from suggest_meals or get_recipe against the inventory and the preferences (code, exact).
+@toolset.tool
+async def validate_suggestion(ctx: RunContext[Deps], recipe_id: str) -> ValidationResult:
+    """Re-check a recipe from this turn against the inventory and the preferences (code, exact).
 
-    dish: the dish name exactly as the tool returned it. ok=True means every essential ingredient is in
-    the inventory (or a staple) and no avoided ingredient is used; then you may show the meal. If not
-    ok, reason says why (missing items, "pantry not scanned", violated preferences).
+    suggest_meals already checks its candidates; use this after the inventory changed in this turn, or
+    for a get_recipe dish you want to show as a Mode A meal. recipe_id: the id the tool returned.
+    ok=True means every essential ingredient is in the inventory (or a staple) and no avoided ingredient
+    is used. If not ok, reason says why (missing items, "pantry not scanned", violated preferences).
     """
     store = ctx.deps.store
     result = checks.validate_suggestion(
-        _find_recipe(ctx, dish), inventory.get_inventory(store), store.load_preferences(), store.load_scan_state(),
+        _find_recipe(ctx, recipe_id), inventory.get_inventory(store), store.load_preferences(), store.load_scan_state(),
     )
-    _log("validate_suggestion", dish, "ok" if result.ok else f"FAILED: {result.reason}")
+    _log("validate_suggestion", recipe_id, "ok" if result.ok else f"FAILED: {result.reason}")
     return result
 
 
-@agent.tool
+@toolset.tool
 async def save_preference(ctx: RunContext[Deps], text: str, avoid: list[str]) -> str:
     """Remember a lasting like or dislike of the household, for this and all future sessions.
 
@@ -303,11 +335,32 @@ async def save_preference(ctx: RunContext[Deps], text: str, avoid: list[str]) ->
 
 # --- running one turn -----------------------------------------------------------------------------
 
+def fill_meals(reply: AgentReply, cache: dict[str, Recipe]) -> AgentReply:
+    """Replace AgentReply.meals with the cached recipes named in meal_ids (in that order, deduped).
+
+    Ids the run never produced are dropped with a warning; T2.2's output validator turns them into a
+    ModelRetry before we get here.
+    """
+    meals, seen = [], set()
+    for ref in reply.meal_ids:
+        recipe = cache.get(ref.strip())
+        if recipe is None:
+            log.warning("reply names unknown recipe id %r; dropped", ref)
+            continue
+        if recipe.id not in seen:
+            seen.add(recipe.id)
+            meals.append(recipe)
+    reply.meal_ids = [m.id for m in meals]
+    reply.meals = meals
+    return reply
+
+
 @dataclass
 class TurnResult:
     reply: AgentReply
     result: AgentRunResult[AgentReply]  # messages and usage, for the trace (T2.3)
     latency_s: float
+    steps: list[StepTiming]  # every model call and tool call of the turn, timed, in order
 
 
 async def run_turn(
@@ -329,18 +382,21 @@ async def run_turn(
         raise ValueError("a turn needs a message or at least one photo")
     deps = Deps(store=store, images=images, recipe_model=recipe_model, vision_model=vision_model)
     history = store.load_session_messages(session_id)
+    model = model or llm.agent_model()
     start = time.perf_counter()
     result = await agent.run(
         user_prompt(message, images),
         deps=deps,
-        model=model or agent_model(),
+        model=TimedModel(model, deps.steps, f"agent {model.model_name}"),
         message_history=history or None,
         usage_limits=USAGE_LIMITS,
+        model_settings=llm.thinking_settings(config.AGENT_THINKING),
     )
     latency = time.perf_counter() - start
+    fill_meals(result.output, deps.recipes)
     store.save_session_messages(session_id, result.all_messages())
     usage = result.usage
     log.info("agent turn %s: %.1fs, %d requests, %d tool calls, %s in / %s out tokens, %d meals",
              session_id, latency, usage.requests, usage.tool_calls, usage.input_tokens, usage.output_tokens,
              len(result.output.meals))
-    return TurnResult(reply=result.output, result=result, latency_s=latency)
+    return TurnResult(reply=result.output, result=result, latency_s=latency, steps=deps.steps)

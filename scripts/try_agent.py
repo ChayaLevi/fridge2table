@@ -18,6 +18,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart, T
 
 from app.agent import run_turn  # noqa: E402
 from app.llm import setup_observability  # noqa: E402
+from app.timing import format_steps  # noqa: E402
 from try_recipes import demo_store  # noqa: E402
 
 DEFAULT_TURNS = ["What can I cook tonight? Something under 30 minutes, the kids are eating.", "I want to make lasagna"]
@@ -37,6 +38,8 @@ def show(turn) -> None:
             for p in m.parts:
                 if isinstance(p, RetryPromptPart):
                     print(f"  !! retry: {str(p.content)[:140]}")
+    print("timing:")
+    print(format_steps(turn.steps))
     r = turn.reply
     print(f"message: {r.message}")
     for meal in r.meals:

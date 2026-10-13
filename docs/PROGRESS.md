@@ -17,6 +17,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T1.6 Recipes
 - [x] T1.7 Preferences
 - [x] T2.1 Agent
+- [x] T2.1b Latency fix (reply by id, validation inside suggest_meals, steps on demand, per-step timing, thinking off)
 - [ ] T2.2 Output validator
 - [ ] T2.3 Trace capture
 - [ ] T2.4 Terminal chat
@@ -36,10 +37,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T2.2 Output validator** (nothing needed from the human). Then T2.3-T2.5.
+- **Next task: T2.2 Output validator** (nothing needed from the human): validates by id against `ctx.deps.recipes`, re-checks Mode A meals from the cache (see the updated T2.2 in PLAN). Then T2.3-T2.5.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 273 tests pass. All P1 tools and the agent (`app/agent.py`, `run_turn`) exist; no output validator and no trace yet.
+- State: 285 tests pass. All P1 tools and the agent (`app/agent.py`, `run_turn`) exist; per-step timing exists (`TurnResult.steps`); no output validator and no trace yet.
 
 ## Current model settings
 
@@ -50,6 +51,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - RECIPE_MODEL: `deepseek-flash`
 - `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired aliases: still accepted, served by `deepseek-flash`.
 - VISION_TILES: 1 (best value chosen in T1.4)
+- AGENT_THINKING / RECIPE_THINKING: `off` (2026-10-13; DeepSeek V4 thinks by default; off = `reasoning_effort: none` via pydantic-ai's `thinking=False`)
 
 ## Decisions and deviations from the plan
 
@@ -63,9 +65,10 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
-- (T2.1) **Mode A turn takes 50-80 s** with `deepseek-v4-pro` (target 25 s): `suggest_meals` 15-45 s, then the final `reply` call writes 3 full recipes (~2,000 output tokens, 15-20 s). Mode B 35-45 s, chit-chat 2-7 s. Ideas for T2.2/T5.2: let the model name the meals and have code copy the recipes from `Deps.recipes` (the cache already exists); lower `n`; try `deepseek-flash` as `AGENT_MODEL`.
+- ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
+- (T2.1b) Mode B quality, seen in both thinking modes: the agent sometimes proposes a substitute in `message` prose instead of `substitutions` (cottage cheese for parmesan), and once `deepseek-flash` marked ground beef / parmesan as optional in a lasagna recipe, so `compute_missing` found nothing to buy. The first is for T2.2/T4.2 (validator + instructions); the second is a recipe-prompt issue (`essential` honesty) to watch in T2.5.
 - (T2.1) Synonym gaps seen in real Mode B runs: `ricotta cheese` != `ricotta`, `crushed tomato` / `tomato paste` are separate names (both correct but noisy in `check_first`); `lasagna noodle` vs `pasta` as before.
-- (T1.6) `suggest_meals` takes ~28 s with `deepseek-flash` for 5 full recipes (`get_recipe` ~10 s). Too slow for the 25 s Mode A target once the agent's own calls are added; T5.2 should lower `n` or drop `steps` from the candidates.
+- ~~(T1.6) `suggest_meals` takes ~28 s~~ Fixed 2026-10-13: 5-7 s without steps and without thinking (`get_recipe` 2-3 s).
 - (T1.6) `lasagna noodle` does not normalize to `pasta` (no synonym), so plain pasta in the inventory does not cover lasagna sheets. Arguably right; revisit if Mode B looks wrong in scenarios.
 
 - (T0.4) The human's `.env` still sets `VISION_MODEL=deepseek-v4-flash-vision-exp` / `RECIPE_MODEL=deepseek-v4-flash` (retired aliases, still served by `deepseek-flash`). Change both to `deepseek-flash`.
@@ -73,6 +76,50 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T2.1b Latency fix (before T2.2)
+- Why: Mode A turns took 44-80 s with `deepseek-v4-pro` (target 25 s). Measured first, then fixed, then measured again.
+- Built / changed:
+  - `app/timing.py` (new): `TimedModel` (a `WrapperModel` that appends a `StepTiming` after every request, streaming included) and `TimedToolset` (a `WrapperToolset` that times every tool call, retries included); `result_summary()` / `response_detail()` make the one-line summaries (T2.3 can reuse them); `format_steps()` prints the breakdown. `app/models.py`: `StepTiming`.
+  - `app/agent.py`: tools now live in a module-level `FunctionToolset` (`toolset`) wrapped in `TimedToolset`; `run_turn` wraps the agent model in `TimedModel("agent <name>")`, the recipe/vision models are wrapped per call (`recipe <name>`, `vision <name>`); `Deps.steps` and `TurnResult.steps` carry the timings. `scripts/try_agent.py` prints them.
+  - **Reply by reference:** `Recipe.id` (6 hex chars, `new_recipe_id()`), `AgentReply.meal_ids` (what the model fills) and `AgentReply.meals` (`SkipJsonSchema`, hidden from the model, filled by `fill_meals()` in `run_turn` from `Deps.recipes`, now keyed by id; unknown ids are dropped with a warning until T2.2 turns them into a `ModelRetry`). `compute_missing(recipe_id)` / `validate_suggestion(recipe_id)` take the id (a dish name still works as a fallback). `get_recipe` returns a `MealCandidate` (id, name, time, ingredient strings, uses) instead of the `Recipe`.
+  - **Validation inside the tool:** `checks.check_candidates()` runs `validate_suggestion` on every candidate; the `suggest_meals` tool returns `SuggestResult(passed, failed)` with the reason per failed dish. `validate_suggestion` stays a tool (Mode B dishes, re-checks after an inventory change). Instructions rules 3, 4 and 9 rewritten for ids.
+  - **Steps on demand:** `RecipeDraft` has no `steps`; `SUGGEST_PROMPT` / `RECIPE_PROMPT` say "do not write cooking steps"; `Recipe.steps` defaults to `[]`. New `recipes.get_steps(store, recipe_id, model=None)` (prompt `STEPS_PROMPT`, output `StepsDraft`) generates the steps once and stores them; `KeyError` for an unknown id. Every recipe a tool returns is saved by `store.save_recipe()` (new `recipes` table, `load_recipe(id)`), so the API can call `get_steps` after the run.
+  - **Thinking off:** `config.AGENT_THINKING` / `RECIPE_THINKING` (env, default `off`), applied as `model_settings=thinking_settings(...)` (`app/llm.py`) in `run_turn` and in the recipe calls. pydantic-ai sends `reasoning_effort: none`; DeepSeek accepts it for both models (checked by hand: the thinking parts disappear).
+  - Tests: 285 pass (was 273). Updated `test_agent.py` (ids, `SuggestResult`, `fill_meals`, timing steps, schema hides `meals`), `test_recipes.py` (ids, no steps, `get_steps` once-then-stored, unknown id, empty steps), `test_checks.py` (`check_candidates`), `test_models.py`, `test_store.py` (recipes table).
+- Measurements (real models, demo inventory, `scripts/try_agent.py`; the baseline run of the day was 44 s, earlier runs 50-80 s):
+
+  | Step | Before | After (thinking off) | After (agent thinking on) |
+  |---|---|---|---|
+  | agent call 1 (plan → suggest_meals) | 3.0 s (337 chars thinking) | 2.3 s | 2.9 s |
+  | recipe model inside suggest_meals | 21.4 s (5 full recipes, 3,937 out tokens, 6,435 chars thinking) | 5.7 s (1,453 out tokens) | 5.5 s |
+  | agent call 2 (validate_suggestion x4) | 4.3 s | gone (checked inside the tool) | gone |
+  | agent call 3 (reply) | 14.8 s (1,641 out tokens: 3 recipes copied) | 2.6 s (86 out tokens: 3 ids) | 3.4 s |
+  | **Mode A turn** | **44.2 s** | **11.4 s** | **12.6 s** |
+  | "out of eggs, 20 minutes" | 79 s (T2.1) | 14.4 s | 13.4 s |
+  | Mode B lasagna | 35-47 s (T2.1) | 9.3 s | 10.0 s |
+  | "kids hated the eggplant" | 7 s (T2.1) | 3.1 s | 5.2 s |
+  | `get_steps` (first open of a card) | n/a | 2.6 s, then 0 s from the store | |
+
+- Thinking on vs off for `AGENT_MODEL` (same 4 turns, thinking on only for the agent): identical tool choices in all 4 turns (`suggest_meals` → `reply`; `update_inventory` → `suggest_meals` → `reply`; `get_recipe` → `compute_missing` → `reply`; `save_preference` → `reply`), same `meal_ids` discipline, no retries either way. Off is 0.6-2 s faster per agent call. Decision: **off** for both models (`.env.example`). The recipe model's thinking was the single biggest cost (6,435 chars before each answer).
+- Decisions / deviations: `get_recipe` is also step-less (Mode B cards get steps from `get_steps` too); ids are random 6-hex (unique across runs, so `GET /recipe/{id}/steps` is unambiguous); a dish name is still accepted by `compute_missing` / `validate_suggestion` as a fallback; `n` stays 5 (cheap now, gives the agent fallbacks when a candidate fails).
+- Next tasks must know: T2.2 validates `meal_ids` against `ctx.deps.recipes` and re-checks Mode A meals from the cache; `fill_meals` already exists. T2.3: `turn.steps` has every model/tool call with seconds; `app/timing.py` has `result_summary`. T3.1: `GET /recipe/{id}/steps` → `recipes.get_steps(store, id)`; `AgentReply.meals` is filled when `run_turn` returns. T3.2: cards show name/time/ingredients; steps load on open.
+- Open issues: Mode B substitution in prose / `essential` honesty (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run python scripts/try_agent.py
+```
+Expected: `285 passed`. Then (real models, ~25 s for both turns) each turn ends with a `timing:` block, one line per model call and tool call with seconds, e.g. `recipe deepseek-flash` 4-8 s, `suggest_meals ... passed 5: ...`, and a last line like `11.3s  total (4.9s agent model + 6.4s tools)`. Turn 1 (Mode A) is 10-15 s, has no `validate_suggestion` line and no `thinking` in the agent lines; the `reply` call has under ~120 output tokens and its args show `"meal_ids": [...]`. Turn 2 (lasagna) is about 10 s with `get_recipe` → `compute_missing` → `reply`.
+Manual check (cmd.exe):
+```
+set AGENT_THINKING=on
+uv run python scripts/try_agent.py "What can I cook tonight?"
+set AGENT_THINKING=off
+uv run python -c "import asyncio,sys; sys.path.insert(0,'scripts'); from try_recipes import demo_store; from app.tools.recipes import suggest_meals, get_steps; s=demo_store(); m=asyncio.run(suggest_meals(s,n=1))[0]; print(m.steps); print(asyncio.run(get_steps(s,m.id)).steps)"
+```
+The first run shows `thinking N chars` on the `agent deepseek-v4-pro` lines with the same tool sequence, 1-2 s slower. The last command prints `[]` (no steps in the candidate) and then a list of 3-8 cooking steps.
 
 ### 2026-10-13 — T2.1 Agent
 - Built: `app/agent.py` (`agent`, `Deps`, `INSTRUCTIONS`, `USAGE_LIMITS`, `OUTPUT_TOOL_NAME`, 8 tool wrappers, `user_prompt`, `run_turn` -> `TurnResult`), `tests/test_agent.py` (14 tests, scripted `FunctionModel`s, no network; 273 total pass), `scripts/try_agent.py` (manual real-model run on the demo inventory of `try_recipes.py`). `app/store.py`: `sqlite3.connect(..., check_same_thread=False)`.

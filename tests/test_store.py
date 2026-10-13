@@ -121,3 +121,18 @@ def test_reset_all(db_path):
     assert s.load_removed_staples() == set()
     assert s.load_scan_state().scanned == {}
     assert s.load_session_messages("a") == []
+
+
+def test_recipes_by_id(db_path):
+    from app.models import Ingredient, Recipe
+
+    s = Store(db_path)
+    r = Recipe(name="Omelette", ingredients=[Ingredient(name="egg", amount="3", essential=True, category="egg")],
+               time_minutes=10)
+    assert s.load_recipe(r.id) is None
+    s.save_recipe(r)
+    s.save_recipe(r.model_copy(update={"steps": ["whisk", "cook"]}))  # replace by id
+    s.close()
+    s = Store(db_path)
+    assert s.load_recipe(r.id).steps == ["whisk", "cook"]
+    s.close()

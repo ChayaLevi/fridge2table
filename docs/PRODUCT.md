@@ -87,15 +87,18 @@ All tools live in `app/tools/` as plain functions with Pydantic I/O. The agent w
 | `recognize_inventory(image_paths)` | LLM (vision) | images → `list[InventoryItem]` (draft, with `confidence`, `uncertain`) |
 | `get_inventory()` | code | → `list[InventoryItem]` (confirmed + staples) |
 | `update_inventory(changes)` | code | `list[InventoryChange]` (add / remove / set_qty / set_use_soon / rename) → updated inventory |
-| `suggest_meals(constraints, n, exclude)` | LLM (text) | free-text constraints, how many, dishes to exclude → `list[Recipe]` candidates (structured) |
-| `get_recipe(dish)` | LLM (text) | dish name → `Recipe` |
-| `compute_missing(recipe)` | **code** | `Recipe` → `MissingReport` (essential ingredients missing, after normalization and staples) |
-| `validate_suggestion(recipe)` | **code** | `Recipe` → `ValidationResult` (ok, missing essentials, violated preferences) |
+| `suggest_meals(constraints, n, exclude)` | LLM (text) + code | free-text constraints, how many, dishes to exclude → `SuggestResult`: candidates (id, name, ingredients, time; **no steps**) already run through `validate_suggestion`, split into `passed` and `failed` (with the reason) |
+| `get_recipe(dish)` | LLM (text) | dish name → `Recipe` (no steps); the agent sees it as a `MealCandidate` |
+| `get_steps(recipe_id)` | LLM (text) | recipe id → the same `Recipe` with `steps` filled; generated on first request, then stored. Called by the API when the user opens a card, never by the agent |
+| `compute_missing(recipe_id)` | **code** | id of a recipe from this run → `MissingReport` (essential ingredients missing, after normalization and staples) |
+| `validate_suggestion(recipe_id)` | **code** | id of a recipe from this run → `ValidationResult` (ok, missing essentials, violated preferences). Still a separate tool: for Mode B dishes and for re-checks after an inventory change in the same turn |
 | `save_preference(text, avoid)` | code | free text + list of canonical ingredients to avoid → `Preference` |
 | `get_preferences()` | code | → `list[Preference]` |
 
 Notes:
 - `suggest_meals` and `get_recipe` receive the current inventory and preferences inside their prompt, and must return structured `Recipe` objects. Their output is never trusted: `validate_suggestion` / `compute_missing` decide.
+- **Recipes by reference (the recipe cache).** Every `Recipe` has a short random `id`. Each recipe a tool returns is kept in a per-run cache (`Deps.recipes`) and saved in the store by id. The agent refers to recipes only by id: `compute_missing` / `validate_suggestion` take an id, and the final reply carries `meal_ids`, never recipe content. After the run, code fills `AgentReply.meals` with the full `Recipe` objects from the cache. This keeps the model from re-typing recipes (it was 15-20 s of the turn) and removes copy errors.
+- **Steps on demand.** Candidates and Mode B recipes are generated without cooking steps (steps were most of the generation time). The UI shows name, time and ingredients on the card; when the user opens a card the API calls `get_steps(recipe_id)` once and stores the steps with the recipe.
 - Substitutions in Mode B are proposed by the agent itself (it has the inventory). The output validator checks that every proposed substitute is in the inventory.
 
 ## 7. Data model
@@ -131,12 +134,29 @@ class ScanState(BaseModel):
     freezer_declined: bool = False
 
 class Recipe(BaseModel):
+    id: str                 # short random id ("a3f9c1"); what the agent and the API refer to
     name: str
     ingredients: list[Ingredient]
-    steps: list[str]
+    steps: list[str] = []   # empty until get_steps() fills them on demand
     time_minutes: int
     servings: int = 4
     uses_from_inventory: list[str] = []   # canonical names, filled by code, not by the model
+
+class MealCandidate(BaseModel):          # what the agent sees of a recipe (no steps)
+    id: str
+    name: str
+    time_minutes: int
+    ingredients: list[str]  # "tomato: 2", "parsley: a handful (optional)"
+    uses_from_inventory: list[str] = []
+
+class FailedCandidate(BaseModel):
+    id: str
+    name: str
+    reason: str             # from validate_suggestion
+
+class SuggestResult(BaseModel):          # suggest_meals output, already checked by code
+    passed: list[MealCandidate]
+    failed: list[FailedCandidate]
 
 class Preference(BaseModel):
     id: str
@@ -153,6 +173,16 @@ class ValidationResult(BaseModel):
     ok: bool
     missing_essential: list[str]
     violated_preferences: list[str]
+    check_first: list[str] = []
+    reason: str = ""        # one line for the agent
+
+class StepTiming(BaseModel):             # one timed step of a turn (model call or tool call)
+    kind: Literal["model", "tool"]
+    name: str
+    seconds: float
+    detail: str = ""
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 class Substitution(BaseModel):
     missing: str
@@ -165,7 +195,8 @@ class ToolTraceItem(BaseModel):
 
 class AgentReply(BaseModel):
     message: str                         # short text
-    meals: list[Recipe] = []             # Mode A cards (max 3) or the Mode B recipe
+    meal_ids: list[str] = []             # ids of recipes returned by tools in this run: Mode A cards (max 3) or the Mode B recipe
+    meals: list[Recipe] = []             # filled by code from the run's recipe cache (hidden from the model's schema)
     substitutions: list[Substitution] = []
     shopping_list: list[str] = []        # "To buy"
     check_first: list[str] = []          # "Check your pantry first"

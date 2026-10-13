@@ -1,4 +1,8 @@
-"""T2.1: the agent runs with scripted models (no network) on a fixture inventory and returns an AgentReply."""
+"""T2.1: the agent runs with scripted models (no network) on a fixture inventory and returns an AgentReply.
+
+Latency fix (2026-10-13): the reply names meals by id (meal_ids), suggest_meals checks its candidates
+itself, and every model/tool call is timed (TurnResult.steps).
+"""
 
 from datetime import datetime
 from pathlib import Path
@@ -12,8 +16,8 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app import agent as agent_module
-from app.agent import Deps, USAGE_LIMITS, agent, run_turn, user_prompt
-from app.models import AgentReply, InventoryChange, Preference
+from app.agent import Deps, USAGE_LIMITS, agent, fill_meals, run_turn, user_prompt
+from app.models import AgentReply, InventoryChange, Preference, Recipe, SuggestResult
 from app.store import Store
 from app.tools.inventory import get_inventory, update_inventory
 
@@ -57,7 +61,7 @@ def ing(name, category="other", essential=True):
 
 
 def dish(name, *ingredients, minutes=20):
-    return {"name": name, "ingredients": list(ingredients), "steps": ["cook"], "time_minutes": minutes}
+    return {"name": name, "ingredients": list(ingredients), "time_minutes": minutes}
 
 
 OMELETTE = dish("Spinach omelette", ing("egg", "egg"), ing("spinach", "vegetable"), ing("salt", "spice"))
@@ -76,6 +80,19 @@ VISION_MODEL = structured({"items": [
 
 def reply(**kw) -> dict:
     return {"message": "here you go", **kw}
+
+
+def ids_by_name(parts) -> dict[str, str]:
+    """dish name -> recipe id, from the suggest_meals / get_recipe returns the model saw."""
+    out = {}
+    for p in parts:
+        if not isinstance(p, ToolReturnPart):
+            continue
+        if isinstance(p.content, SuggestResult):
+            out.update({c.name: c.id for c in p.content.passed + p.content.failed})
+        elif hasattr(p.content, "id"):
+            out[p.content.name] = p.content.id
+    return out
 
 
 def tool_returns(parts) -> dict[str, object]:
@@ -134,66 +151,120 @@ async def test_turn_needs_message_or_photos(store):
 
 # --- Mode A ----------------------------------------------------------------------------------------
 
-async def test_mode_a_update_then_suggest_then_validate(store):
+async def test_mode_a_update_then_suggest_checks_candidates_itself(store):
     model, seen = scripted(
         ("update_inventory", {"changes": [{"op": "remove", "name": "eggs"}]}),
         ("suggest_meals", {"request": "quick", "max_minutes": 30}),
-        ("validate_suggestion", {"dish": "Spinach omelette"}),
-        ("validate_suggestion", {"dish": "Carbonara"}),
-        reply(meals=[OMELETTE]),
+        ("validate_suggestion", {"recipe_id": "Carbonara"}),  # a name is accepted as a fallback
+        reply(meal_ids=["__omelette__"]),
     )
     turn = await run_turn(store, "s1", "we're out of eggs, something quick", model=model, recipe_model=RECIPE_MODEL)
 
     assert isinstance(turn.reply, AgentReply)
-    assert [m.name for m in turn.reply.meals] == ["Spinach omelette"]
     assert turn.latency_s >= 0
     # the inventory change was applied and reported back
     assert not any(i.name == "egg" for i in get_inventory(store))
     update_out = tool_returns(seen[1][1])["update_inventory"]
     assert update_out.startswith("Applied: remove eggs.") and "egg" not in update_out.split("Inventory now:")[1]
-    # suggest_meals returned Recipe objects with uses_from_inventory filled by code
-    [suggested] = tool_returns(seen[2][1]).values()
-    assert [r.name for r in suggested] == ["Spinach omelette", "Carbonara"]
-    assert suggested[0].uses_from_inventory == ["spinach"]
-    # validate_suggestion is deterministic: egg is gone, cream never was there, pasta unconfirmed
-    omelette_check = tool_returns(seen[3][1])["validate_suggestion"]
-    assert omelette_check.ok is False and omelette_check.missing_essential == ["egg"]
-    carbonara_check = tool_returns(seen[4][1])["validate_suggestion"]
-    assert carbonara_check.ok is False
-    assert carbonara_check.missing_essential == ["egg", "cream"] and carbonara_check.check_first == ["pasta"]
-    assert "pantry not scanned" in carbonara_check.reason
+    # suggest_meals returned checked candidates (no steps, no full recipes): egg is gone, cream never
+    # was there, pasta unconfirmed -> both failed, with the reason
+    result = tool_returns(seen[2][1])["suggest_meals"]
+    assert isinstance(result, SuggestResult) and result.passed == []
+    assert [(f.name, f.reason) for f in result.failed] == [
+        ("Spinach omelette", "missing: egg"),
+        ("Carbonara", "missing: egg, cream; pantry not scanned: pasta not confirmed"),
+    ]
+    # validate_suggestion (by name here) gives the same verdict
+    check = tool_returns(seen[3][1])["validate_suggestion"]
+    assert check.ok is False and check.missing_essential == ["egg", "cream"] and check.check_first == ["pasta"]
+    # an id the run never produced is dropped by fill_meals (T2.2 will make it a retry)
+    assert turn.reply.meals == [] and turn.reply.meal_ids == []
 
 
-async def test_validate_unknown_dish_asks_model_to_retry(store):
+async def test_mode_a_reply_by_id_is_filled_from_the_cache(store):
+    captured: dict[str, str] = {}
+
+    def fn(messages, info):
+        if sum(1 for m in messages if isinstance(m, ModelRequest)) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {"request": "quick"})])
+        ids = ids_by_name(messages[-1].parts)
+        captured.update(ids)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name,
+                                                 reply(meal_ids=[ids["Spinach omelette"], ids["Spinach omelette"]]))])
+
+    turn = await run_turn(store, "s1", "dinner?", model=FunctionModel(fn), recipe_model=RECIPE_MODEL)
+    # the model only sent ids; code filled the full recipes (deduped) from the run's cache
+    assert [m.name for m in turn.reply.meals] == ["Spinach omelette"]
+    assert turn.reply.meal_ids == [captured["Spinach omelette"]]
+    assert isinstance(turn.reply.meals[0], Recipe) and turn.reply.meals[0].uses_from_inventory == ["spinach", "egg"]
+    assert turn.reply.meals[0].steps == []  # steps come on demand (get_steps)
+    # the candidates the model saw: omelette passed (egg + spinach present, salt is a staple), carbonara failed
+    assert store.load_recipe(captured["Spinach omelette"]).name == "Spinach omelette"  # saved for get_steps
+    # timing: every model call and tool call, in order
+    kinds = [(s.kind, s.name) for s in turn.steps]
+    assert kinds == [
+        ("model", "agent function:fn:"), ("model", "recipe function:fn:"), ("tool", "suggest_meals"),
+        ("model", "agent function:fn:"),
+    ]
+    assert all(s.seconds >= 0 for s in turn.steps)
+    assert turn.steps[0].detail == "-> suggest_meals" and turn.steps[-1].detail == "-> reply"
+    assert turn.steps[2].detail.startswith("passed")
+
+
+def test_fill_meals_keeps_order_drops_unknown_and_duplicates():
+    a = Recipe(name="A", ingredients=[], time_minutes=5)
+    b = Recipe(name="B", ingredients=[], time_minutes=5)
+    r = fill_meals(AgentReply(message="m", meal_ids=[b.id, "nope", a.id, b.id]), {a.id: a, b.id: b})
+    assert [m.name for m in r.meals] == ["B", "A"] and r.meal_ids == [b.id, a.id]
+
+
+def test_agent_reply_schema_has_meal_ids_not_meals():
+    schema = AgentReply.model_json_schema()
+    assert "meal_ids" in schema["properties"] and "meals" not in schema["properties"]
+
+
+async def test_validate_unknown_recipe_asks_model_to_retry(store):
     model, seen = scripted(
-        ("validate_suggestion", {"dish": "Moussaka"}),
+        ("validate_suggestion", {"recipe_id": "Moussaka"}),
         ("suggest_meals", {}),
-        ("validate_suggestion", {"dish": "spinach OMELETTE"}),  # name match is case/space-insensitive
-        reply(meals=[OMELETTE]),
+        ("validate_suggestion", {"recipe_id": "spinach OMELETTE"}),  # name fallback is case/space-insensitive
+        reply(),
     )
-    turn = await run_turn(store, "s1", "dinner?", model=model, recipe_model=RECIPE_MODEL)
+    await run_turn(store, "s1", "dinner?", model=model, recipe_model=RECIPE_MODEL)
     retry = [p for p in seen[1][1] if isinstance(p, RetryPromptPart)]
-    assert len(retry) == 1 and "Unknown dish 'Moussaka'" in retry[0].content and "none yet" in retry[0].content
+    assert len(retry) == 1 and "Unknown recipe 'Moussaka'" in retry[0].content and "none yet" in retry[0].content
     assert tool_returns(seen[3][1])["validate_suggestion"].ok is True
-    assert turn.reply.meals[0].name == "Spinach omelette"
 
 
 # --- Mode B ----------------------------------------------------------------------------------------
 
 async def test_mode_b_get_recipe_then_compute_missing(store):
-    model, seen = scripted(
-        ("get_recipe", {"dish": "lasagna"}),
-        ("compute_missing", {"dish": "Lasagna"}),
-        reply(meals=[LASAGNA], substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}],
-              shopping_list=["ground beef"], check_first=["pasta"]),
-    )
-    turn = await run_turn(store, "s1", "I want to make lasagna", model=model, recipe_model=LASAGNA_MODEL)
-    recipe = tool_returns(seen[1][1])["get_recipe"]
-    assert recipe.name == "Lasagna" and recipe.uses_from_inventory == ["egg"]
-    report = tool_returns(seen[2][1])["compute_missing"]
+    seen_ids: dict[str, str] = {}
+
+    def fn(messages, info):
+        parts = messages[-1].parts
+        seen_ids.update(ids_by_name(parts))
+        n = sum(1 for m in messages if isinstance(m, ModelRequest))
+        if n == 1:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        if n == 2:
+            return ModelResponse(parts=[ToolCallPart("compute_missing", {"recipe_id": seen_ids["Lasagna"]})])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(
+            meal_ids=[seen_ids["Lasagna"]], substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}],
+            shopping_list=["ground beef"], check_first=["pasta"]))])
+
+    turn = await run_turn(store, "s1", "I want to make lasagna", model=FunctionModel(fn), recipe_model=LASAGNA_MODEL)
+    # get_recipe gives the model a compact candidate (id, ingredients, time), not the Recipe
+    candidate = next(p.content for m in turn.result.new_messages() if isinstance(m, ModelRequest)
+                     for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "get_recipe")
+    assert candidate.name == "Lasagna" and candidate.uses_from_inventory == ["egg"]
+    assert "ricotta: 1" in candidate.ingredients and not hasattr(candidate, "steps")
+    report = next(p.content for m in turn.result.new_messages() if isinstance(m, ModelRequest)
+                  for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "compute_missing")
     assert report.missing_essential == ["ricotta", "ground beef"]
     assert report.check_first == ["pasta"]  # pantry not scanned
     assert turn.reply.substitutions[0].use_instead == "cottage cheese"
+    assert [m.name for m in turn.reply.meals] == ["Lasagna"]  # filled from the cache by id
 
 
 # --- photos ----------------------------------------------------------------------------------------
@@ -272,7 +343,7 @@ def test_default_limits_are_about_ten_tool_calls():
 
 def test_agent_registers_the_planned_tools():
     deps = Deps(store=Store(":memory:"))
-    names = set(agent._function_toolset.tools)  # noqa: SLF001 (the registry is private, the names are the contract)
+    names = set(agent_module.toolset.tools)
     assert names == {
         "recognize_inventory", "get_inventory", "update_inventory", "suggest_meals", "get_recipe",
         "compute_missing", "validate_suggestion", "save_preference",
