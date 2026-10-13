@@ -4,8 +4,10 @@
 removed. A staple counts as available only through that list, so a removed staple is missing.
 """
 
+from dataclasses import dataclass, field
+
 from app.models import (
-    PANTRY_CATEGORIES, FailedCandidate, InventoryItem, MealCandidate, MissingReport, Preference, Recipe,
+    PANTRY_CATEGORIES, AgentReply, FailedCandidate, InventoryItem, MealCandidate, MissingReport, Preference, Recipe,
     ScanState, SuggestResult, ValidationResult,
 )
 from app.tools.normalize import normalize
@@ -93,3 +95,90 @@ def check_candidates(
         else:
             failed.append(FailedCandidate(id=recipe.id, name=recipe.name, reason=result.reason))
     return SuggestResult(passed=passed, failed=failed)
+
+
+MAX_MEALS = 3
+MAX_QUESTIONS = 3
+
+
+@dataclass
+class ReplyCheck:
+    """Result of check_reply: the reply with code-fixed lists, what failed (for ModelRetry), what code fixed."""
+
+    reply: AgentReply
+    problems: list[str] = field(default_factory=list)  # non-empty -> the model must fix its reply
+    fixes: list[str] = field(default_factory=list)  # lists code corrected silently (for the trace)
+
+    @property
+    def ok(self) -> bool:
+        return not self.problems
+
+
+def check_reply(
+    reply: AgentReply,
+    recipes: dict[str, Recipe],
+    inventory: list[InventoryItem],
+    preferences: list[Preference],
+    scan_state: ScanState,
+) -> ReplyCheck:
+    """Re-check the agent's final reply against the run's recipe cache and the current inventory (no LLM).
+
+    - Every id in meal_ids must be in `recipes` (the run's cache); at most 3 meals, at most 3 questions.
+    - Every substitution's use_instead must be in the inventory.
+    - Mode A (no shopping_list, check_first or substitutions): every meal must pass validate_suggestion.
+    - Mode B (any of them present): shopping_list and check_first are recomputed from compute_missing of
+      the meals, minus the substituted items; the model's lists are replaced (code wins).
+    """
+    problems: list[str] = []
+    fixes: list[str] = []
+    ids = list(dict.fromkeys(i.strip() for i in reply.meal_ids))
+    unknown = [i for i in ids if i not in recipes]
+    if unknown:
+        known = ", ".join(f"{r.id} ({r.name})" for r in recipes.values()) or "none: call suggest_meals or get_recipe first"
+        problems.append(f"unknown meal id(s) {', '.join(unknown)}; use only ids returned by tools in this turn: {known}")
+    meals = [recipes[i] for i in ids if i in recipes]
+    if len(ids) > MAX_MEALS:
+        problems.append(f"{len(ids)} meals; show at most {MAX_MEALS}")
+    if len(reply.questions) > MAX_QUESTIONS:
+        problems.append(f"{len(reply.questions)} questions; ask at most {MAX_QUESTIONS}")
+
+    have = {normalize(i.name) for i in inventory}
+    for sub in reply.substitutions:
+        if normalize(sub.use_instead) not in have:
+            problems.append(f"substitute {sub.use_instead!r} (for {sub.missing}) is not in the inventory; "
+                            "use an inventory item or put the missing item on the shopping list")
+
+    mode_b = bool(reply.shopping_list or reply.check_first or reply.substitutions)
+    if not mode_b:
+        for meal in meals:
+            res = validate_suggestion(meal, inventory, preferences, scan_state)
+            if not res.ok:
+                problems.append(f"{meal.name} {_why(res)}. Replace it or move it to a Mode B answer with a shopping list")
+    else:
+        substituted = {normalize(s.missing) for s in reply.substitutions}
+        to_buy, check_first = [], []
+        for meal in meals:
+            report = compute_missing(meal, inventory, scan_state)
+            to_buy += [n for n in report.missing_essential if n not in substituted]
+            check_first += [n for n in report.check_first if n not in substituted]
+        to_buy, check_first = _dedupe(to_buy), _dedupe(check_first)
+        if [normalize(n) for n in reply.shopping_list] != to_buy:
+            fixes.append(f"shopping_list {reply.shopping_list} -> {to_buy}")
+        if [normalize(n) for n in reply.check_first] != check_first:
+            fixes.append(f"check_first {reply.check_first} -> {check_first}")
+        reply = reply.model_copy(update={"shopping_list": to_buy, "check_first": check_first})
+
+    reply = reply.model_copy(update={"meal_ids": [m.id for m in meals]})
+    return ReplyCheck(reply=reply, problems=problems, fixes=fixes)
+
+
+def _why(res: ValidationResult) -> str:
+    """"needs peanut, not in inventory" / "uses eggplant, which the household avoids" for a ModelRetry."""
+    parts = []
+    if res.missing_essential:
+        parts.append(f"needs {', '.join(res.missing_essential)}, not in inventory")
+    if res.check_first:
+        parts.append(f"needs {', '.join(res.check_first)}, not confirmed (pantry not scanned)")
+    if res.violated_preferences:
+        parts.append(f"violates preferences: {', '.join(res.violated_preferences)}")
+    return "; ".join(parts)

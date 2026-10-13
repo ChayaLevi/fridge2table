@@ -333,13 +333,50 @@ async def save_preference(ctx: RunContext[Deps], text: str, avoid: list[str]) ->
     return out
 
 
+# --- output validator (the self-correction guarantee) ---------------------------------------------
+
+OUTPUT_CHECK = "output check"
+
+
+@agent.output_validator
+async def check_output(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
+    """Re-check the final reply in code (checks.check_reply); a failure goes back to the model as ModelRetry.
+
+    Meals are looked up by id in the run's recipe cache: an unknown id, a Mode A meal that no longer
+    passes validate_suggestion, a substitute not in the inventory, or more than 3 meals / questions is a
+    retry. Mode B lists (shopping_list, check_first) are recomputed and replaced in code. Every check is
+    recorded in ctx.deps.steps ("output check failed: ..." for the trace).
+    """
+    if ctx.partial_output:
+        return reply
+    start = time.perf_counter()
+    store = ctx.deps.store
+    result = checks.check_reply(
+        reply, ctx.deps.recipes, inventory.get_inventory(store), store.load_preferences(), store.load_scan_state(),
+    )
+
+    def record(detail: str) -> None:
+        ctx.deps.steps.append(StepTiming(kind="check", name=OUTPUT_CHECK,
+                                         seconds=round(time.perf_counter() - start, 2), detail=detail))
+
+    if not result.ok:
+        problems = "; ".join(result.problems)
+        record(f"output check failed: {problems}")
+        log.info("output check failed: %s", problems)
+        raise ModelRetry(f"Your reply was not sent. Fix it and call {OUTPUT_TOOL_NAME} again: {problems}.")
+    if result.fixes:
+        log.info("output check fixed: %s", "; ".join(result.fixes))
+    record("ok" + (f" (fixed {'; '.join(result.fixes)})" if result.fixes else ""))
+    return result.reply
+
+
 # --- running one turn -----------------------------------------------------------------------------
 
 def fill_meals(reply: AgentReply, cache: dict[str, Recipe]) -> AgentReply:
     """Replace AgentReply.meals with the cached recipes named in meal_ids (in that order, deduped).
 
-    Ids the run never produced are dropped with a warning; T2.2's output validator turns them into a
-    ModelRetry before we get here.
+    Ids the run never produced are dropped with a warning; the output validator (check_output) already
+    turned them into a ModelRetry, so this only matters for replies built outside a run.
     """
     meals, seen = [], set()
     for ref in reply.meal_ids:

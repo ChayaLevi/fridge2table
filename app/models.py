@@ -150,12 +150,12 @@ class Substitution(BaseModel):
 
 
 class StepTiming(BaseModel):
-    """One timed step of an agent turn: a model call or a tool call (for the trace and for T5.2)."""
+    """One timed step of an agent turn: a model call, a tool call or the output check (for the trace and T5.2)."""
 
-    kind: Literal["model", "tool"]
-    name: str  # model: "agent deepseek-v4-pro" / "recipe deepseek-flash"; tool: the tool name
+    kind: Literal["model", "tool", "check"]
+    name: str  # model: "agent deepseek-v4-pro" / "recipe deepseek-flash"; tool: the tool name; check: "output check"
     seconds: float
-    detail: str = ""  # model: what it returned ("-> suggest_meals", "thinking 1200 chars"); tool: result summary
+    detail: str = ""  # model: what it returned ("-> suggest_meals"); tool: result summary; check: "ok" / "output check failed: ..."
     input_tokens: int | None = None
     output_tokens: int | None = None
 

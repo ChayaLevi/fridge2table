@@ -18,7 +18,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T1.7 Preferences
 - [x] T2.1 Agent
 - [x] T2.1b Latency fix (reply by id, validation inside suggest_meals, steps on demand, per-step timing, thinking off)
-- [ ] T2.2 Output validator
+- [x] T2.2 Output validator (+ essential-flag fix)
 - [ ] T2.3 Trace capture
 - [ ] T2.4 Terminal chat
 - [ ] T2.5 Scenario suite
@@ -37,10 +37,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T2.2 Output validator** (nothing needed from the human): validates by id against `ctx.deps.recipes`, re-checks Mode A meals from the cache (see the updated T2.2 in PLAN). Then T2.3-T2.5.
+- **Next task: T2.3 Trace capture** (nothing needed from the human). The output check is already a step: `StepTiming(kind="check", name="output check", detail="ok" | "ok (fixed ...)" | "output check failed: ...")` in `TurnResult.steps`; the same failure is a `RetryPromptPart(tool_name="reply")` in the messages. Then T2.4, T2.5.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 285 tests pass. All P1 tools and the agent (`app/agent.py`, `run_turn`) exist; per-step timing exists (`TurnResult.steps`); no output validator and no trace yet.
+- State: 312 tests pass. All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing (`TurnResult.steps`) and the output validator exist; no trace yet.
 
 ## Current model settings
 
@@ -66,7 +66,9 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 ## Open issues
 
 - ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
-- (T2.1b) Mode B quality, seen in both thinking modes: the agent sometimes proposes a substitute in `message` prose instead of `substitutions` (cottage cheese for parmesan), and once `deepseek-flash` marked ground beef / parmesan as optional in a lasagna recipe, so `compute_missing` found nothing to buy. The first is for T2.2/T4.2 (validator + instructions); the second is a recipe-prompt issue (`essential` honesty) to watch in T2.5.
+- (T2.1b, for T4.2) Mode B prose: the agent sometimes proposes a substitute only in `message` prose instead of `substitutions`, and the prose can contradict the code-fixed lists (T2.2 real runs: "you'd need to buy ... ricotta" while ricotta is substituted and not in `shopping_list`). The lists are right (code wins); the message text is not checked.
+- ~~(T2.1b) `deepseek-flash` marked ground beef / parmesan optional in lasagna~~ Fixed 2026-10-13 (T2.2): essential defined with examples in `INGREDIENT_RULES` + code rule `force_named_essential`. 3/3 real lasagna runs had all four essentials.
+- (T2.2) One real lasagna run substituted chicken for ground beef ("a chicken lasagna"). Valid (chicken is in the inventory) but a stretch; watch in T4.2.
 - (T2.1) Synonym gaps seen in real Mode B runs: `ricotta cheese` != `ricotta`, `crushed tomato` / `tomato paste` are separate names (both correct but noisy in `check_first`); `lasagna noodle` vs `pasta` as before.
 - ~~(T1.6) `suggest_meals` takes ~28 s~~ Fixed 2026-10-13: 5-7 s without steps and without thinking (`get_recipe` 2-3 s).
 - (T1.6) `lasagna noodle` does not normalize to `pasta` (no synonym), so plain pasta in the inventory does not cover lasagna sheets. Arguably right; revisit if Mode B looks wrong in scenarios.
@@ -76,6 +78,42 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T2.2 Output validator (+ essential-flag fix)
+- Built / changed:
+  - `app/tools/checks.py`: `check_reply(reply, recipes, inventory, preferences, scan_state) -> ReplyCheck(reply, problems, fixes)`, a plain function (no LLM, no agent) with the whole validator logic; `MAX_MEALS = MAX_QUESTIONS = 3`. Rules: every `meal_ids` id must be in the run's cache (unknown -> problem listing the known `id (name)`s); at most 3 meals / 3 questions; every `Substitution.use_instead` must be in the inventory (normalized); **Mode A** (no `shopping_list`, `check_first` or `substitutions`) -> each meal re-run through `validate_suggestion` on the current inventory, failure text like "Kung pao chicken needs peanut, not in inventory. Replace it or move it to a Mode B answer with a shopping list"; **Mode B** (any of the three present) -> `shopping_list` / `check_first` recomputed from `compute_missing` of the meals minus the substituted items, and replaced in code (`fixes` records the difference). Ids are deduped.
+  - `app/agent.py`: `@agent.output_validator check_output` calls `check_reply` with `ctx.deps.recipes` and the store; problems -> `ModelRetry("Your reply was not sent. Fix it and call reply again: ...")`; returns the fixed reply. Every check appends `StepTiming(kind="check", name="output check")` to `Deps.steps` with `detail` = `ok`, `ok (fixed shopping_list [...] -> [...])` or `output check failed: ...` (for the T2.3 trace). `fill_meals` still fills `meals` after the run. `app/models.py`: `StepTiming.kind` gained `"check"`.
+  - Essential flags: `INGREDIENT_RULES` (used by both recipe prompts) now defines essential = main protein, the base (pasta, rice, bread, dough, tortilla) and every ingredient named in the dish; optional = garnishes, decorative herbs, toppings, "to taste"; three short examples (lasagna, chicken fried rice, spinach omelette). Code safety rule in `recipes.py`: `dish_name_ingredients(*names)` (canonical names of every 1-3 word phrase of the dish name) and `force_named_essential(ingredients, *names)`, applied in `_clean` after `normalize` to the model's dish name and, in `get_recipe`, also to the dish the user asked for ("spaghetti with ground beef" forces pasta + ground beef). Whole phrases only: "Eggplant parmesan" does not force egg.
+  - Tests: 312 pass (was 285). `test_checks.py` +13 (`check_reply`), `test_agent.py` +5 (mocked model: bad id -> retry -> valid reply; cached omelette fails after "out of eggs" -> retry -> reply without it; substitute not in inventory -> retry; Mode B lists fixed in code without a retry; gives up with `UnexpectedModelBehavior` after the retry limit), `test_recipes.py` +11 (prompt, `dish_name_ingredients`, `force_named_essential`, both tools).
+- Decisions / deviations:
+  - Mode B is detected by the reply's content (a shopping list, check_first or substitutions), not only by `shopping_list` as in the plan: a Mode B answer with nothing to buy but something to check is still Mode B. A Mode B reply with all three empty is checked as Mode A, so a "forgotten" shopping list becomes a retry instead of a silently wrong answer.
+  - In Mode B the lists are the union over all meals in the reply (normally one dish). Preference violations are not enforced in Mode B (the user asked for that dish); `get_recipe` already drops optional extras that conflict.
+  - Retry limit unchanged: `retries=2` on the agent (also the output retries); a third failing reply raises `UnexpectedModelBehavior` (T3.1 decides what to show).
+- Real-model check (2026-10-13, demo store, pantry not scanned, `scripts/try_agent.py "I want to make lasagna"`, 3 runs, 8.7-8.9 s each, output check `ok` with no retries and no fixes):
+
+  | Run | compute_missing: missing_essential | substitutions | to buy | check first |
+  |---|---|---|---|---|
+  | 1 | ground beef, ricotta, mozzarella, parmesan | cottage cheese for ricotta, chicken for ground beef | mozzarella, parmesan | lasagna noodle |
+  | 2 | ground beef, ricotta, mozzarella, parmesan | cottage cheese for ricotta | ground beef, mozzarella, parmesan | lasagna noodle |
+  | 3 | ground beef, ricotta, mozzarella, parmesan | cottage cheese for ricotta | ground beef, mozzarella, parmesan | lasagna noodle |
+
+  Basil was the only optional ingredient (runs 1-2). Before the fix, one T2.1b run had ground beef and parmesan optional.
+- Next tasks must know: T2.3 builds the trace from `TurnResult.steps` (kind `check` = the validator) or from `RetryPromptPart(tool_name="reply")` in `turn.result.new_messages()`. T4.2: the message prose is not checked (see Open issues). T3.1: `run_turn` can raise `UnexpectedModelBehavior` after 3 bad replies.
+- Open issues: Mode B prose vs lists, chicken-for-beef substitution (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_agent.py tests/test_checks.py tests/test_recipes.py -q
+uv run python scripts/try_agent.py "I want to make lasagna"
+```
+Expected: `312 passed`; then `116 passed`; then (real models, about 10 s) `-> get_recipe`, `-> compute_missing`, `-> reply`, a `timing:` block whose last step before the total is `check  output check  ok`, `meal: Lasagna ...`, `substitutions: cottage cheese for ricotta`, and `to buy: [...]` containing `mozzarella` and `parmesan` (and `ground beef` unless the agent substituted it), with `check your pantry first: ['lasagna noodle']`. No `!! retry` line is expected; if one appears it reads `!! retry: Your reply was not sent. Fix it ...` and the next `-> reply` fixes it.
+Manual check:
+```
+uv run pytest tests/test_agent.py -q -k validator -rA
+uv run python -c "from app.tools.recipes import force_named_essential as f; from app.models import Ingredient as I; print(f([I(name='spinach',amount='1',essential=False,category='vegetable'), I(name='chive',amount='1',essential=False,category='vegetable')], 'Spinach omelette'))"
+```
+The first ends with `5 passed` (the validator tests, each listed as `PASSED`). The second prints spinach with `essential=True` and chive still `essential=False`.
 
 ### 2026-10-13 — T2.1b Latency fix (before T2.2)
 - Why: Mode A turns took 44-80 s with `deepseek-v4-pro` (target 25 s). Measured first, then fixed, then measured again.

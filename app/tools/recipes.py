@@ -8,6 +8,7 @@ them later. Every recipe returned is saved in the store by id, so steps can be g
 """
 
 import logging
+import re
 import time
 
 from pydantic import BaseModel, Field
@@ -30,8 +31,14 @@ INGREDIENT_RULES = """\
 Ingredient rules:
 - name: a plain generic English ingredient name, singular ("tomato", "pasta", "cheddar"), no amounts or \
 preparation words in the name; put those in amount ("2, diced").
-- essential: true if the dish fails or becomes a different dish without it; false for garnishes, toppings \
-and "to taste" extras. Be honest: the user's shopping list is built from the essential ones.
+- essential: true if the dish fails or becomes a different dish without it. Always essential: the main \
+protein, the base (pasta, rice, bread, dough, tortilla), and every ingredient named in the dish. Optional \
+(false) only for garnishes, decorative herbs, toppings and "to taste" extras. Examples:
+  lasagna: lasagna noodle, ground beef, ricotta, mozzarella, tomato sauce = essential; basil on top = optional.
+  chicken fried rice: chicken, rice, egg = essential; green onion to garnish = optional.
+  spinach omelette: egg, spinach = essential; chive, black pepper to taste = optional.
+  Be honest: the shopping list is built from the essential ones; a wrong "optional" means the user \
+finds out at the stove.
 - category: exactly one of {categories}.
 - Staples: the staples line of the inventory lists what the household always has. Use them freely and \
 list them as ingredients like any other; never use a staple that is not on that list without listing it.
@@ -84,8 +91,36 @@ class MealIdeas(BaseModel):
     recipes: list[RecipeDraft] = Field(description="distinct dishes, in order of preference")
 
 
-def _clean(draft: RecipeDraft) -> Recipe:
-    """Normalized ingredient names (deduped, essential if any duplicate is), categories from CATEGORIES."""
+def dish_name_ingredients(*dish_names: str) -> set[str]:
+    """Canonical names of every 1-3 word phrase in the dish names: "Spaghetti with Bell Peppers" ->
+    {"pasta", "bell pepper", ...}. An ingredient in this set is named in the dish."""
+    out: set[str] = set()
+    for dish in dish_names:
+        words = re.findall(r"[a-z]+", dish.lower())
+        for n in (1, 2, 3):
+            for k in range(len(words) - n + 1):
+                name = normalize(" ".join(words[k:k + n]))
+                if name:
+                    out.add(name)
+    return out
+
+
+def force_named_essential(ingredients: list[Ingredient], *dish_names: str) -> list[Ingredient]:
+    """Safety rule (code, not the model): an ingredient whose canonical name is named in the dish is
+    essential ("Spinach omelette" without spinach is not that dish). Expects normalized ingredient names."""
+    named = dish_name_ingredients(*dish_names)
+    out = []
+    for ing in ingredients:
+        if not ing.essential and ing.name in named:
+            log.debug("forced %r essential (named in %s)", ing.name, dish_names)
+            ing = ing.model_copy(update={"essential": True})
+        out.append(ing)
+    return out
+
+
+def _clean(draft: RecipeDraft, *dish_names: str) -> Recipe:
+    """Normalized ingredient names (deduped, essential if any duplicate is), categories from CATEGORIES,
+    and every ingredient named in the dish (draft.name or `dish_names`) forced to essential."""
     ingredients: dict[str, Ingredient] = {}
     for ing in draft.ingredients:
         name = normalize(ing.name)
@@ -98,7 +133,8 @@ def _clean(draft: RecipeDraft) -> Recipe:
             continue
         ingredients[name] = ing.model_copy(update={"name": name, "category": coerce_category(ing.category)})
     return Recipe(
-        name=draft.name.strip(), ingredients=list(ingredients.values()),
+        name=draft.name.strip(),
+        ingredients=force_named_essential(list(ingredients.values()), draft.name, *dish_names),
         time_minutes=draft.time_minutes, servings=draft.servings,
     )
 
@@ -183,7 +219,7 @@ async def get_recipe(store: Store, dish: str, *, model: Model | None = None) -> 
     agent = Agent(_model(model), output_type=RecipeDraft,
                   instructions=RECIPE_PROMPT.format(categories=", ".join(CATEGORIES)))
     draft: RecipeDraft = await _run(agent, f"{_context(store)}\n\nDish: {dish.strip()}", "get_recipe")
-    return _finish(store, _clean(draft))
+    return _finish(store, _clean(draft, dish))
 
 
 def _recipe_text(recipe: Recipe) -> str:

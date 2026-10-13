@@ -156,7 +156,7 @@ async def test_mode_a_update_then_suggest_checks_candidates_itself(store):
         ("update_inventory", {"changes": [{"op": "remove", "name": "eggs"}]}),
         ("suggest_meals", {"request": "quick", "max_minutes": 30}),
         ("validate_suggestion", {"recipe_id": "Carbonara"}),  # a name is accepted as a fallback
-        reply(meal_ids=["__omelette__"]),
+        reply(),
     )
     turn = await run_turn(store, "s1", "we're out of eggs, something quick", model=model, recipe_model=RECIPE_MODEL)
 
@@ -177,7 +177,6 @@ async def test_mode_a_update_then_suggest_checks_candidates_itself(store):
     # validate_suggestion (by name here) gives the same verdict
     check = tool_returns(seen[3][1])["validate_suggestion"]
     assert check.ok is False and check.missing_essential == ["egg", "cream"] and check.check_first == ["pasta"]
-    # an id the run never produced is dropped by fill_meals (T2.2 will make it a retry)
     assert turn.reply.meals == [] and turn.reply.meal_ids == []
 
 
@@ -204,11 +203,12 @@ async def test_mode_a_reply_by_id_is_filled_from_the_cache(store):
     kinds = [(s.kind, s.name) for s in turn.steps]
     assert kinds == [
         ("model", "agent function:fn:"), ("model", "recipe function:fn:"), ("tool", "suggest_meals"),
-        ("model", "agent function:fn:"),
+        ("model", "agent function:fn:"), ("check", "output check"),
     ]
     assert all(s.seconds >= 0 for s in turn.steps)
-    assert turn.steps[0].detail == "-> suggest_meals" and turn.steps[-1].detail == "-> reply"
+    assert turn.steps[0].detail == "-> suggest_meals" and turn.steps[-2].detail == "-> reply"
     assert turn.steps[2].detail.startswith("passed")
+    assert turn.steps[-1].detail == "ok"
 
 
 def test_fill_meals_keeps_order_drops_unknown_and_duplicates():
@@ -265,6 +265,115 @@ async def test_mode_b_get_recipe_then_compute_missing(store):
     assert report.check_first == ["pasta"]  # pantry not scanned
     assert turn.reply.substitutions[0].use_instead == "cottage cheese"
     assert [m.name for m in turn.reply.meals] == ["Lasagna"]  # filled from the cache by id
+
+
+# --- output validator (T2.2) -----------------------------------------------------------------------
+
+def retries(turn) -> list[str]:
+    """The ModelRetry messages the output validator sent back to the model in this turn."""
+    return [p.content for m in turn.result.new_messages() if isinstance(m, ModelRequest)
+            for p in m.parts if isinstance(p, RetryPromptPart) and p.tool_name == "reply"]
+
+
+def checks_in(turn) -> list[str]:
+    return [s.detail for s in turn.steps if s.kind == "check"]
+
+
+async def test_validator_retries_an_unknown_id_then_accepts_a_valid_reply(store):
+    ids: dict[str, str] = {}
+    calls = []
+
+    def fn(messages, info):
+        calls.append(1)
+        ids.update(ids_by_name(messages[-1].parts))
+        out = info.output_tools[0].name
+        if len(calls) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {})])
+        if len(calls) == 2:  # invents an id
+            return ModelResponse(parts=[ToolCallPart(out, reply(meal_ids=["zzz999"]))])
+        return ModelResponse(parts=[ToolCallPart(out, reply(meal_ids=[ids["Spinach omelette"]]))])
+
+    turn = await run_turn(store, "s1", "dinner?", model=FunctionModel(fn), recipe_model=RECIPE_MODEL)
+    [retry] = retries(turn)
+    assert "unknown meal id(s) zzz999" in retry and f"{ids['Spinach omelette']} (Spinach omelette)" in retry
+    assert [m.name for m in turn.reply.meals] == ["Spinach omelette"]
+    # the trace data: a failed check, then a passing one
+    assert checks_in(turn)[0].startswith("output check failed: unknown meal id(s) zzz999")
+    assert checks_in(turn)[1] == "ok"
+
+
+async def test_validator_rechecks_a_cached_meal_after_the_inventory_changed(store):
+    ids: dict[str, str] = {}
+    calls = []
+
+    def fn(messages, info):
+        calls.append(1)
+        ids.update(ids_by_name(messages[-1].parts))
+        out = info.output_tools[0].name
+        if len(calls) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {})])  # omelette passes here
+        if len(calls) == 2:
+            return ModelResponse(parts=[ToolCallPart("update_inventory", {"changes": [{"op": "remove", "name": "egg"}]})])
+        if len(calls) == 3:  # shows the omelette anyway: it no longer passes
+            return ModelResponse(parts=[ToolCallPart(out, reply(meal_ids=[ids["Spinach omelette"]]))])
+        return ModelResponse(parts=[ToolCallPart(out, reply(message="Nothing fits without eggs."))])
+
+    turn = await run_turn(store, "s1", "dinner? also we're out of eggs", model=FunctionModel(fn),
+                          recipe_model=RECIPE_MODEL)
+    [retry] = retries(turn)
+    assert "Spinach omelette needs egg, not in inventory. Replace it or move it to a Mode B answer" in retry
+    assert turn.reply.meals == [] and turn.reply.message == "Nothing fits without eggs."
+    assert checks_in(turn) == [
+        "output check failed: Spinach omelette needs egg, not in inventory. Replace it or move it to a Mode B "
+        "answer with a shopping list", "ok",
+    ]
+
+
+async def test_validator_retries_a_substitute_not_in_the_inventory(store):
+    ids: dict[str, str] = {}
+    calls = []
+
+    def fn(messages, info):
+        calls.append(1)
+        ids.update(ids_by_name(messages[-1].parts))
+        out = info.output_tools[0].name
+        if len(calls) == 1:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        sub = "mascarpone" if len(calls) == 2 else "cottage cheese"
+        return ModelResponse(parts=[ToolCallPart(out, reply(
+            meal_ids=[ids["Lasagna"]], substitutions=[{"missing": "ricotta", "use_instead": sub}],
+            shopping_list=["ground beef"]))])
+
+    turn = await run_turn(store, "s1", "lasagna", model=FunctionModel(fn), recipe_model=LASAGNA_MODEL)
+    [retry] = retries(turn)
+    assert "substitute 'mascarpone' (for ricotta) is not in the inventory" in retry
+    assert turn.reply.substitutions[0].use_instead == "cottage cheese"
+
+
+async def test_validator_fixes_mode_b_lists_in_code_without_a_retry(store):
+    ids: dict[str, str] = {}
+
+    def fn(messages, info):
+        ids.update(ids_by_name(messages[-1].parts))
+        if not ids:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(
+            meal_ids=[ids["Lasagna"]], substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}],
+            shopping_list=["ground beef", "parmesan", "ricotta"], check_first=[]))])
+
+    turn = await run_turn(store, "s1", "lasagna", model=FunctionModel(fn), recipe_model=LASAGNA_MODEL)
+    assert retries(turn) == []
+    assert turn.reply.shopping_list == ["ground beef"]  # code wins: parmesan was invented, ricotta substituted
+    assert turn.reply.check_first == ["pasta"]  # pantry not scanned
+    assert checks_in(turn)[0].startswith("ok (fixed shopping_list")
+
+
+async def test_validator_gives_up_after_the_retry_limit(store):
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    model, _ = scripted(*[reply(meal_ids=["nope"])] * 5)
+    with pytest.raises(UnexpectedModelBehavior):
+        await run_turn(store, "s1", "dinner?", model=model)
 
 
 # --- photos ----------------------------------------------------------------------------------------

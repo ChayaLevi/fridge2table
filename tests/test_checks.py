@@ -2,9 +2,11 @@ from datetime import datetime
 
 import pytest
 
-from app.models import Ingredient, InventoryChange, InventoryItem, Preference, Recipe, ScanState
+from app.models import AgentReply, Ingredient, InventoryChange, InventoryItem, Preference, Recipe, ScanState, Substitution
 from app.store import Store
-from app.tools.checks import check_candidates, compute_missing, fill_uses_from_inventory, validate_suggestion
+from app.tools.checks import (
+    check_candidates, check_reply, compute_missing, fill_uses_from_inventory, validate_suggestion,
+)
 from app.tools.inventory import get_inventory, update_inventory
 
 NOW = datetime(2026, 10, 13, 18, 0)
@@ -231,3 +233,101 @@ def test_check_candidates_splits_passed_and_failed():
         (bad.id, "Carbonara", "missing: cream; pantry not scanned: pasta not confirmed"),
         (nope.id, "Moussaka", "violates preferences: eggplant (no eggplant)"),
     ]
+
+
+# --- check_reply (T2.2: the output validator's logic) ------------------------------------------
+
+OMELETTE = recipe(ing("egg", "egg"), ing("spinach", "vegetable"), name="Spinach omelette")
+PEANUT = recipe(ing("chicken", "meat"), ing("peanut", "snack"), name="Kung pao chicken")
+EGGPLANT = recipe(ing("aubergine", "vegetable"), name="Baba ganoush")
+LASAGNA = recipe(ing("pasta", "pasta"), ing("ricotta", "dairy"), ing("ground beef", "meat"),
+                 ing("basil", "vegetable", essential=False), name="Lasagna")
+CACHE = {r.id: r for r in (OMELETTE, PEANUT, EGGPLANT, LASAGNA)}
+INV = [item("egg"), item("spinach"), item("chicken"), item("cottage cheese"), item("aubergine")]
+KIDS = [pref("kids dislike eggplant", "eggplant")]
+
+
+def check(**kw):
+    return check_reply(AgentReply(message="m", **kw), CACHE, INV, KIDS, ALL_SCANNED)
+
+
+def test_check_reply_valid_mode_a_passes_and_dedupes_ids():
+    res = check(meal_ids=[OMELETTE.id, f" {OMELETTE.id} "])
+    assert res.ok and res.fixes == [] and res.reply.meal_ids == [OMELETTE.id]
+
+
+def test_check_reply_unknown_id_lists_known_ids():
+    res = check(meal_ids=["abc123"])
+    assert not res.ok
+    assert "unknown meal id(s) abc123" in res.problems[0]
+    assert f"{OMELETTE.id} (Spinach omelette)" in res.problems[0]
+
+
+def test_check_reply_unknown_id_with_empty_cache():
+    res = check_reply(AgentReply(message="m", meal_ids=["x"]), {}, INV, [], ALL_SCANNED)
+    assert "call suggest_meals or get_recipe first" in res.problems[0]
+
+
+def test_check_reply_mode_a_meal_missing_an_ingredient():
+    res = check(meal_ids=[OMELETTE.id, PEANUT.id])
+    assert res.problems == [
+        "Kung pao chicken needs peanut, not in inventory. Replace it or move it to a Mode B answer with a shopping list"
+    ]
+
+
+def test_check_reply_mode_a_meal_checked_against_current_inventory():
+    res = check_reply(AgentReply(message="m", meal_ids=[OMELETTE.id]), CACHE, [item("spinach")], [], ALL_SCANNED)
+    assert "Spinach omelette needs egg, not in inventory" in res.problems[0]
+
+
+def test_check_reply_mode_a_pantry_not_scanned():
+    r = recipe(ing("pasta", "pasta"), ing("egg", "egg"), name="Egg pasta")
+    res = check_reply(AgentReply(message="m", meal_ids=[r.id]), {r.id: r}, INV, [], FRIDGE_ONLY)
+    assert "Egg pasta needs pasta, not confirmed (pantry not scanned)" in res.problems[0]
+
+
+def test_check_reply_mode_a_preference_violation():
+    res = check(meal_ids=[EGGPLANT.id])
+    assert "Baba ganoush violates preferences: eggplant (kids dislike eggplant)" in res.problems[0]
+
+
+def test_check_reply_too_many_meals_and_questions():
+    res = check(meal_ids=[OMELETTE.id] * 1, questions=["a?", "b?", "c?", "d?"])
+    assert res.problems == ["4 questions; ask at most 3"]
+    r = [recipe(ing("egg"), name=f"d{i}") for i in range(4)]
+    res = check_reply(AgentReply(message="m", meal_ids=[x.id for x in r]), {x.id: x for x in r}, INV, [], ALL_SCANNED)
+    assert res.problems == ["4 meals; show at most 3"]
+
+
+def test_check_reply_mode_b_lists_recomputed_in_code():
+    res = check_reply(AgentReply(
+        message="m", meal_ids=[LASAGNA.id],
+        substitutions=[Substitution(missing="ricotta", use_instead="cottage cheese")],
+        shopping_list=["ground beef", "parmesan", "ricotta"], check_first=[],
+    ), CACHE, INV, KIDS, FRIDGE_ONLY)
+    assert res.ok
+    assert res.reply.shopping_list == ["ground beef"]  # ricotta substituted, parmesan invented, basil optional
+    assert res.reply.check_first == ["pasta"]  # pantry not scanned
+    assert res.fixes == ["shopping_list ['ground beef', 'parmesan', 'ricotta'] -> ['ground beef']",
+                         "check_first [] -> ['pasta']"]
+
+
+def test_check_reply_mode_b_correct_lists_need_no_fix():
+    # names are compared after normalize: "Ground beef" / "spaghetti" match the canonical names
+    res = check_reply(AgentReply(message="m", meal_ids=[LASAGNA.id], shopping_list=["spaghetti", "ricotta", "Ground beef"]),
+                      CACHE, INV, KIDS, ALL_SCANNED)
+    assert res.ok and res.fixes == []
+    assert res.reply.shopping_list == ["pasta", "ricotta", "ground beef"]
+
+
+def test_check_reply_mode_b_with_empty_lists_is_checked_as_mode_a():
+    # the model forgot the shopping list: the dish fails like a Mode A meal, so the model must add it
+    res = check(meal_ids=[LASAGNA.id])
+    assert "Lasagna needs pasta, ricotta, ground beef, not in inventory" in res.problems[0]
+
+
+def test_check_reply_substitute_must_be_in_inventory():
+    res = check(meal_ids=[LASAGNA.id], substitutions=[Substitution(missing="ricotta", use_instead="mascarpone")],
+                shopping_list=["ground beef"])
+    assert res.problems == ["substitute 'mascarpone' (for ricotta) is not in the inventory; "
+                            "use an inventory item or put the missing item on the shopping list"]

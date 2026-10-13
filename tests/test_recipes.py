@@ -7,7 +7,11 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from app.models import Constraints, InventoryChange, Preference
 from app.store import Store
 from app.tools.inventory import update_inventory
-from app.tools.recipes import RECIPE_PROMPT, STEPS_PROMPT, SUGGEST_PROMPT, get_recipe, get_steps, suggest_meals
+from app.models import Ingredient
+from app.tools.recipes import (
+    INGREDIENT_RULES, RECIPE_PROMPT, STEPS_PROMPT, SUGGEST_PROMPT, dish_name_ingredients, force_named_essential,
+    get_recipe, get_steps, suggest_meals,
+)
 from app.tools.recognize import coerce_category
 
 
@@ -207,3 +211,51 @@ async def test_get_steps_unknown_id_and_empty_steps(store):
 def test_steps_prompt_has_the_rules():
     assert "3 to 8" in STEPS_PROMPT and "only the ingredients listed" in STEPS_PROMPT
     assert "Do not write cooking steps" in SUGGEST_PROMPT and "Do not write cooking steps" in RECIPE_PROMPT
+
+
+# --- essential flags (T2.2): ingredients named in the dish are forced to essential ------------------
+
+def test_prompt_defines_essential_with_examples():
+    assert "main protein" in INGREDIENT_RULES and "the base (pasta, rice" in INGREDIENT_RULES
+    assert "lasagna: lasagna noodle, ground beef" in INGREDIENT_RULES
+    assert "to garnish = optional" in INGREDIENT_RULES
+
+
+@pytest.mark.parametrize("dish, names", [
+    ("Spinach Omelette", {"spinach"}),
+    ("Spaghetti Bolognese", {"pasta"}),  # spaghetti normalizes to pasta
+    ("Chicken & Bell Pepper Stir-fry", {"chicken", "bell pepper"}),
+    ("Cottage Cheese Apple Pancakes", {"cottage cheese", "apple"}),
+    ("Tomatoes on toast", {"tomato"}),
+])
+def test_dish_name_ingredients(dish, names):
+    assert names <= dish_name_ingredients(dish)
+
+
+def test_force_named_essential_only_touches_named_optional_ingredients():
+    ings = [Ingredient(name="spinach", amount="1", essential=False, category="vegetable"),
+            Ingredient(name="egg", amount="2", essential=True, category="egg"),
+            Ingredient(name="chive", amount="1", essential=False, category="vegetable")]
+    out = force_named_essential(ings, "Spinach omelette")
+    assert [(i.name, i.essential) for i in out] == [("spinach", True), ("egg", True), ("chive", False)]
+    assert ings[0].essential is False  # input not mutated
+
+
+def test_force_named_essential_does_not_match_inside_words():
+    ings = [Ingredient(name="egg", amount="1", essential=False, category="egg")]
+    assert force_named_essential(ings, "Eggplant parmesan")[0].essential is False
+
+
+async def test_get_recipe_forces_named_ingredients_essential(store):
+    # the model marks the beef and the spaghetti optional; both are named in the dish the user asked for
+    model, _ = fake_model(dish("Bolognese", ing("Spaghetti", "pasta", essential=False),
+                               ing("ground beef", "meat", essential=False), ing("parsley", "vegetable", essential=False)))
+    r = await get_recipe(store, "spaghetti with ground beef", model=model)
+    assert [(i.name, i.essential) for i in r.ingredients] == [("pasta", True), ("ground beef", True), ("parsley", False)]
+
+
+async def test_suggest_meals_forces_named_ingredients_essential(store):
+    model, _ = fake_model({"recipes": [dish("Spinach Omelette", ing("egg", "egg"),
+                                            ing("spinach", "vegetable", essential=False))]})
+    [r] = await suggest_meals(store, model=model)
+    assert all(i.essential for i in r.ingredients)
