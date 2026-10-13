@@ -43,7 +43,9 @@ class Store:
         self.path = Path(path) if path is not None else config.DB_PATH
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path)
+        # The connection is shared across threads (FastAPI handlers, pydantic-ai worker threads); the
+        # sqlite3 module serializes access to one connection, so this is safe for a single process.
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.executescript(_SCHEMA)
 
     def close(self) -> None:

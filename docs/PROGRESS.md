@@ -16,7 +16,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T1.5 Checks
 - [x] T1.6 Recipes
 - [x] T1.7 Preferences
-- [ ] T2.1 Agent
+- [x] T2.1 Agent
 - [ ] T2.2 Output validator
 - [ ] T2.3 Trace capture
 - [ ] T2.4 Terminal chat
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T2.1 Agent** (nothing needed from the human; the DeepSeek key is in `.env`). Then T2.2-T2.5.
+- **Next task: T2.2 Output validator** (nothing needed from the human). Then T2.3-T2.5.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 259 tests pass. All P1 tools exist; `app/agent.py` is still an empty file.
+- State: 273 tests pass. All P1 tools and the agent (`app/agent.py`, `run_turn`) exist; no output validator and no trace yet.
 
 ## Current model settings
 
@@ -63,6 +63,8 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
+- (T2.1) **Mode A turn takes 50-80 s** with `deepseek-v4-pro` (target 25 s): `suggest_meals` 15-45 s, then the final `reply` call writes 3 full recipes (~2,000 output tokens, 15-20 s). Mode B 35-45 s, chit-chat 2-7 s. Ideas for T2.2/T5.2: let the model name the meals and have code copy the recipes from `Deps.recipes` (the cache already exists); lower `n`; try `deepseek-flash` as `AGENT_MODEL`.
+- (T2.1) Synonym gaps seen in real Mode B runs: `ricotta cheese` != `ricotta`, `crushed tomato` / `tomato paste` are separate names (both correct but noisy in `check_first`); `lasagna noodle` vs `pasta` as before.
 - (T1.6) `suggest_meals` takes ~28 s with `deepseek-flash` for 5 full recipes (`get_recipe` ~10 s). Too slow for the 25 s Mode A target once the agent's own calls are added; T5.2 should lower `n` or drop `steps` from the candidates.
 - (T1.6) `lasagna noodle` does not normalize to `pasta` (no synonym), so plain pasta in the inventory does not cover lasagna sheets. Arguably right; revisit if Mode B looks wrong in scenarios.
 
@@ -71,6 +73,32 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T2.1 Agent
+- Built: `app/agent.py` (`agent`, `Deps`, `INSTRUCTIONS`, `USAGE_LIMITS`, `OUTPUT_TOOL_NAME`, 8 tool wrappers, `user_prompt`, `run_turn` -> `TurnResult`), `tests/test_agent.py` (14 tests, scripted `FunctionModel`s, no network; 273 total pass), `scripts/try_agent.py` (manual real-model run on the demo inventory of `try_recipes.py`). `app/store.py`: `sqlite3.connect(..., check_same_thread=False)`.
+- API: `await run_turn(store, session_id, message="", images=None, *, model=None, recipe_model=None, vision_model=None) -> TurnResult(reply: AgentReply, result: AgentRunResult, latency_s)`. `images` = `[(Path, Location)]`. Loads the session history from the store, runs, saves `all_messages()` back. `model=None` -> `agent_model()`; tests pass `FunctionModel`s. Raises `ValueError` on an empty turn, `UsageLimitExceeded` after 10 tool calls / 16 requests (not caught: the API in T3.1 decides what to show).
+- Design:
+  - `agent = Agent(None, deps_type=Deps, output_type=ToolOutput(AgentReply, name="reply"), retries=2)`; the model is passed at run time so importing the module needs no key.
+  - Dynamic `@agent.instructions`: PRODUCT §5 rules (12 numbered rules, module constant `INSTRUCTIONS`) + today's date + `inventory_summary` + `preferences_summary` + "The user attached N photos (places)" when there are photos. The user turn gets the prefix `[user attached N photos (fridge, pantry)]`.
+  - `Deps(store, images, recipes, recipe_model, vision_model)`. `Deps.recipes` is a per-run cache of every `Recipe` returned by `suggest_meals` / `get_recipe`, by dish name.
+  - **Deviation:** `compute_missing(dish: str)` and `validate_suggestion(dish: str)` take a dish name and look the recipe up in `Deps.recipes` (case/space-insensitive) instead of taking a whole `Recipe` (fewer tokens, no copy errors). Unknown dish -> `ModelRetry` listing the known dishes. `suggest_meals` takes flat `request`, `max_minutes`, `n`, `exclude` instead of a `Constraints` object (built inside).
+  - `recognize_inventory()` takes no arguments: photos from `Deps.images`, then `merge_recognized`, clears `Deps.images`, returns found/uncertain counts and the new inventory. Without photos it returns a message telling the agent to ask for them.
+  - `get_inventory` / `update_inventory` return the `inventory_summary` text, not `InventoryItem` lists (compact for the model; the API reads the inventory from the store). `save_preference` returns `Saved: ...` or `Already noted: ...` (same id as an existing preference).
+  - All tools and the instructions function are `async`: pydantic-ai runs sync ones in a worker thread, which broke the SQLite connection (thread check). `check_same_thread=False` in the store is the second safety net (FastAPI handlers in T3.1).
+  - **Explicit `ToolOutput`:** with the default "auto" output mode pydantic-ai 2.55 also tries to parse a plain-text answer as JSON, and the model got an "Invalid JSON" retry it read as a system error (one real turn failed after 2 retries). With `ToolOutput` the retry says "include your response in a tool call"; after that change, 8 real turns (incl. "thanks!", "ok cool") all ended in a `reply` call with no retry. The output tool is named `reply` (T2.3 trace should skip it: `OUTPUT_TOOL_NAME`).
+  - `LOG_LEVEL=DEBUG` logs each tool call (`tool name(args) -> result summary`); every turn logs latency, requests, tool calls and tokens at INFO.
+- Real-model runs (2026-10-13, `deepseek-v4-pro` + `deepseek-flash`): Mode A ("under 30 minutes, kids") -> `suggest_meals` then `validate_suggestion` x5 (all ok) -> 3 meals, says a pantry photo would give more options; 50 s. "we're out of eggs, 20 minutes" -> `update_inventory(remove egg)` first, 3 egg-free meals <= 20 min; 79 s. Mode B lasagna -> `get_recipe`, `compute_missing`, recipe in `meals`, substitutions cottage cheese->ricotta and cheddar->mozzarella, to buy `ground beef, parmesan`, check first `lasagna noodle, crushed tomato, tomato paste`; 35-47 s. Pancakes -> empty shopping list, "no shopping needed"; 17 s. "kids hated the eggplant" -> `save_preference` (dedupe reported "Already noted"); 7 s.
+- Next tasks must know: T2.2's `@agent.output_validator` gets `AgentReply` and can use `ctx.deps.recipes` to re-check / replace meals by name; the validator should also handle the Mode B recipe in `meals`. T2.3: new messages are in `turn.result.new_messages()`, usage in `turn.result.usage`, skip `OUTPUT_TOOL_NAME` tool calls. T2.4: `run_turn(store, session_id, text, images)`. T3.1: `run_turn` saves history itself; read inventory/scan state from the store after the turn.
+- Open issues: Mode A latency, synonym gaps (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_agent.py -q
+uv run python scripts/try_agent.py
+```
+Expected: `273 passed`; then `14 passed`; then (real models, 1.5-2.5 min) two turns. Turn 1 shows `-> suggest_meals(...)`, several `-> validate_suggestion(...)` lines, then `-> reply(...)`, a one-line message and 3 `meal:` lines, none with eggplant. Turn 2 shows `-> get_recipe`, `-> compute_missing`, `-> reply`, a `meal: ... Lasagna` line, `substitutions: cottage cheese for ricotta ...`, and `to buy: [...] check your pantry first: ['lasagna noodle', ...]`. Dishes differ from run to run. No `!! retry` lines are expected.
+Manual check: `uv run python scripts/try_agent.py "The kids hated the eggplant last time" "thanks!"`: turn 1 calls `save_preference` and the message confirms it; turn 2 is a one-line reply with no tool calls and no retry.
 
 ### 2026-10-13 — T1.7 Preferences
 - Built: `app/tools/preferences.py` (`save_preference`, `get_preferences`, `preferences_summary`, `format_preferences`), `tests/test_preferences.py` (13 tests; 259 total pass). `app/tools/recipes.py`: the private `_preferences_text` is gone; the recipe prompts now use `preferences_summary(store)` (one line per preference, under a `Preferences:` header).
