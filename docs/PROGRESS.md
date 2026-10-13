@@ -19,8 +19,8 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T2.1 Agent
 - [x] T2.1b Latency fix (reply by id, validation inside suggest_meals, steps on demand, per-step timing, thinking off)
 - [x] T2.2 Output validator (+ essential-flag fix)
-- [ ] T2.3 Trace capture
-- [ ] T2.4 Terminal chat
+- [x] T2.3 Trace capture
+- [x] T2.4 Terminal chat
 - [ ] T2.5 Scenario suite
 - [ ] T3.1 API
 - [ ] T3.2 Web page
@@ -37,10 +37,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T2.3 Trace capture** (nothing needed from the human). The output check is already a step: `StepTiming(kind="check", name="output check", detail="ok" | "ok (fixed ...)" | "output check failed: ...")` in `TurnResult.steps`; the same failure is a `RetryPromptPart(tool_name="reply")` in the messages. Then T2.4, T2.5.
+- **Next task: T2.5 Scenario suite** (real models; nothing needed from the human except time: about 10 scenarios x 10-15 s per turn). Use `TurnResult.trace` for `tools_called` (tool names in order; skip `output check`) and to spot failed checks (`ToolTraceItem.failed`); `TurnResult.usage.latency_s` for the latency column. Scenario 8 needs eval photos; until they exist use `tests/fixtures/coffee.jpg` and say so.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 312 tests pass. All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing (`TurnResult.steps`) and the output validator exist; no trace yet.
+- State: 324 tests pass. All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
 
 ## Current model settings
 
@@ -65,6 +65,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
+- (T2.4) Recipe ids are per run (`Deps.recipes`): when the user refers back to a dish from an earlier turn, the agent sometimes reuses the old id, gets an "unknown meal id" output-check retry, and then calls `get_recipe` again (seen once in a real run, +5 s). Correct (the validator catches it) but slow; if it shows up often in T2.5, preload `Deps.recipes` with the recipes named in the session's last reply.
 - ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
 - (T2.1b, for T4.2) Mode B prose: the agent sometimes proposes a substitute only in `message` prose instead of `substitutions`, and the prose can contradict the code-fixed lists (T2.2 real runs: "you'd need to buy ... ricotta" while ricotta is substituted and not in `shopping_list`). The lists are right (code wins); the message text is not checked.
 - ~~(T2.1b) `deepseek-flash` marked ground beef / parmesan optional in lasagna~~ Fixed 2026-10-13 (T2.2): essential defined with examples in `INGREDIENT_RULES` + code rule `force_named_essential`. 3/3 real lasagna runs had all four essentials.
@@ -78,6 +79,31 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T2.3 Trace capture, T2.4 Terminal chat
+- Built / changed:
+  - `app/trace.py` (new, a plain function, no agent/store/model): `build_trace(messages, steps=None, recipes=None) -> list[ToolTraceItem]` walks a run's `new_messages()`, pairs each `ToolCallPart` with its `ToolReturnPart` / `RetryPromptPart` by tool call id, and writes `args_summary` / `result_summary` per tool (`args_summary()`, `result_summary()`, both <= 100 chars via `short()`). Examples: `update_inventory(remove egg, add chicken) -> removed 1, added 1`; `suggest_meals('quick' max 30 min) -> 5 candidates: 4 passed, 1 failed (Carbonara: missing: cream)`; `validate_suggestion(Carbonara) -> FAILED: missing: cream`; `compute_missing(Lasagna) -> to buy: ricotta; check first: pasta`. Recipe ids are shown as dish names (from `Deps.recipes`). A tool's `ModelRetry` -> `retry: ...`; args that failed validation -> `retry: invalid arguments` (no seconds: the tool never ran). Calls of the output tool `reply` become `output check` items: `ok`, `ok (fixed ...)` or `output check failed: ...` (the validator's verdict from the `check` step). `format_trace()` prints one line per item (`-` ok, `!` failed). Tool returns stored as dicts (history reloaded from the store) are summarized too.
+  - `app/models.py`: `ToolTraceItem` gained `failed: bool = False` (a failed check, incl. a `suggest_meals` result with failed candidates, a retry or an error; for the warning colour in T4.4) and `seconds: float | None`; new `TurnUsage(latency_s, requests, tool_calls, input_tokens, output_tokens)`; `StepTiming.call_id` (tool call id, set by `TimedToolset` and the output validator) so the trace gets exact seconds per call.
+  - `app/agent.py`: `TurnResult.trace` and `TurnResult.usage`; `OUTPUT_TOOL_NAME` / `OUTPUT_CHECK` now live in `app/trace.py` (imported, same names).
+  - `scripts/chat.py` (new, T2.4): REPL on the real agent. `--session` (default `terminal`), `--db` (default `DB_PATH`; history persisted by `run_turn` in the store, so a restart with the same session continues), `--demo` (the in-memory demo inventory of `try_recipes.py`, nothing on disk changes), `--debug` (timing breakdown + full message list as JSON per run, and the DEBUG tool log). Commands: `/photo <path>... [fridge|freezer|pantry]` (attached to the next message; Enter alone sends the photos only), `/inventory`, `/new`, `/help`, `/quit`. Prints the message, meal cards (name, time, id, uses), substitutions, to buy, check first, questions, then `trace (N steps, latency, requests, tokens)` and the trace lines. `UnexpectedModelBehavior` / `UsageLimitExceeded` are printed and the REPL continues.
+  - `scripts/try_agent.py` also prints the trace.
+  - Tests: 324 pass (was 312). `tests/test_trace.py` (10: summaries, `build_trace` on hand-made messages incl. a bad-args retry, the trace of mocked Mode A runs with a failed output check, Mode B, a no-tool turn, history round trip), `tests/test_chat_script.py` (2: `/photo` parsing; one REPL session with a scripted model: photo sent with the next message only, history stored).
+- Decisions / deviations:
+  - The trace code is in `app/trace.py`, not inside `app/agent.py` (the CLAUDE.md layout puts trace capture in agent.py): a pure function is easier to test and to reuse in the API (T3.1) and the scenarios (T2.5).
+  - A successful output check is also a trace item (`output check(...) -> ok`), not only failures: it shows the user that the final reply was checked by code.
+  - Per-turn usage is returned (`TurnResult.usage`) and logged, not stored in the database; T5.2 reads it from the turn.
+- Real-model run (2026-10-13, `scripts/chat.py --demo`): Mode A "under 30 minutes, kids" 10.1 s, trace `suggest_meals -> 5 candidates`, `output check -> ok`, 3 meals. Mode B "lasagna" 8.5 s: `get_recipe`, `compute_missing -> to buy: ground beef, ricotta, mozzarella, parmesan; check first: lasagna noodle`, cottage cheese for ricotta. Then `/photo tests/fixtures/coffee.jpg pantry` + Enter, 15.4 s: `recognize_inventory`, `! output check failed: unknown meal id(s) 00e1a2` (the agent reused the previous turn's lasagna id), `get_recipe`, `compute_missing`, `output check -> ok`; with the pantry scanned, `lasagna noodle` moved from check-first to to-buy. "The kids hated the eggplant" 3.4 s: `save_preference -> Already noted`.
+- Next tasks must know: T2.5: `turn.trace` (tool names in order, `failed` flags) and `turn.usage`. T3.1: return `turn.trace` with the reply (`ToolTraceItem` is JSON-ready). T4.4: the collapsed sentence can be built from `ToolTraceItem.tool` / `failed`.
+- Open issues: per-run recipe ids (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_trace.py tests/test_chat_script.py -q
+uv run python scripts/chat.py --demo
+```
+Expected: `324 passed`; then `12 passed`; then `demo inventory (in memory) ...` and a `you>` prompt. Type `What can I cook tonight? Something under 30 minutes, the kids are eating.` (about 10 s): a one-line answer, up to 3 `[n] Dish (minutes, id ...)` lines, then `trace (2 steps, ...)` with `- suggest_meals(...) -> 5 candidates...` and `- output check(...) -> ok`. Type `I want to make lasagna`: `- get_recipe(lasagna)`, `- compute_missing(Lasagna) -> to buy: ...; check first: lasagna noodle`, a `to buy:` line and `check your pantry first: lasagna noodle`. Type `/quit` to leave.
+Manual check: start `uv run python scripts/chat.py --demo` again, type `/photo tests/fixtures/coffee.jpg pantry`, then press Enter on the empty `you (1 photo attached)>` prompt; the trace starts with `- recognize_inventory() -> Recognized 1 items in 1 photo(s) of: pantry.`, and `/inventory` then shows `pantry (scanned <today>)`. Then run `uv run python scripts/chat.py --demo --debug` and type `thanks`: after the trace you see a `timing:` block and a `messages:` JSON list.
 
 ### 2026-10-13 — T2.2 Output validator (+ essential-flag fix)
 - Built / changed:

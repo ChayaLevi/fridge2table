@@ -23,10 +23,11 @@ from pydantic_ai.toolsets import FunctionToolset
 from app import config, llm
 from app.models import (
     AgentReply, Constraints, InventoryChange, Location, MealCandidate, MissingReport, Recipe, StepTiming,
-    SuggestResult, ValidationResult,
+    SuggestResult, ToolTraceItem, TurnUsage, ValidationResult,
 )
 from app.store import Store
 from app.timing import TimedModel, TimedToolset
+from app.trace import OUTPUT_CHECK, OUTPUT_TOOL_NAME, build_trace
 from app.tools import checks, inventory, preferences, recipes, recognize
 
 log = logging.getLogger(__name__)
@@ -94,8 +95,6 @@ class Deps:
     # Timing of every model call and tool call in this run, in order (filled by app/timing.py).
     steps: list[StepTiming] = field(default_factory=list)
 
-
-OUTPUT_TOOL_NAME = "reply"
 
 # Explicit tool output. With the default "auto" mode pydantic-ai also tries to parse a plain-text
 # answer as JSON and sends the model a confusing "Invalid JSON" retry; in tool mode a plain-text answer
@@ -335,9 +334,6 @@ async def save_preference(ctx: RunContext[Deps], text: str, avoid: list[str]) ->
 
 # --- output validator (the self-correction guarantee) ---------------------------------------------
 
-OUTPUT_CHECK = "output check"
-
-
 @agent.output_validator
 async def check_output(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
     """Re-check the final reply in code (checks.check_reply); a failure goes back to the model as ModelRetry.
@@ -357,7 +353,8 @@ async def check_output(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
 
     def record(detail: str) -> None:
         ctx.deps.steps.append(StepTiming(kind="check", name=OUTPUT_CHECK,
-                                         seconds=round(time.perf_counter() - start, 2), detail=detail))
+                                         seconds=round(time.perf_counter() - start, 2), detail=detail,
+                                         call_id=ctx.tool_call_id))
 
     if not result.ok:
         problems = "; ".join(result.problems)
@@ -395,9 +392,11 @@ def fill_meals(reply: AgentReply, cache: dict[str, Recipe]) -> AgentReply:
 @dataclass
 class TurnResult:
     reply: AgentReply
-    result: AgentRunResult[AgentReply]  # messages and usage, for the trace (T2.3)
+    result: AgentRunResult[AgentReply]  # the run's messages and usage
     latency_s: float
     steps: list[StepTiming]  # every model call and tool call of the turn, timed, in order
+    trace: list[ToolTraceItem]  # one short line per tool call and output check, for the user
+    usage: TurnUsage  # latency and tokens of the turn (T5.2)
 
 
 async def run_turn(
@@ -432,8 +431,11 @@ async def run_turn(
     latency = time.perf_counter() - start
     fill_meals(result.output, deps.recipes)
     store.save_session_messages(session_id, result.all_messages())
-    usage = result.usage
+    u = result.usage
+    usage = TurnUsage(latency_s=round(latency, 2), requests=u.requests, tool_calls=u.tool_calls,
+                      input_tokens=u.input_tokens, output_tokens=u.output_tokens)
+    trace = build_trace(result.new_messages(), deps.steps, deps.recipes)
     log.info("agent turn %s: %.1fs, %d requests, %d tool calls, %s in / %s out tokens, %d meals",
              session_id, latency, usage.requests, usage.tool_calls, usage.input_tokens, usage.output_tokens,
              len(result.output.meals))
-    return TurnResult(reply=result.output, result=result, latency_s=latency, steps=deps.steps)
+    return TurnResult(reply=result.output, result=result, latency_s=latency, steps=deps.steps, trace=trace, usage=usage)

@@ -113,18 +113,19 @@ class TimedToolset(WrapperToolset[Any]):
     async def call_tool(self, name: str, tool_args: dict[str, Any], ctx: RunContext[Any], tool: ToolsetTool[Any]) -> Any:
         start = time.perf_counter()
         steps: list[StepTiming] = ctx.deps.steps
+        call_id = ctx.tool_call_id
         try:
             result = await super().call_tool(name, tool_args, ctx, tool)
         except ModelRetry as e:
             steps.append(StepTiming(kind="tool", name=name, seconds=round(time.perf_counter() - start, 2),
-                                    detail=f"retry: {result_summary(e.message)}"))
+                                    detail=f"retry: {result_summary(e.message)}", call_id=call_id))
             raise
         except BaseException as e:
             steps.append(StepTiming(kind="tool", name=name, seconds=round(time.perf_counter() - start, 2),
-                                    detail=f"error: {type(e).__name__}"))
+                                    detail=f"error: {type(e).__name__}", call_id=call_id))
             raise
         steps.append(StepTiming(kind="tool", name=name, seconds=round(time.perf_counter() - start, 2),
-                                detail=result_summary(result)))
+                                detail=result_summary(result), call_id=call_id))
         return result
 
 

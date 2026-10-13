@@ -158,12 +158,27 @@ class StepTiming(BaseModel):
     detail: str = ""  # model: what it returned ("-> suggest_meals"); tool: result summary; check: "ok" / "output check failed: ..."
     input_tokens: int | None = None
     output_tokens: int | None = None
+    call_id: str | None = None  # tool / check: the tool call id, so the trace can attach the seconds
 
 
 class ToolTraceItem(BaseModel):
-    tool: str
-    args_summary: str
-    result_summary: str
+    """One line of the trace the user sees under an agent reply (built by app/trace.py)."""
+
+    tool: str  # tool name, or "output check" for the validator of the final reply
+    args_summary: str  # short: "remove egg", "'quick' max 30 min", "Lasagna"
+    result_summary: str  # short: "removed 1", "5 candidates: 4 passed, 1 failed (Carbonara: missing: cream)"
+    failed: bool = False  # a failed check (incl. failed candidates), a retry or an error (warning colour, T4.4)
+    seconds: float | None = None  # from TurnResult.steps; None when the call never ran (bad args)
+
+
+class TurnUsage(BaseModel):
+    """Latency and token usage of one agent turn (for T5.2)."""
+
+    latency_s: float
+    requests: int
+    tool_calls: int
+    input_tokens: int
+    output_tokens: int
 
 
 class AgentReply(BaseModel):

@@ -3,7 +3,7 @@
 Usage: uv run python scripts/try_agent.py "What can I cook tonight?" "I want to make lasagna" ...
 Each argument is one user turn in the same session. Uses an in-memory store (fridge scanned, pantry
 not, eggplant preference), so nothing on disk changes. Prints the tool calls, retries and the reply of
-each turn. The full REPL with photos comes in T2.4 (scripts/chat.py).
+each turn. The REPL with photos is scripts/chat.py (T2.4).
 """
 
 import asyncio
@@ -19,6 +19,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart, T
 from app.agent import run_turn  # noqa: E402
 from app.llm import setup_observability  # noqa: E402
 from app.timing import format_steps  # noqa: E402
+from app.trace import format_trace  # noqa: E402
 from try_recipes import demo_store  # noqa: E402
 
 DEFAULT_TURNS = ["What can I cook tonight? Something under 30 minutes, the kids are eating.", "I want to make lasagna"]
@@ -40,6 +41,8 @@ def show(turn) -> None:
                     print(f"  !! retry: {str(p.content)[:140]}")
     print("timing:")
     print(format_steps(turn.steps))
+    print("trace:")
+    print(format_trace(turn.trace))
     r = turn.reply
     print(f"message: {r.message}")
     for meal in r.meals:
