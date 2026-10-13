@@ -1,0 +1,185 @@
+# Agent scenario suite (T2.5). Run: uv run python eval/run_scenarios.py
+#
+# inventories: named item lists. One item per string: "name, category, qty[, place][, soon]"
+#   (place = fridge | freezer | pantry, default fridge; "soon" marks it use soon).
+# scenario keys:
+#   id, name
+#   after: <id>   reuse that scenario's store (inventory, preferences) in a new session; seed is applied on top
+#   seed: inventory (a name from inventories, or a list of items), add (a list of items), remove (names),
+#         scanned (places marked scanned), preferences ([{text, avoid}])
+#   turns: [{message, photos: [[path, place]], scan: [places], new_session: bool, expect: {...}}]
+# expect keys (all optional):
+#   tools_called: tool names in this order (others may come between); "output check" = the validator
+#   first_tool, tools_not_called, failed_check (a trace item marked failed)
+#   min_meals, max_meals, max_minutes, meals_valid (Mode A meals pass validate_suggestion now)
+#   meals_must_not_contain: ingredient names (any ingredient of any meal)
+#   shopping_list_contains, shopping_list_must_not_contain, shopping_list_empty
+#   check_first_contains, check_first_must_not_contain, check_first_empty
+#   substitution_for: missing items that must have a substitution
+#   preference_saved: ingredients that must be in a stored preference's avoid list
+#   inventory_lacks: ingredients that must not be in the inventory after the turn
+#   max_questions, message_matches (regex on message + questions), asks_for_photo (a place)
+
+inventories:
+  demo:
+    - spinach, vegetable, some, soon
+    - egg, egg, plenty
+    - milk, dairy, some
+    - cheddar, dairy, some
+    - butter, dairy, some
+    - greek yogurt, dairy, low
+    - cottage cheese, dairy, some
+    - chicken, meat, some
+    - bacon, meat, low
+    - tomato, vegetable, plenty
+    - onion, vegetable, plenty
+    - garlic, vegetable, some
+    - carrot, vegetable, some
+    - bell pepper, vegetable, some
+    - eggplant, vegetable, some, soon
+    - zucchini, vegetable, low
+    - lemon, fruit, some
+    - apple, fruit, plenty
+    - mushroom, vegetable, some
+    - pasta, pasta, some
+    - ketchup, condiment, some
+  # lots of pasta, nothing creamy: the obvious "creamy pasta" fails
+  pasta_no_cream:
+    - pasta, pasta, plenty, pantry
+    - parmesan, dairy, some
+    - bacon, meat, some
+    - garlic, vegetable, some
+    - onion, vegetable, some
+    - mushroom, vegetable, some
+    - spinach, vegetable, low
+    - butter, dairy, low
+    - canned tomato, canned, some, pantry
+  pancakes:
+    - egg, egg, plenty
+    - milk, dairy, plenty
+    - butter, dairy, some
+    - banana, fruit, some
+    - maple syrup, condiment, some, pantry
+    - vanilla extract, baking, some, pantry
+
+scenarios:
+  - id: 1
+    name: Mode A, what can I cook tonight
+    seed: {inventory: demo, scanned: [fridge], preferences: [{text: kids dislike eggplant, avoid: [eggplant]}]}
+    turns:
+      - message: What can I cook tonight?
+        expect:
+          tools_called: [suggest_meals, output check]
+          min_meals: 1
+          max_meals: 3
+          meals_valid: true
+          meals_must_not_contain: [eggplant]
+
+  - id: 2
+    name: Inventory change first, then quick meals
+    seed: {inventory: demo, scanned: [fridge]}
+    turns:
+      - message: We're out of eggs. Something in 30 minutes?
+        expect:
+          tools_called: [update_inventory, suggest_meals]
+          inventory_lacks: [egg]
+          min_meals: 1
+          max_meals: 3
+          meals_valid: true
+          meals_must_not_contain: [egg]
+          max_minutes: 30
+
+  - id: 3
+    name: The obvious dish fails a check, final meals valid
+    seed: {inventory: pasta_no_cream, scanned: [fridge, pantry]}
+    turns:
+      - message: We love creamy pasta, like fettuccine alfredo or carbonara with cream. What can I make tonight?
+        expect:
+          tools_called: [suggest_meals]
+          failed_check: true
+          min_meals: 1
+          max_meals: 3
+          meals_valid: true
+
+  - id: 4
+    name: Mode B with a substitution (lasagna, cottage cheese for ricotta)
+    seed: {inventory: demo, scanned: [fridge]}
+    turns:
+      - message: I want to make lasagna
+        expect:
+          tools_called: [get_recipe, compute_missing]
+          substitution_for: [ricotta]
+          shopping_list_must_not_contain: [ricotta, cottage cheese]
+
+  - id: 5
+    name: Mode B with everything present (pancakes)
+    seed: {inventory: pancakes, scanned: [fridge, pantry]}
+    turns:
+      - message: I want to make pancakes
+        expect:
+          tools_called: [get_recipe, compute_missing]
+          max_meals: 1
+          shopping_list_empty: true
+          check_first_empty: true
+          message_matches: "nothing (to buy|missing|else)|no need|don't need|do not need|have everything|have all|all (the|you need|set)|everything you need|good to go|ready to"
+
+  - id: 6
+    name: Save a preference
+    seed: {inventory: demo, scanned: [fridge]}
+    turns:
+      - message: The kids hated the eggplant last time.
+        expect:
+          tools_called: [save_preference]
+          preference_saved: [eggplant]
+
+  - id: 7
+    name: Cross-session preference (new session after 6, eggplant use soon)
+    after: 6
+    seed: {add: ["eggplant, vegetable, plenty, soon"]}
+    turns:
+      - message: What should we have for dinner tonight?
+        expect:
+          tools_called: [suggest_meals]
+          min_meals: 1
+          meals_valid: true
+          meals_must_not_contain: [eggplant]
+
+  # No eval photos yet (eval/fridges is empty): uses tests/fixtures/coffee.jpg. Swap for an eval set when it exists.
+  - id: 8
+    name: Photos attached, recognition first, at most 3 questions
+    seed: {inventory: demo, scanned: [fridge]}
+    turns:
+      - message: ""
+        photos: [[tests/fixtures/coffee.jpg, pantry]]
+        expect:
+          first_tool: recognize_inventory
+          max_questions: 3
+          max_meals: 3
+
+  - id: 9
+    name: Only fridge photos, asks once for the pantry
+    seed: {}
+    turns:
+      - message: Here is my fridge.
+        photos: [[tests/fixtures/coffee.jpg, fridge]]
+        expect:
+          first_tool: recognize_inventory
+          asks_for_photo: pantry
+          max_questions: 3
+
+  - id: 10
+    name: Pantry rule (bolognese before and after a pantry scan without pasta)
+    seed: {inventory: demo, remove: [pasta], scanned: [fridge]}
+    turns:
+      - message: I want to make spaghetti bolognese
+        expect:
+          tools_called: [get_recipe, compute_missing]
+          check_first_contains: [pasta]
+          shopping_list_must_not_contain: [pasta]
+      - message: I want to make spaghetti bolognese
+        new_session: true
+        scan: [pantry]
+        expect:
+          tools_called: [get_recipe, compute_missing]
+          shopping_list_contains: [pasta]
+          check_first_must_not_contain: [pasta]

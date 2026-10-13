@@ -21,7 +21,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T2.2 Output validator (+ essential-flag fix)
 - [x] T2.3 Trace capture
 - [x] T2.4 Terminal chat
-- [ ] T2.5 Scenario suite
+- [x] T2.5 Scenario suite
 - [ ] T3.1 API
 - [ ] T3.2 Web page
 - [ ] T3.3 First real-fridge run + internal demo 🧑
@@ -37,10 +37,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T2.5 Scenario suite** (real models; nothing needed from the human except time: about 10 scenarios x 10-15 s per turn). Use `TurnResult.trace` for `tools_called` (tool names in order; skip `output check`) and to spot failed checks (`ToolTraceItem.failed`); `TurnResult.usage.latency_s` for the latency column. Scenario 8 needs eval photos; until they exist use `tests/fixtures/coffee.jpg` and say so.
+- **Next task: T3.1 API** (nothing needed from the human). `run_turn` returns `TurnResult` with `.reply`, `.trace`, `.usage`; it can raise `UnexpectedModelBehavior` (3 bad replies), `UsageLimitExceeded` and `ModelAPIError` (network; seen once in T2.5): return a clear error to the page instead of a 500 traceback. After a prompt or tool change, rerun `uv run python eval/run_scenarios.py` (about 3 min).
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 324 tests pass. All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
+- State: 334 tests pass. Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
 
 ## Current model settings
 
@@ -65,12 +65,15 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
+- (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
+- (T2.5) Turn latency varies with the API: the same Mode A turn took 11 s and 21 s on the same day, sequentially. With `--jobs 4` turns take 20-36 s (parallel load), so use `--jobs 1` for latency numbers (T5.2).
+- (T2.5) `ModelAPIError: Connection error` happened once in about 45 real turns; `run_turn` does not retry it. T3.1 should show a "try again" message.
 - (T2.4) Recipe ids are per run (`Deps.recipes`): when the user refers back to a dish from an earlier turn, the agent sometimes reuses the old id, gets an "unknown meal id" output-check retry, and then calls `get_recipe` again (seen once in a real run, +5 s). Correct (the validator catches it) but slow; if it shows up often in T2.5, preload `Deps.recipes` with the recipes named in the session's last reply.
 - ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
 - (T2.1b, for T4.2) Mode B prose: the agent sometimes proposes a substitute only in `message` prose instead of `substitutions`, and the prose can contradict the code-fixed lists (T2.2 real runs: "you'd need to buy ... ricotta" while ricotta is substituted and not in `shopping_list`). The lists are right (code wins); the message text is not checked.
 - ~~(T2.1b) `deepseek-flash` marked ground beef / parmesan optional in lasagna~~ Fixed 2026-10-13 (T2.2): essential defined with examples in `INGREDIENT_RULES` + code rule `force_named_essential`. 3/3 real lasagna runs had all four essentials.
 - (T2.2) One real lasagna run substituted chicken for ground beef ("a chicken lasagna"). Valid (chicken is in the inventory) but a stretch; watch in T4.2.
-- (T2.1) Synonym gaps seen in real Mode B runs: `ricotta cheese` != `ricotta`, `crushed tomato` / `tomato paste` are separate names (both correct but noisy in `check_first`); `lasagna noodle` vs `pasta` as before.
+- (T2.1) Synonym gaps seen in real Mode B runs: ~~`ricotta cheese` != `ricotta`~~ (fixed in T2.5), `crushed tomato` / `tomato paste` are separate names (both correct but noisy in `check_first`); `lasagna noodle` vs `pasta` as before.
 - ~~(T1.6) `suggest_meals` takes ~28 s~~ Fixed 2026-10-13: 5-7 s without steps and without thinking (`get_recipe` 2-3 s).
 - (T1.6) `lasagna noodle` does not normalize to `pasta` (no synonym), so plain pasta in the inventory does not cover lasagna sheets. Arguably right; revisit if Mode B looks wrong in scenarios.
 
@@ -79,6 +82,44 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T2.5 Scenario suite
+- Built / changed:
+  - `eval/scenarios.yaml` (new): the 10 scenarios of the plan. Named seed inventories (`demo` = the `try_recipes.py` fridge, `pasta_no_cream`, `pancakes`), one item per string `"name, category, qty[, place][, soon]"`. Scenario keys: `seed` (inventory, add, remove, scanned, preferences), `after: <id>` (reuse that scenario's store in a new session: scenario 7 builds on 6), `turns` (message, photos, `scan` before the turn, `new_session`). 21 expectation keys, documented at the top of the file (`tools_called` in order incl. `output check`, `first_tool`, `failed_check`, meal counts / minutes / `meals_valid` / `meals_must_not_contain`, shopping list and check-first contains / not / empty, `substitution_for`, `preference_saved`, `inventory_lacks`, `max_questions`, `message_matches`, `asks_for_photo`).
+  - `eval/run_scenarios.py` (new): `load_suite` (rejects unknown expect keys and bad `after`), `seed_store`, `check_turn(expect, reply, trace, store) -> list[str]` (plain function; ingredient matching with `same_ingredient` or a whole word of a longer name, so "ricotta" matches "ricotta cheese"), `run_suite`. Options: `--only 4,10` (dependencies run too, unreported), `--repeat N`, `--jobs N` (scenario groups in parallel), `-v`. Prints one line per turn (latency, tools in order), the reply and trace of failed turns, a markdown table (passes over repeats, mean latency per turn), and saves JSON in `eval/results/scenarios_<time>.json`. Any exception in a turn is a failed turn, not a crash.
+  - `tests/test_scenarios.py` (new, 10 tests, no network): the suite file loads and every seed is valid, `check_turn` pass/fail cases for Modes A and B, preferences and messages, dependency selection, `run_suite` with a fake `run_turn` (shared store via `after`, new session).
+  - Prompt fix, `SUGGEST_PROMPT` in `app/tools/recipes.py` (scenario 3): the first run passed 9/10. With "creamy pasta" and no cream, the recipe model made "Parmesan Cream Pasta" with no cream in it (a misleading name, so no check failed). Two new rules: a dish name never names an ingredient that is not in the dish; when the request names a dish or style the inventory cannot make, the first candidate is the classic version with its missing ingredients marked essential, and only that one may need anything missing. Now the trace shows e.g. `! suggest_meals -> 5 candidates: 2 passed, 3 failed (Fettuccine Alfredo: missing: cream ...)` and the message says alfredo needs cream and offers the dishes that can be made.
+  - `data/synonyms.json`: `ricotta cheese -> ricotta` (open issue from T2.1; scenario 4), `fettuccine`, `rigatoni`, `farfalle -> pasta` (seen in scenario 3).
+- Results (real models: `deepseek-v4-pro` agent, `deepseek-flash` recipes and vision):
+
+  | Run | Result | Notes |
+  |---|---|---|
+  | 1 (before the fix) | 9/10 | #3: no failed check ("cream pasta" without cream) |
+  | 3 repeats, `--jobs 4` | 29/30 | #3 once: all 5 candidates needed cream, the agent answered Mode B (alfredo + buy cream); fixed by "only the first dish may need missing ingredients" |
+  | #3 alone x5 after the 2nd fix | 5/5 | |
+  | final, sequential | 9/10 | #2 failed on `ModelAPIError: Connection error` (network), then 2/2 on rerun |
+
+  Sequential latency per turn: Mode A 13-21 s, Mode B 10-21 s, save preference 8 s, photo turns 9 s (one coffee photo).
+- Decisions / deviations:
+  - Scenario 1 expects `suggest_meals` then `output check`, not `validate_suggestion`: since T2.1b the candidates are validated inside `suggest_meals` and the final reply by the output validator (both in the trace).
+  - Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (no eval photos yet), as allowed by the plan.
+  - Scenario 10 checks only pasta (canned tomato depends on what `get_recipe` lists: it was in to-buy in 1 of 2 runs, fresh tomato in the other). The agent sometimes substitutes chicken for ground beef in bolognese (valid, a stretch; same as the open lasagna issue).
+  - `--jobs` was added to shorten the edit-run loop (about 70 s instead of 3 min); it inflates latency.
+- Next tasks must know: T3.1: handle `ModelAPIError` (see Open issues). T4.2: scenario 4 passed 4/4 runs here; the T4.2 check is `uv run python eval/run_scenarios.py --only 4 --repeat 3`. T4.3: `--only 7` runs 6 then 7. T5.2: per-turn latency is in the JSON (`usage`).
+- Open issues: coffee photo in 8/9, latency variance, network errors (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_scenarios.py -q
+uv run python eval/run_scenarios.py
+```
+Expected: `334 passed`; then `10 passed`; then (real models, about 3 min) one `[PASS]` / `[FAIL]` line per scenario with its tools in order, e.g. `ok turn 1: 12.8 s  tools: get_recipe > compute_missing > output check`, then a markdown table ending in `| | **total** | **10/10** | |` (at least 8/10 is the bar), and `saved eval\results\scenarios_<time>.json`. Dishes and latencies differ from run to run; a `FAIL: error: ModelAPIError` line is a network error, not the agent.
+Manual check:
+```
+uv run python eval/run_scenarios.py --only 3 -v
+```
+Expected: `[PASS] #3 ...`, the message says the creamy classic needs cream and offers 1-3 dishes you can make now; under it the trace has a line starting with `! suggest_meals(` and showing `failed (Fettuccine Alfredo: missing: cream` (or a similar dish), then `- output check(...) -> ok`.
 
 ### 2026-10-13 — T2.3 Trace capture, T2.4 Terminal chat
 - Built / changed:

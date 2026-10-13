@@ -54,6 +54,13 @@ if a dish truly needs one extra ingredient, mark it essential honestly.
 - Places marked NOT SCANNED may hold things you cannot see; do not count on them.
 - Simple home cooking, the kind a parent makes on a weekday. Realistic time_minutes (prep + cooking).
 - Distinct dishes: do not repeat a dish or a near-variant of it.
+- The dish name must be honest: never name an ingredient in it ("cream pasta", "chicken soup") unless \
+that ingredient is in the dish's ingredients.
+- If the request names a dish or a style the inventory cannot make (e.g. "alfredo" with no cream), make \
+the first dish the classic version, with its missing ingredients listed and marked essential (code will \
+check it and the user will be told what is missing). Only that first dish may need missing \
+ingredients: every other dish must be makeable from the inventory and staples alone (the closest \
+alternatives, e.g. a pasta with butter, parmesan and garlic).
 - Do not write cooking steps: only name, ingredients, time and servings.
 """ + INGREDIENT_RULES
 
