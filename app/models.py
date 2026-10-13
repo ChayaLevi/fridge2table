@@ -6,6 +6,11 @@ from pydantic import BaseModel
 QtyLevel = Literal["plenty", "some", "low"]
 Location = Literal["fridge", "freezer", "pantry"]
 
+CATEGORIES = (
+    "vegetable", "fruit", "meat", "fish", "dairy", "egg", "grain", "pasta", "canned", "baking",
+    "sauce", "condiment", "spice", "snack", "drink", "frozen", "other",
+)
+
 
 class InventoryItem(BaseModel):
     id: str

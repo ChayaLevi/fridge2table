@@ -12,7 +12,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T1.1 Normalization
 - [x] T1.2 Store
 - [x] T1.3 Inventory tools
-- [ ] T1.4 Recognition + vision eval 🧑
+- [~] T1.4 Recognition + vision eval 🧑 (code + tests done; real eval waits for photos)
 - [ ] T1.5 Checks
 - [ ] T1.6 Recipes
 - [ ] T1.7 Preferences
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.4 Recognition** (code, `split_tiles` and unit tests with a mocked model now; the real eval run needs photos). Then T1.5, T1.6, T1.7, then P2/P3.
-- **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5/T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty.
-- The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps (T1.4 eval, T1.6 manual run, T2.5) are no longer blocked by keys.
-- State: 162 tests pass. `app/agent.py` and `app/tools/{recognize,recipes,checks,preferences}.py` are still empty files.
+- **Next task: T1.5 Checks** (no LLM, no human input needed). Then T1.6, T1.7, then P2/P3.
+- **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
+- The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
+- State: 179 tests pass. `app/agent.py` and `app/tools/{recipes,checks,preferences}.py` are still empty files.
 
 ## Current model settings
 
@@ -65,9 +65,32 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 - (T0.4) The human's `.env` still sets `VISION_MODEL=deepseek-v4-flash-vision-exp` / `RECIPE_MODEL=deepseek-v4-flash` (retired aliases, still served by `deepseek-flash`). Change both to `deepseek-flash`.
 - (T0.4) `CLAUDE.md`, `docs/PRODUCT.md` §9 and `docs/PLAN.md` still name the old model IDs; the human should update them or confirm the new defaults.
-- (T0.5) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty.
+- (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T1.4 Recognition + vision eval (code done; real eval waits for photos)
+- Built: `app/tools/recognize.py`, `eval/run_vision_eval.py`, `tests/test_recognize.py` (15 tests), `tests/test_vision_eval.py` (2 tests); `CATEGORIES` tuple added to `app/models.py`. 179 tests pass.
+- API: `await recognize_inventory(images, *, store=None, model=None, tiles=None) -> list[InventoryItem]` (async). `images` = `[(Path, Location)]`. If `store` is given, each tagged place is `mark_scanned`. It does **not** merge into the stored inventory: the T2.1 wrapper calls `merge_recognized(store, items)` after it. `model` defaults to `vision_model()`, `tiles` to `VISION_TILES`. Lower level: `recognize_images(...) -> list[ImageResult]` (per photo: items + latency), used by the eval.
+- Design:
+  - One `Agent(model, output_type=Recognition)` call per image or per tile, all in parallel via `asyncio.gather`. `Recognition` wraps `items: list[RecognizedItem]` (name, display_name, category, qty_level, confidence, note).
+  - Prompt = `RECOGNITION_PROMPT` + a per-place hint (`PLACE_HINTS`) + `TILE_HINT` for crops. The location always comes from the tag.
+  - `load_image` resizes so the long side is at most 1600 px; `split_tiles(image, n)`: 1 = as is, 2 = top/bottom, 4 = quadrants, each tile is half the image + 5% on each inner side (10% overlap).
+  - `merge_items` (within one photo, across tiles): normalized name, max confidence, the higher `qty_level`, note/display name from the most confident reading, unknown category -> `other`, confidence clamped to 0..1. Across photos: the more confident reading wins (with its location).
+  - `uncertain = confidence < UNCERTAIN_THRESHOLD`. Deviation: `InventoryItem` has no `note` field, so for an uncertain item the note goes into `display_name` ("white container (possibly leftover rice)"), so the agent can ask about it.
+- Eval script: `--model`, `--tiles 1|2|4`, `--sets` (default `eval/fridges/`), `--out` (default `eval/results/`). Matching with `same_ingredient` against the label name and its `alt`s. A predicted item is "uncertain" (not counted as a hallucination) only if every photo of the set read it as uncertain. Exit code 1 with a clear message when there is no set with a `labels.json`.
+- Real-model run (2026-10-13), only on a stand-in set because there are no eval photos: the coffee photo `tests/fixtures/coffee.jpg` labelled `coffee`, in the scratchpad. `deepseek-flash`: recall 1/1 and 0 hallucinations for tiles 1, 2 and 4; latency 3.3 / 3.2 / 3.2 s per photo. This only shows the pipeline works (structured output with images, tiling, parallel calls); it says nothing about accuracy. `VISION_TILES` stays 1 until the real run.
+- Next tasks must know: T2.1's `recognize_inventory` tool wrapper = `items = await recognize_inventory(ctx.deps.image_paths_with_tags, store=ctx.deps.store)` then `merge_recognized(ctx.deps.store, items)`. T1.6 can reuse `CATEGORIES` (models) and `coerce_category` (recognize) for recipe ingredient categories.
+- Open issues: the real eval (tiles 1/2/4, best `VISION_TILES`, recall vs 70%) waits for the human's photos.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_recognize.py tests/test_vision_eval.py -q
+uv run python eval/run_vision_eval.py --tiles 1
+```
+Expected: `179 passed`; then `17 passed`; then (while `eval/fridges/` has no `labels.json`) `No labelled sets in ...\eval\fridges (each set needs a labels.json, see eval/fridges/README.md)`. Once there are sets: a markdown table with one row per set, an `all fridge` / `all pantry` row and an `overall` row (recall, halluc/photo, latency/photo), the missed and hallucinated items per set, and `Saved ...\eval\results\vision_<model>_t1_<time>.json`.
+Manual check: put one photo of your fridge in `eval/fridges/home1_fridge/1.jpg` with a `labels.json` such as `{"location": "fridge", "items": [{"name": "milk"}, {"name": "egg"}]}` (the items you can see), then run `uv run python eval/run_vision_eval.py --tiles 2`. The table should show recall for that set, and the lines below it should list what was missed and what was invented.
 
 ### 2026-10-12 — T0.4 Model smoke test (was skipped, now done)
 - Built: `app/llm.py` (`build_model(model_id, provider="deepseek"|"openai-compatible", base_url, api_key)`, `vision_model()`, `agent_model()`, `recipe_model()`, `setup_observability()`), `scripts/smoke.py`, `tests/test_llm.py` (5 tests, no network; 162 total pass), `tests/fixtures/coffee.jpg` (scikit-image sample photo `coffee.png`, CC0, converted to JPEG).
@@ -90,7 +113,7 @@ uv run pytest tests/test_llm.py -q
 uv run python scripts/smoke.py
 ```
 Expected: `162 passed`; then `5 passed`; then four `[ OK ]` lines (vision, agent text, agent tool + structured output, recipe structured output), each with its latency in seconds and token counts, the tool line showing `tool calls: ['count_on_shelf', 'final_result']; output: ShelfCount(item='eggs', count=7)`, and a last line `ALL OK`. The model names in brackets are the ones in your `.env`.
-Manual check: run `uv run python scripts/smoke.py --image path	onyood_photo.jpg` with a photo from your phone; the vision line should list the foods in it.
+Manual check: run `uv run python scripts/smoke.py --image path\to\any\food_photo.jpg` with a photo from your phone; the vision line should list the foods in it.
 
 ### 2026-10-12 — Switch to DeepSeek models (docs change, no task)
 - Why: the human replaced `CLAUDE.md`, `docs/PRODUCT.md` (§3, §9) and `docs/PLAN.md` (T0.1, T0.4, T1.4, T5.1, T5.2): only Chinese models are allowed; DeepSeek for now, Qwen3.8 Max for vision later.
