@@ -15,7 +15,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [~] T1.4 Recognition + vision eval 🧑 (code + tests done; real eval waits for photos)
 - [x] T1.5 Checks
 - [x] T1.6 Recipes
-- [ ] T1.7 Preferences
+- [x] T1.7 Preferences
 - [ ] T2.1 Agent
 - [ ] T2.2 Output validator
 - [ ] T2.3 Trace capture
@@ -36,10 +36,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T1.7 Preferences** (nothing needed from the human). Then P2/P3.
+- **Next task: T2.1 Agent** (nothing needed from the human; the DeepSeek key is in `.env`). Then T2.2-T2.5.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 246 tests pass. `app/agent.py` and `app/tools/preferences.py` are still empty files.
+- State: 259 tests pass. All P1 tools exist; `app/agent.py` is still an empty file.
 
 ## Current model settings
 
@@ -71,6 +71,22 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13 — T1.7 Preferences
+- Built: `app/tools/preferences.py` (`save_preference`, `get_preferences`, `preferences_summary`, `format_preferences`), `tests/test_preferences.py` (13 tests; 259 total pass). `app/tools/recipes.py`: the private `_preferences_text` is gone; the recipe prompts now use `preferences_summary(store)` (one line per preference, under a `Preferences:` header).
+- API (store first, like the other tools): `save_preference(store, text, avoid=None) -> Preference`, `get_preferences(store) -> list[Preference]`, `preferences_summary(store) -> str` (`none`, or lines `- text (avoid: a, b)`), `format_preferences(prefs)` (same text from a list).
+- Dedupe rules (design decision, the plan only said "dedupe"): `avoid` is normalized and deduped. Same text as an existing preference (case/space-insensitive) -> no new row, its `avoid` is extended. Otherwise avoid items already avoided by any preference are dropped; if none are left, no new row and the existing preference that covers them is returned ("kids hated the eggplant" then "no aubergine please" -> one preference). A text-only preference (empty `avoid`) is allowed, deduped by text; an empty text with avoid items gets the text `avoid <items>`; both empty -> `ValueError`.
+- Next tasks must know: T2.1 wrapper = `save_preference(ctx.deps.store, text, avoid)`; the returned preference may be an existing one (same id), so the agent can say "already noted". Dynamic instructions use `preferences_summary(store)`; `validate_suggestion` takes `get_preferences(store)`.
+- Open issues: none new.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_preferences.py -q
+uv run python -c "from app.store import Store; from app.tools.preferences import save_preference as sp, preferences_summary as ps; s=Store(':memory:'); sp(s,'kids hated the eggplant',['Aubergines']); sp(s,'no eggplant please',['eggplant']); sp(s,'no eggplant or zucchini',['eggplant','courgettes']); print(ps(s))"
+```
+Expected: `259 passed`; then `13 passed`; then two lines: `- kids hated the eggplant (avoid: eggplant)` and `- no eggplant or zucchini (avoid: zucchini)` (the second call added nothing, the third kept only the new item).
+Manual check: run `uv run python scripts/try_recipes.py --minutes 30` (real model, ~30 s); the demo inventory's eggplant preference still keeps eggplant out of every dish, now passed through `preferences_summary`.
 
 ### 2026-10-13 — T1.6 Recipes
 - Built: `app/tools/recipes.py` (`suggest_meals`, `get_recipe`, prompts `SUGGEST_PROMPT` / `RECIPE_PROMPT` / `INGREDIENT_RULES`), `tests/test_recipes.py` (28 tests; 246 total pass), `scripts/try_recipes.py` (manual run on a built-in demo inventory, in-memory store). `app/tools/recognize.py`: `coerce_category` now also maps plurals and common off-list names (`CATEGORY_ALIASES`: produce, poultry, seafood, cheese, noodles, canned goods, oil, ...) instead of sending them all to `other`; recognition uses it too.

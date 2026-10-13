@@ -11,11 +11,12 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 
-from app.models import CATEGORIES, Constraints, Ingredient, Preference, Recipe
+from app.models import CATEGORIES, Constraints, Ingredient, Recipe
 from app.store import Store
 from app.tools.checks import fill_uses_from_inventory
 from app.tools.inventory import get_inventory, inventory_summary
 from app.tools.normalize import normalize
+from app.tools.preferences import preferences_summary
 from app.tools.recognize import coerce_category
 
 log = logging.getLogger(__name__)
@@ -68,12 +69,6 @@ class MealIdeas(BaseModel):
     recipes: list[RecipeDraft] = Field(description="distinct dishes, in order of preference")
 
 
-def _preferences_text(prefs: list[Preference]) -> str:
-    if not prefs:
-        return "none"
-    return "; ".join(f"{p.text} (avoid: {', '.join(p.avoid)})" if p.avoid else p.text for p in prefs)
-
-
 def _clean(draft: RecipeDraft) -> Recipe:
     """Normalized ingredient names (deduped, essential if any duplicate is), categories from CATEGORIES."""
     ingredients: dict[str, Ingredient] = {}
@@ -100,7 +95,7 @@ def _dish_key(name: str) -> str:
 def _context(store: Store) -> str:
     return (
         f"Inventory:\n{inventory_summary(get_inventory(store), store.load_scan_state())}\n\n"
-        f"Preferences: {_preferences_text(store.load_preferences())}"
+        f"Preferences:\n{preferences_summary(store)}"
     )
 
 
