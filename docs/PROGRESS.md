@@ -87,6 +87,23 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Log
 
+### 2026-10-14 — Page: design round (the human chose items 1-5 of the proposal)
+- The human asked what would make the page nicer to look at; of the proposal they picked: (1) a calmer inventory panel, (2) livelier meal cards, (3) quick replies above the text box, (4) a welcome screen for an empty inventory, (5) a softer chat. Place headers keep their words with the icon ("🧊 Fridge", "❄️ Freezer", "🥫 Pantry"). Page only (`app/static/index.html`); no server or agent change.
+- Built / changed:
+  1. Inventory rows: emoji (by a word of the name, else by category: `itemEmoji`), name, ⏰ when use soon, a colour dot + word for the quantity (green plenty, yellow some, orange low). Tapping a row shows its actions (one row at a time, `state.openItem`): quantity as a 3-way switch, "⏰ Use soon" toggle, "✎ Rename", "Delete". Rows waiting for a decision (orange uncertain, grey not seen) keep ✓ and × on the line. Staples: emoji, name, ×. Sorting: decision rows first, then the stored order (sorting use-soon first made a row jump away while its actions were open). The panel and the review keep their scroll position when they redraw (emptying a scroller reset it to the top on every edit).
+  2. Meal cards: an emoji tile by dish words (`dishEmoji`: pasta 🍝, omelette/egg 🍳, stir-fry 🥘, ...; a soft colour from the name), title, "⏱ 30 min · uses 8 things you have", an orange "⏰ uses your spinach: needs using" line, at most 4 chips then "+N", "Open recipe ›"; shadow instead of a border.
+  3. Quick replies above the text box (`renderQuick`): empty inventory → "📷 Scan my fridge", "🥫 Scan my pantry"; otherwise "What can I cook tonight?" and "Something quick" (sent at once), "I want to make…" (fills the box), and "🥫 Scan my pantry" while the pantry is not scanned (else "📷 Scan my fridge"). Hidden while typing or with photos waiting; disabled while a turn runs.
+  4. Empty inventory: a welcome card at the top of the chat ("Let's see what's in your kitchen", "📷 Take a photo of your fridge", "🖼️ or choose photos from your gallery"); the fixed welcome message is not added then (it said the same). The card goes away once there are items.
+  5. Chat: agent messages with a 🍳 avatar and a soft shadow instead of a frame, more space between messages, three bouncing dots while the agent works.
+- Checked in headless Edge 390x844 (before/after screenshots of the empty, opening, cards and inventory views; real models for the turns): empty → welcome card, no duplicate message, scan chips; seeded → no card, 4 chips; chips hide while typing; "What can I cook tonight?" chip sends the turn; eggplant 🍆 (a first rule gave it 🥚: "egg" matched inside "eggplant", fixed to whole words); open onion → actions, scroll position kept (500 → 500), quantity → low, use soon on, still open, rename → "red onion"; garlic stays in place after "Use soon"; 21 flagged rows after a rescan, each with ✓ and ×. No page errors.
+
+**How to verify**
+```
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `Uvicorn running on http://0.0.0.0:8000`.
+Manual check (F12 then Ctrl+Shift+M for a phone view): in http://localhost:8000/docs run `POST /admin/reset`, open http://localhost:8000/: a welcome card with "📷 Take a photo of your fridge" and two scan chips above the text box. Run `POST /admin/seed`, press "New chat": the card is gone, the chips read "What can I cook tonight?", "Something quick", ... Tap "What can I cook tonight?": cards with a big emoji, "⏱ ... min · uses N things you have". Open Inventory: compact rows with emoji and a colour dot; tap "garlic": a quantity switch, "⏰ Use soon", "✎ Rename", "Delete".
+
 ### 2026-10-14 — Page: History of past chats, in the browser (the human's request)
 - The human asked whether past chats are kept and can be seen. They were kept (the agent's history per session on the server, the shown transcript per session in `localStorage`) but there was no way back to one after "New chat". The human chose a browser-only History (the transcripts with cards and lists are already in the browser; a server list would need a new endpoint and rebuilding the display from pydantic-ai messages).
 - Built / changed (`app/static/index.html` only):

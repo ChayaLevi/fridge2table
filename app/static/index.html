@@ -27,13 +27,18 @@
            background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
 
   /* chat */
-  #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
   .msg { max-width: 92%; }
+  .msg.agent { display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 8px; max-width: 96%; }
+  .msg.agent .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft);
+                       display: grid; place-items: center; font-size: 16px; align-self: start; }
+  .msg.agent .content { min-width: 0; }
   .msg.user { align-self: flex-end; }
   .msg.agent, .msg.system { align-self: flex-start; }
   .bubble { padding: 9px 12px; border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
   .user .bubble { background: var(--user); color: var(--user-text); border-bottom-right-radius: 4px; }
-  .agent .bubble { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .agent .bubble { background: var(--surface); border-top-left-radius: 4px;
+                   box-shadow: 0 1px 2px rgba(31,36,33,.07), 0 2px 8px rgba(31,36,33,.04); }
   .system .bubble { background: var(--warn-soft); color: var(--warn); border: 1px solid #f2d3b3; }
   .user .photos { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 4px; flex-wrap: wrap; }
   .user .photos figure { margin: 0; position: relative; }
@@ -42,19 +47,34 @@
                              background: rgba(0,0,0,.6); color: #fff; border-radius: 4px; }
 
   .questions { margin: 6px 0 0; padding-left: 18px; color: var(--text); }
+  .hero { text-align: center; padding: 22px 18px; background: var(--surface); border-radius: 20px;
+          box-shadow: 0 1px 2px rgba(31,36,33,.07), 0 4px 16px rgba(31,36,33,.06); }
+  .hero .big { width: 84px; height: 84px; margin: 0 auto 10px; border-radius: 50%; background: var(--accent-soft);
+               display: grid; place-items: center; font-size: 42px; }
+  .hero h2 { margin: 0 0 6px; font-size: 20px; }
+  .hero p { margin: 0 auto 16px; color: var(--muted); max-width: 30em; }
+  .hero .go { display: block; width: 100%; border: 0; border-radius: 24px; height: 48px; background: var(--accent);
+              color: #fff; font-weight: 700; font-size: 16px; }
+  .hero .alt { margin-top: 8px; border: 0; background: none; color: var(--accent); font-weight: 600; padding: 8px; }
   .cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-  .card { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-          padding: 10px 12px; width: 100%; }
+  .card { text-align: left; background: var(--surface); border: 0; border-radius: var(--radius); padding: 12px;
+          width: 100%; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: start;
+          box-shadow: 0 1px 2px rgba(31,36,33,.07), 0 2px 8px rgba(31,36,33,.05); }
   .card:active { background: var(--accent-soft); }
-  .card .title { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
-  .card .time { color: var(--muted); font-weight: 400; white-space: nowrap; }
-  .card .open { color: var(--accent); font-size: 13px; margin-top: 4px; }
+  .card .tile { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; font-size: 28px; }
+  .tile.t0 { background: #e4f1e8; } .tile.t1 { background: #fdf0e3; } .tile.t2 { background: #fdf6d8; }
+  .tile.t3 { background: #e8eefb; }
+  .card .title { font-weight: 650; font-size: 16px; line-height: 1.25; }
+  .card .meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .card .soonline { color: var(--warn); font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .card .open { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
   .chip.soon { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 
-  .shop { margin-top: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-          padding: 10px 12px; }
+  .shop { margin-top: 8px; background: var(--surface); border-radius: var(--radius); padding: 10px 12px;
+          box-shadow: 0 1px 2px rgba(31,36,33,.07), 0 2px 8px rgba(31,36,33,.05); }
+  .sheet .shop { box-shadow: none; border: 1px solid var(--line); }
   .shop h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin: 8px 0 4px; color: var(--muted); }
   .shop h3:first-child { margin-top: 0; }
   .shop ul { margin: 0; padding-left: 18px; }
@@ -72,14 +92,23 @@
   details.trace .fail, details.trace .fail .step { color: var(--warn); }
   details.trace summary .fail { font-weight: 600; }
 
-  .typing .bubble { color: var(--muted); }
-  .dots::after { content: ""; animation: dots 1.2s steps(4) infinite; }
-  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  .typing .bubble { color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+  .dots { display: inline-flex; gap: 3px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .35;
+            animation: bounce 1.2s infinite ease-in-out; }
+  .dots i:nth-child(2) { animation-delay: .15s; }
+  .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-4px); opacity: 1; } }
 
   /* composer */
   .composer { background: var(--surface); border-top: 1px solid var(--line); padding: 8px 10px;
               padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
   .pending { display: flex; gap: 6px; padding: 8px 8px 8px 0; overflow-x: auto; }  /* room for the × */
+  .quick { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 8px; scrollbar-width: none; }
+  .quick::-webkit-scrollbar { display: none; }
+  .qchip { flex: none; white-space: nowrap; border: 1px solid #cfe3d6; background: var(--accent-soft);
+           color: var(--accent); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .qchip:disabled { opacity: .5; }
   .thumb { position: relative; flex: none; }
   .thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
   .thumb .tag { position: absolute; left: 3px; right: 3px; bottom: 3px; border: 0; border-radius: 6px; padding: 2px 0;
@@ -104,19 +133,39 @@
   .drawer .body { overflow-y: auto; padding: 12px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
   .loc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
   .loc-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
-  .loc-head h2 { font-size: 15px; margin: 0; text-transform: capitalize; }
+  .loc-head h2 { font-size: 16px; margin: 0; }
   .loc-head .when { flex: 1; font-size: 12px; color: var(--muted); }
   .loc-head .when.no { color: var(--warn); }
   .loc-head .iconbtn { width: 34px; height: 34px; font-size: 16px; }
   .items { list-style: none; margin: 0; padding: 0; }
-  .item { display: flex; align-items: center; gap: 6px; padding: 7px 10px 7px 12px; border-bottom: 1px solid var(--line); }
+  .item { border-bottom: 1px solid var(--line); }
   .item:last-child { border-bottom: 0; }
+  .item .line { display: flex; align-items: center; gap: 4px; padding-right: 6px; }
+  .item .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: none;
+                text-align: left; padding: 10px 6px 10px 12px; }
+  .item .emo { width: 26px; text-align: center; font-size: 19px; flex: none; }
   .item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .item .flag { font-size: 12px; font-weight: 600; flex: none; }
+  .item .flag.soonflag { color: var(--warn); }
+  .item .lvl { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); flex: none; }
+  .item .lvl i { width: 9px; height: 9px; border-radius: 50%; }
+  .lvl.plenty i { background: #2f9e5b; } .lvl.some i { background: #d9a21b; } .lvl.low i { background: #c2410c; }
+  .item.open { background: #fafaf7; }
+  .item .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 12px 12px 48px; }
+  .actions .act { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 11px;
+                  font-size: 13px; }
+  .actions .act.on { background: var(--warn); border-color: var(--warn); color: #fff; }
+  .actions .act.danger { color: var(--warn); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button { border: 0; background: var(--surface); padding: 5px 10px; font-size: 13px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--accent); color: #fff; }
   .item.uncertain { background: var(--warn-soft); }
   .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 700; }
   .item.notseen { background: #f0efea; }
   .item.notseen .name { color: var(--muted); font-style: italic; }
-  .drawer .item.notseen .name::after { content: " · not seen"; font-size: 12px; font-style: normal; }
+  .item.notseen .name::after { content: " · not seen"; font-size: 12px; font-style: normal; }
+  .review-group .item.notseen .name::after { content: ""; }
   .review-group h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
                      margin: 14px 0 4px; }
   .review-group .why { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
@@ -135,6 +184,7 @@
   .del, .edit, .ok { border: 0; background: none; color: var(--muted); font-size: 18px; width: 28px; padding: 0; flex: none; }
   .edit { font-size: 15px; }
   .ok { color: var(--accent); font-weight: 700; }
+  .item.editing { display: flex; gap: 6px; align-items: center; padding: 8px 10px 8px 12px; }
   .item.editing input { flex: 1; min-width: 0; border: 1px solid var(--accent); border-radius: 8px; padding: 5px 8px;
                         font: inherit; background: var(--surface); color: var(--text); }
   .item.editing .save { border: 0; border-radius: 8px; background: var(--accent); color: #fff; padding: 5px 10px; }
@@ -220,6 +270,7 @@
   <main id="messages" aria-live="polite"></main>
 
   <form class="composer" id="composer">
+    <div class="quick" id="quick" aria-label="Quick replies"></div>
     <div class="pending" id="pending" hidden></div>
     <div class="row">
       <button class="iconbtn" id="attach" type="button" title="Take a photo" aria-label="Take a photo">📷</button>
@@ -267,7 +318,8 @@
 <script>
 "use strict";
 const PLACES = ["fridge", "freezer", "pantry"];
-const QTY_NEXT = { plenty: "some", some: "low", low: "plenty" };
+const QTY_LEVELS = ["plenty", "some", "low"];
+const PLACE_LABEL = { fridge: "🧊 Fridge", freezer: "❄️ Freezer", pantry: "🥫 Pantry" };
 const MAX_PHOTOS = 4;
 
 const $ = (id) => document.getElementById(id);
@@ -278,6 +330,7 @@ const state = {
   pending: [],          // [{file, url, place}]
   nextPlace: null,      // set by a panel camera button: the place for the next picked photos
   reviewPlaces: null,   // places shown in the review sheet while it is open
+  openItem: null,       // the inventory item whose actions are shown (one at a time)
   busy: false,
   transcript: [],       // what is shown, so a reload of the same session shows it again
 };
@@ -309,6 +362,47 @@ function ago(iso) {
   if (days <= 0) return "scanned today";
   if (days === 1) return "scanned yesterday";
   return `scanned ${days} days ago`;
+}
+
+// An emoji for an inventory item: by a word of its name first ("cheddar" -> 🧀), else by its category.
+const NAME_EMOJI = [
+  [/eggplant|aubergine/, "🍆"], [/\bmilk\b/, "🥛"], [/\beggs?\b/, "🥚"], [/cheese|cheddar|parmesan|mozzarella|feta|ricotta/, "🧀"], [/butter/, "🧈"],
+  [/bread|baguette/, "🍞"], [/tomato|ketchup/, "🍅"], [/onion/, "🧅"], [/garlic/, "🧄"], [/carrot/, "🥕"],
+  [/potato/, "🥔"], [/bell pepper/, "🫑"], [/mushroom/, "🍄"], [/lemon|lime/, "🍋"], [/apple/, "🍎"], [/banana/, "🍌"],
+  [/chicken/, "🍗"], [/bacon/, "🥓"], [/beef|steak|pork|lamb/, "🥩"], [/fish|salmon|tuna|shrimp/, "🐟"],
+  [/\brice\b/, "🍚"], [/pasta|spaghetti|noodle/, "🍝"], [/coffee|espresso/, "☕"], [/yogurt|cream/, "🥛"],
+  [/spinach|lettuce|kale|cabbage/, "🥬"], [/zucchini|cucumber/, "🥒"], [/avocado/, "🥑"],
+  [/corn/, "🌽"], [/broccoli/, "🥦"], [/honey/, "🍯"], [/oil/, "🫒"], [/salt/, "🧂"], [/sugar/, "🍬"], [/flour/, "🌾"],
+  [/water/, "💧"], [/pepper|chili|paprika|cumin|oregano/, "🌶️"], [/soy sauce|vinegar/, "🍶"], [/baking/, "🧁"],
+];
+const CATEGORY_EMOJI = {
+  vegetable: "🥬", fruit: "🍎", meat: "🥩", fish: "🐟", dairy: "🧀", egg: "🥚", grain: "🍚", pasta: "🍝",
+  canned: "🥫", baking: "🧁", sauce: "🍅", condiment: "🧂", spice: "🌶️", snack: "🍪", drink: "🥤", frozen: "🧊",
+};
+function itemEmoji(item) {
+  const name = String(item.name).toLowerCase();
+  const hit = NAME_EMOJI.find(([re]) => re.test(name));
+  return hit ? hit[1] : CATEGORY_EMOJI[item.category] || "🍽️";
+}
+
+// An emoji for a dish, from words of its name (the first rule that matches wins).
+const DISH_EMOJI = [
+  [/pancake|crepe|waffle/, "🥞"], [/pizza/, "🍕"], [/burger/, "🍔"],
+  [/lasagn|pasta|spaghetti|penne|fusilli|macaroni|noodle|carbonara|bolognese/, "🍝"], [/soup|stew|broth/, "🍲"],
+  [/curry/, "🍛"], [/salad/, "🥗"], [/omelet|frittata|scrambl|shakshuka|\beggs?\b/, "🍳"],
+  [/stir.?fry|skillet|saut/, "🥘"], [/rice|risotto|pilaf/, "🍚"], [/quesadilla|taco|burrito|wrap/, "🌮"],
+  [/sandwich|toast|panini/, "🥪"], [/bake|gratin|casserole/, "🥘"], [/chicken/, "🍗"], [/fish|salmon|tuna/, "🐟"],
+  [/cake|muffin|cookie/, "🧁"],
+];
+function dishEmoji(name) {
+  const low = String(name).toLowerCase();
+  const hit = DISH_EMOJI.find(([re]) => re.test(low));
+  return hit ? hit[1] : "🍽️";
+}
+function tileColor(name) {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `t${h % 4}`;
 }
 
 function itemsByName() {
@@ -430,6 +524,7 @@ function startSession(id) {
   storageSet("ftt.session", id);
   state.transcript = loadTranscript();
   $("messages").replaceChildren();
+  updateHero();
   for (const entry of state.transcript) renderEntry(entry);
   scrollDown();
 }
@@ -463,9 +558,15 @@ function renderUser(entry) {
   return node;
 }
 
+function agentShell(...children) {
+  return el("div", { class: "msg agent" }, el("div", { class: "avatar", "aria-hidden": "true" }, "🍳"),
+    el("div", { class: "content" }, ...children));
+}
+
 function renderAgent(data) {
   const reply = data.reply;
-  const node = el("div", { class: "msg agent" }, el("div", { class: "bubble" }, reply.message));
+  const shell = agentShell(el("div", { class: "bubble" }, reply.message));
+  const node = shell.querySelector(".content");
 
   if (reply.questions && reply.questions.length) {
     node.append(el("ul", { class: "questions" }, reply.questions.map((q) => el("li", {}, q))));
@@ -480,7 +581,7 @@ function renderAgent(data) {
   if (hasShop || (meals.length === 1 && isModeB(data))) node.append(renderShop(reply));
 
   if (data.trace && data.trace.length) node.append(renderTrace(data.trace, data.usage));
-  return node;
+  return shell;
 }
 
 function isModeB(data) {
@@ -489,15 +590,23 @@ function isModeB(data) {
 
 function renderCard(meal, data) {
   const inv = itemsByName();
-  const chips = (meal.uses_from_inventory || []).map((name) => {
+  const uses = meal.uses_from_inventory || [];
+  const soon = uses.map((n) => inv.get(n)).filter((i) => i && i.use_soon).map((i) => i.display_name);
+  const shown = uses.slice(0, 4).map((name) => {
     const item = inv.get(name);
-    return el("span", { class: "chip" + (item && item.use_soon ? " soon" : "") },
-      (item ? item.display_name : name) + (item && item.use_soon ? " · use soon" : ""));
+    return el("span", { class: "chip" + (item && item.use_soon ? " soon" : "") }, item ? item.display_name : name);
   });
+  if (uses.length > 4) shown.push(el("span", { class: "chip" }, `+${uses.length - 4}`));
+  const meta = [`⏱ ${meal.time_minutes} min`];
+  if (uses.length) meta.push(`uses ${uses.length} thing${uses.length === 1 ? "" : "s"} you have`);
   return el("button", { class: "card", type: "button", onclick: () => openRecipe(meal, data) },
-    el("div", { class: "title" }, el("span", {}, meal.name), el("span", { class: "time" }, `${meal.time_minutes} min`)),
-    chips.length ? el("div", { class: "chips" }, chips) : null,
-    el("div", { class: "open" }, "Open recipe ›"));
+    el("div", { class: `tile ${tileColor(meal.name)}`, "aria-hidden": "true" }, dishEmoji(meal.name)),
+    el("div", {},
+      el("div", { class: "title" }, meal.name),
+      el("div", { class: "meta" }, meta.join(" · ")),
+      soon.length ? el("div", { class: "soonline" }, `⏰ uses your ${soon.join(", ")}: needs using`) : null,
+      shown.length ? el("div", { class: "chips" }, shown) : null,
+      el("div", { class: "open" }, "Open recipe ›")));
 }
 
 // The amount the reply's recipe(s) need of an ingredient ("500 g"), or "" (names are canonical).
@@ -602,6 +711,7 @@ function showOverlay(id) {
 }
 
 function closeOverlays() {
+  state.openItem = null;
   $("scrim").hidden = true;
   $("drawer").hidden = true;
   $("sheet").hidden = true;
@@ -633,12 +743,14 @@ function renderReview() {
   const group = (title, why, list) => list.length ? el("div", { class: "review-group" },
     el("h3", {}, `${title} (${list.length})`), why ? el("div", { class: "why" }, why) : null,
     el("ul", { class: "items" }, list.map(renderItem))) : null;
+  const top = $("reviewBody").scrollTop;
   $("reviewBody").replaceChildren(...[
-    group("Not sure what this is", "✎ fix the name, ✓ if it's right, × if it isn't there.", unsure),
+    group("Not sure what this is", "✓ if it's right, × if it isn't there, or tap it to rename it.", unsure),
     group("Not seen this time", "They were here before. ✓ still there, × finished.", unseen),
     group("In the list", "", found),
     items.length ? null : el("div", { class: "empty-loc" }, "Nothing recognized in these photos."),
   ].filter(Boolean));
+  $("reviewBody").scrollTop = top;
   $("reviewOk").textContent = unsure.length || unseen.length ? "All correct" : "Done";
 }
 
@@ -653,7 +765,10 @@ async function confirmReview() {
 function setInventory(data) {
   state.inventory = data.inventory;
   state.scanState = data.scan_state;
+  if (state.openItem && !state.inventory.some((i) => i.name === state.openItem)) state.openItem = null;
   redrawLists();
+  updateHero();
+  renderQuick();
 }
 
 function redrawLists() {
@@ -671,26 +786,45 @@ async function editInventory(changes) {
   }
 }
 
+// One compact line per item: emoji, name, ⏰ when it needs using, a colour dot for the quantity. Tapping
+// the line shows its actions (one item at a time). Items waiting for a decision (orange: not sure what it
+// is; grey: not seen in the last photo) keep ✓ and × on the line itself. Staples: name and × only.
 function renderItem(item) {
   const flag = item.uncertain ? " uncertain" : item.not_seen ? " notseen" : "";
-  const row = el("li", { class: "item" + flag });
-  row.append(...[
+  const open = state.openItem === item.name && !item.is_staple;
+  const row = el("li", { class: "item" + flag + (open ? " open" : "") });
+  const del = el("button", { class: "del", type: "button", title: "Delete", "aria-label": `Delete ${item.display_name}`,
+                             onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×");
+  const main = el("button", { class: "main", type: "button", "aria-expanded": open ? "true" : "false",
+                              onclick: () => { state.openItem = open ? null : item.name; redrawLists(); } },
+    el("span", { class: "emo", "aria-hidden": "true" }, itemEmoji(item)),
     el("span", { class: "name" }, item.display_name),
-    item.is_staple ? null : el("button", { class: "edit", type: "button", title: "Edit the name",
-                   "aria-label": `Edit ${item.display_name}`, onclick: () => editName(row, item) }, "✎"),
+    item.use_soon ? el("span", { class: "flag soonflag", title: "Use soon" }, "⏰") : null,
+    item.is_staple ? null : el("span", { class: `lvl ${item.qty_level}` }, el("i"), item.qty_level));
+  if (item.is_staple) {
+    row.append(el("div", { class: "line" }, el("span", { class: "main" },
+      el("span", { class: "emo", "aria-hidden": "true" }, itemEmoji(item)), el("span", { class: "name" }, item.display_name)),
+      del));
+    return row;
+  }
+  row.append(el("div", { class: "line" }, ...[main,
     flag ? el("button", { class: "ok", type: "button", title: item.uncertain ? "Yes, this is right" : "Still there",
-                   "aria-label": `Confirm ${item.display_name}`,
-                   onclick: () => editInventory([{ op: "confirm", name: item.name }]) }, "✓")
-         : null,
-    item.is_staple ? null : el("button", { class: "qty " + item.qty_level, type: "button", title: "Tap to change",
-                   onclick: () => editInventory([{ op: "set_qty", name: item.name, qty_level: QTY_NEXT[item.qty_level] }]) },
-      item.qty_level),
-    item.is_staple ? null : el("button", { class: "soon" + (item.use_soon ? " on" : ""), type: "button",
-                   onclick: () => editInventory([{ op: "set_use_soon", name: item.name, use_soon: !item.use_soon }]) },
-      "use soon"),
-    el("button", { class: "del", type: "button", title: "Delete", "aria-label": `Delete ${item.display_name}`,
-                   onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×"),
-  ].filter(Boolean));  // append() would print a null as "null"
+                          "aria-label": `Confirm ${item.display_name}`,
+                          onclick: () => editInventory([{ op: "confirm", name: item.name }]) }, "✓") : null,
+    flag ? del : null,
+  ].filter(Boolean)));
+  if (open) {
+    row.append(el("div", { class: "actions" },
+      el("span", { class: "seg", role: "group", "aria-label": "Quantity" }, QTY_LEVELS.map((q) =>
+        el("button", { class: q === item.qty_level ? "on" : "", type: "button",
+                       onclick: () => editInventory([{ op: "set_qty", name: item.name, qty_level: q }]) }, q))),
+      el("button", { class: "act" + (item.use_soon ? " on" : ""), type: "button",
+                     onclick: () => editInventory([{ op: "set_use_soon", name: item.name, use_soon: !item.use_soon }]) },
+        "⏰ Use soon"),
+      el("button", { class: "act", type: "button", onclick: () => editName(row, item) }, "✎ Rename"),
+      el("button", { class: "act danger", type: "button",
+                     onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "Delete")));
+  }
   return row;
 }
 
@@ -736,22 +870,26 @@ function renderInventory() {
 
   const body = $("invBody");
   const wasOpen = body.querySelector("details.staples")?.open || false;
+  const top = body.scrollTop;
   body.replaceChildren();
   for (const place of PLACES) {
     const here = own.filter((i) => i.location === place)
-      .sort((a, b) => (b.uncertain - a.uncertain) || (b.use_soon - a.use_soon));
+      // Items waiting for a decision first; otherwise the stored order, so a row does not jump away
+      // while its actions are open (⏰ marks use-soon items).
+      .sort((a, b) => (b.uncertain - a.uncertain) || (b.not_seen - a.not_seen));
     const when = state.scanState.scanned[place];
     const declined = place === "freezer" && state.scanState.freezer_declined;
     const unsure = here.some((i) => i.uncertain || i.not_seen);
     body.append(el("section", { class: "loc" },
       el("div", { class: "loc-head" },
-        el("h2", {}, place),
+        el("h2", {}, PLACE_LABEL[place]),
         el("span", { class: "when" + (when ? "" : " no") },
           when ? ago(when) : declined ? "skipped" : "not scanned yet"),
         el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
                        "aria-label": `Add a photo of the ${place}`, onclick: () => pickPhotos(place) }, "📷")),
       unsure ? el("div", { class: "hint" },
-        "Orange: I'm not sure what it is. Grey: not seen in the last photo. ✎ fix, ✓ if it's right, × if it's gone.")
+        "Orange: I'm not sure what it is. Grey: not seen in the last photo. ✓ if it's right, × if it's gone, "
+        + "or tap the item to rename it.")
              : null,
       here.length ? el("ul", { class: "items" }, here.map(renderItem))
                   : el("div", { class: "empty-loc" }, "Nothing here yet."),
@@ -762,6 +900,7 @@ function renderInventory() {
     el("ul", { class: "items" }, staples.map(renderItem)),
     renderAdd(null)));
   body.append(renderRestart(own.length));
+  body.scrollTop = top;
 }
 
 // Clear the inventory and rebuild it from new photos. Two taps: the link, then the confirm button.
@@ -829,10 +968,50 @@ function renderPending() {
   updateSend();
 }
 
+// --- quick replies and the empty-inventory welcome -------------------------------------------------
+
+function ownItems() {
+  return state.inventory.filter((i) => i.source !== "staple");
+}
+
+// Shortcuts above the text box, depending on what the app knows. Hidden while typing or with photos waiting.
+function renderQuick() {
+  const box = $("quick");
+  const say = (text) => () => { $("input").value = text; updateSend(); $("composer").requestSubmit(); };
+  const chips = [];
+  if (!ownItems().length) {
+    chips.push(["📷 Scan my fridge", () => pickPhotos("fridge")], ["🥫 Scan my pantry", () => pickPhotos("pantry")]);
+  } else {
+    chips.push(["What can I cook tonight?", say("What can I cook tonight?")],
+      ["Something quick", say("Something quick for dinner, under 30 minutes.")],
+      ["I want to make…", () => { const i = $("input"); i.value = "I want to make "; updateSend(); i.focus(); }]);
+    if (!state.scanState.scanned.pantry) chips.push(["🥫 Scan my pantry", () => pickPhotos("pantry")]);
+    else chips.push(["📷 Scan my fridge", () => pickPhotos("fridge")]);
+  }
+  box.replaceChildren(...chips.map(([label, act]) =>
+    el("button", { class: "qchip", type: "button", onclick: act, disabled: state.busy }, label)));
+  box.hidden = Boolean($("input").value.trim() || state.pending.length);
+}
+
+// A welcome card at the top of the chat while the inventory is empty.
+function updateHero() {
+  const old = document.getElementById("hero");
+  if (ownItems().length) { if (old) old.remove(); return; }
+  if (old) return;
+  $("messages").prepend(el("section", { class: "hero", id: "hero" },
+    el("div", { class: "big", "aria-hidden": "true" }, "🧊"),
+    el("h2", {}, "Let's see what's in your kitchen"),
+    el("p", {}, "Take a photo of your fridge, then one of your pantry. I'll list what you have and tell you what you can cook."),
+    el("button", { class: "go", type: "button", onclick: () => pickPhotos("fridge") }, "📷 Take a photo of your fridge"),
+    el("button", { class: "alt", type: "button", onclick: () => pickPhotos("fridge", "galleryFile") },
+      "🖼️ or choose photos from your gallery")));
+}
+
 // --- sending -------------------------------------------------------------------------------------
 
 function updateSend() {
   $("send").disabled = state.busy || (!$("input").value.trim() && !state.pending.length);
+  renderQuick();
 }
 
 function setBusy(busy) {
@@ -882,7 +1061,9 @@ async function send(event) {
 }
 
 function showTyping(text) {
-  const typing = el("div", { class: "msg agent typing" }, el("div", { class: "bubble" }, text, el("span", { class: "dots" })));
+  const typing = agentShell(el("div", { class: "bubble" }, text,
+    el("span", { class: "dots", "aria-hidden": "true" }, el("i"), el("i"), el("i"))));
+  typing.classList.add("typing");
   $("messages").append(typing);
   scrollDown();
   return typing;
@@ -903,7 +1084,8 @@ async function opening() {
     const data = await api(`/opening?session_id=${encodeURIComponent(state.sessionId)}`);
     setInventory(data);
     typing.remove();
-    addEntry({ role: "agent", data });
+    // With an empty inventory the welcome card already says it; the fixed welcome message would repeat it.
+    if (ownItems().length || data.usage) addEntry({ role: "agent", data });
   } catch (err) {
     typing.remove();
     addEntry({ role: "system", text: err.message });
