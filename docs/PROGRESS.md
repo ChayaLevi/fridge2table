@@ -27,7 +27,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [ ] T3.3 First real-fridge run + internal demo 🧑 (waiting: the human is away from home; P4 started meanwhile, 2026-10-14)
 - [x] T4.1 Proactive opening
 - [x] T4.2 Substitutions in Mode B
-- [ ] T4.3 Preferences end to end
+- [x] T4.3 Preferences end to end
 - [ ] T4.4 Trace UI polish
 - [ ] T5.1 Vision model comparison
 - [ ] T5.2 Latency
@@ -37,7 +37,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T4.3 Preferences end to end** (needs the human only for the last browser check: state a preference, press "New chat", ask for dinner). Scenarios 6 and 7 are the check (`uv run python eval/run_scenarios.py --only 7` runs 6 then 7).
+- **Next task: T4.4 Trace UI polish** (🧑 at the end: the human confirms the trace line reads well on a phone, or in a desktop browser in phone mode). `renderTrace()` in `app/static/index.html`; `ToolTraceItem.tool` / `failed` / `result_summary` are in every `/chat` response.
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great") and asked for the panel edits, staples, scope and gallery changes logged below; T3.2 stays `[~]` until it is tried on a phone.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
@@ -85,6 +85,21 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — T4.3 Preferences end to end
+- Most of it already worked from earlier tasks: `save_preference` (T1.7), preferences in the instructions and in `suggest_meals`' prompt (T2.1, T1.6), the code checks (`validate_suggestion`, output check), rule 7's "confirm in one sentence what you will remember".
+- Measured first (real models, 2026-10-14): scenario 6: 3/3, message "Got it, no eggplant from now on." every time, 3.0-3.2 s. Scenario 7: 3/3, no eggplant although it is USE SOON.
+- Built / changed: `eval/scenarios.yaml` scenario 7 now starts with `opening: true` (since T4.1, "New chat" in the page runs the opening, and the opening prefers USE SOON items: the eggplant is one, but the household avoids it). Expect: a valid meal without eggplant. Then the dinner question as before. 3/3: the opening chose the spinach ("Your spinach needs using: how about a quick mushroom and spinach omelette with cheddar?"), and no eggplant candidate was even generated (no failed check in the trace: the preference reaches the recipe model's prompt; the code check is the safety net).
+- The "Done when", in headless Edge 390x844 with real models (demo seed): "The kids hated the eggplant last time." → "Got it, no eggplant from now on." (trace `save_preference`, `output check`) → New chat → the opening offers a spinach omelette → "What should we have for dinner tonight?" → 3 meals (Spinach and Cheddar Omelette, Creamy Tomato and Spinach Pasta, Chicken, Mushroom and Bell Pepper Skillet), none with eggplant among its ingredients (checked in the `/chat` JSON, not only on screen); no page errors.
+- No code change in `app/`. Tests: 388 pass (unchanged).
+- Open (not in the plan, for the human to decide): saved preferences are invisible in the page and cannot be removed there; the only way out is `/admin/reset`.
+
+**How to verify**
+```
+uv run python eval/run_scenarios.py --only 7 --repeat 3
+```
+Expected (real models, about 1 min): three `[PASS] #7 Cross-session preference ...` blocks, each with `ok turn 1: ... tools: suggest_meals > output check` (the opening) and `ok turn 2: ... tools: suggest_meals > output check`, and `| | **total** | **3/3** | |`.
+Manual check: start the app (`uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000`), run `POST /admin/reset` and `POST /admin/seed` in http://localhost:8000/docs, open http://localhost:8000/ and send `The kids hated the eggplant last time.`: the reply is "Got it, no eggplant from now on." Press "New chat": the greeting names the spinach, not the eggplant. Send `What should we have for dinner tonight?`: tap each card; no recipe lists eggplant.
 
 ### 2026-10-14 — T4.2 Substitutions in Mode B
 - Baseline (5 real runs of scenario 4 before any change): 5/5 passed the scenario, but in 4/5 the message contradicted the code-fixed lists ("you'd need to buy ground beef, ricotta, ..." while ricotta was substituted and not under To buy), once a substitute was only in the prose ("for the meat, you could use the chicken"), and twice the model put ricotta on its own shopping list (code fixed it). The lists were right; the words were not checked.

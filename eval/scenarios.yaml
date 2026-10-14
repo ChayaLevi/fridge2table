@@ -139,6 +139,13 @@ scenarios:
     after: 6
     seed: {add: ["eggplant, vegetable, plenty, soon"]}
     turns:
+      # "New chat" in the page starts with the opening, which prefers use-soon items: the eggplant is one,
+      # but the household avoids it.
+      - opening: true
+        expect:
+          min_meals: 1
+          meals_valid: true
+          meals_must_not_contain: [eggplant]
       - message: What should we have for dinner tonight?
         expect:
           tools_called: [suggest_meals]
