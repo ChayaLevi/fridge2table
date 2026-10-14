@@ -87,6 +87,22 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Log
 
+### 2026-10-14 — Page: History of past chats, in the browser (the human's request)
+- The human asked whether past chats are kept and can be seen. They were kept (the agent's history per session on the server, the shown transcript per session in `localStorage`) but there was no way back to one after "New chat". The human chose a browser-only History (the transcripts with cards and lists are already in the browser; a server list would need a new endpoint and rebuilding the display from pydantic-ai messages).
+- Built / changed (`app/static/index.html` only):
+  - `localStorage` `ftt.chats`: `[{id, started, updated, title}]`, updated by `saveTranscript()` (so every message). The title is the first thing the user wrote (or "📷 2 photo(s) (fridge, pantry)"); a chat with only the greeting is not listed. At most 30 chats; older transcripts are deleted from the browser (the server keeps its history). Chats saved before the index existed are found from their `ftt.transcript.<id>` keys and listed as "earlier". All storage access stays in try/catch.
+  - Header button 🕘 → "Your chats" window (the centered `.sheet`): newest first, title, "Today 12:24 PM" / "Yesterday ..." / "Oct 12 ...", "· this chat" on the current one. Tapping a chat reopens it (its messages come back from the browser; the agent continues with the session's history from the server). Ignored while a turn is running.
+  - Narrow phones: header buttons do not wrap (`nowrap`, smaller padding under 400 px), and under 380 px the title becomes 🍳 so the four header items fit on one line.
+- Checked in headless Edge with real models (demo seed, 360x740): an old transcript put in `localStorage` beforehand appears as "earlier"; "How long do eggs keep in the fridge?", New chat, "The kids hated the eggplant last time." → History lists the 3 chats (the current one marked); reopening the eggs chat restores its 3 messages and the same session id; "And milk?" → "Opened milk lasts about 5–7 days past its printed date kept cold ..." (the agent kept the context); that chat moves to the top. Header fits on one line at 360, 390 and 1280 px. No page errors.
+- Known limit: the History lives in one browser; another phone or a cleared browser shows no past chats (the server still has them).
+
+**How to verify**
+```
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: open http://localhost:8000/, send `How long do eggs keep in the fridge?`, press "New chat", send `Thanks!`. Tap 🕘: both chats are listed, newest first, the current one marked "this chat". Tap the eggs chat: its messages come back; send `And milk?`: the answer is about how long milk keeps.
+
 ### 2026-10-14 — Steps with the substitutes, amounts in the shopping list, "Start over" (the human's requests)
 - Built / changed:
   - `app/tools/recipes.py`: `get_steps(store, recipe_id, substitutions=None)`. The substitutes for ingredients the recipe has replace them in the prompt's ingredient list, plus a "Substitutes: cottage cheese instead of ricotta" line; `STEPS_PROMPT` gained "write the steps for the substitute and never mention the ingredient it replaces". Steps with substitutes are stored under their own key (`<id>~ricotta>cottage cheese`), so the plain and each substituted version are generated once each; the returned recipe keeps its id and its original ingredients (the page shows "use your cottage cheese instead" next to ricotta). Substitutes for ingredients the recipe lacks are ignored (same key as plain).

@@ -147,6 +147,25 @@
   .add button { border: 0; border-radius: 8px; background: var(--accent-soft); color: var(--accent); padding: 0 12px; }
   .empty-loc { padding: 8px 12px; color: var(--muted); font-size: 13px; }
   .shop .amount { color: var(--muted); font-size: 13px; }
+  .hbtn.icon { padding: 6px 10px; }
+  .sheet .chats { list-style: none; margin: 0; padding: 0; }
+  .hbtn { white-space: nowrap; }
+  /* Narrow phones: the four header items must fit on one line. */
+  @media (max-width: 400px) {
+    header { gap: 6px; }
+    .hbtn { padding: 6px 9px; font-size: 14px; }
+  }
+  @media (max-width: 380px) {
+    header h1 { font-size: 0; }
+    header h1::before { content: "🍳"; font-size: 22px; }
+  }
+  .chats li { margin: 0; }
+  .chat-row { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none;
+              padding: 12px 4px; display: block; }
+  .chat-row:active { background: var(--accent-soft); }
+  .chat-row .title { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-row .when { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .chat-row .here { color: var(--accent); font-weight: 600; }
   .restart { margin: 18px 0 6px; text-align: center; }
   .restart .link { border: 0; background: none; color: var(--warn); text-decoration: underline; padding: 6px; }
   .restart .confirm { background: var(--warn-soft); border: 1px solid #f2d3b3; border-radius: var(--radius);
@@ -193,6 +212,7 @@
 <div class="app">
   <header>
     <h1>Fridge-to-Table</h1>
+    <button class="hbtn icon" id="openHistory" type="button" title="Past chats" aria-label="Past chats">🕘</button>
     <button class="hbtn" id="newChat" type="button">New chat</button>
     <button class="hbtn" id="openInv" type="button">Inventory<span class="badge" id="invCount">0</span></button>
   </header>
@@ -231,6 +251,11 @@
     <button class="secondary" id="reviewLater" type="button">Later</button>
     <button class="primary" id="reviewOk" type="button">All correct</button>
   </div>
+</section>
+
+<section class="sheet" id="history" hidden aria-label="Past chats">
+  <div class="head"><h2>Your chats</h2><button class="hbtn" id="closeHistory" type="button">Close</button></div>
+  <div class="body" id="historyBody"></div>
 </section>
 
 <section class="sheet" id="sheet" hidden aria-label="Recipe">
@@ -315,8 +340,85 @@ async function api(path, options = {}) {
 
 // --- session and transcript ----------------------------------------------------------------------
 
+const MAX_CHATS = 30;
+
 function saveTranscript() {
   storageSet("ftt.transcript." + state.sessionId, JSON.stringify(state.transcript.slice(-60)));
+  indexChat(state.sessionId, state.transcript);
+}
+
+// The History index (this browser only): [{id, started, updated, title}], newest first. A chat is listed
+// once the user has written or sent something in it; a greeting alone is not a chat.
+function chatTitle(transcript) {
+  const first = transcript.find((e) => e.role === "user");
+  if (!first) return "";
+  if (first.text) return first.text.length > 70 ? first.text.slice(0, 67) + "…" : first.text;
+  const places = [...new Set((first.photos || []).map((p) => p.place))].join(", ");
+  return `📷 ${(first.photos || []).length} photo(s)${places ? ` (${places})` : ""}`;
+}
+
+function loadChats() {
+  let chats = [];
+  try { chats = JSON.parse(storageGet("ftt.chats")) || []; } catch { chats = []; }
+  // Chats saved before the History existed: rebuild their entries from the stored transcripts.
+  try {
+    const known = new Set(chats.map((c) => c.id));
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith("ftt.transcript.")) continue;
+      const id = key.slice("ftt.transcript.".length);
+      if (known.has(id)) continue;
+      let transcript = [];
+      try { transcript = JSON.parse(localStorage.getItem(key)) || []; } catch { transcript = []; }
+      const title = chatTitle(transcript);
+      if (title) chats.push({ id, started: null, updated: null, title });
+    }
+  } catch { /* storage not readable: what the index has is all we know */ }
+  return chats;
+}
+
+function indexChat(id, transcript) {
+  const title = chatTitle(transcript);
+  if (!title) return;
+  const now = new Date().toISOString();
+  const chats = loadChats().filter((c) => c.id !== id);
+  const old = loadChats().find((c) => c.id === id);
+  chats.unshift({ id, started: (old && old.started) || now, updated: now, title });
+  const keep = chats.slice(0, MAX_CHATS);
+  for (const gone of chats.slice(MAX_CHATS)) {
+    try { localStorage.removeItem("ftt.transcript." + gone.id); } catch { /* ignore */ }
+  }
+  storageSet("ftt.chats", JSON.stringify(keep));
+}
+
+function when(iso) {
+  if (!iso) return "earlier";
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86400000);
+  if (days === 0) return `Today ${time}`;
+  if (days === 1) return `Yesterday ${time}`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + ` ${time}`;
+}
+
+function openHistory() {
+  const chats = loadChats().sort((a, b) => String(b.updated || "").localeCompare(String(a.updated || "")));
+  $("historyBody").replaceChildren(chats.length
+    ? el("ul", { class: "chats" }, chats.map((c) => el("li", {},
+        el("button", { class: "chat-row", type: "button", onclick: () => openChat(c.id) },
+          el("span", { class: "title" }, c.title),
+          el("span", { class: "when" }, when(c.updated),
+            c.id === state.sessionId ? el("span", { class: "here" }, " · this chat") : null)))))
+    : el("div", { class: "empty-loc" }, "No past chats yet. They appear here once you write something."));
+  showOverlay("history");
+  $("historyBody").scrollTop = 0;
+}
+
+// Reopen a past chat: its messages come back, and the agent continues it (its history is on the server).
+function openChat(id) {
+  if (state.busy) return;
+  closeOverlays();
+  if (id !== state.sessionId) startSession(id);
 }
 
 function loadTranscript() {
@@ -504,6 +606,7 @@ function closeOverlays() {
   $("drawer").hidden = true;
   $("sheet").hidden = true;
   $("review").hidden = true;
+  $("history").hidden = true;
   state.reviewPlaces = null;
 }
 
@@ -836,6 +939,8 @@ $("reviewLater").addEventListener("click", closeOverlays);
 $("reviewOk").addEventListener("click", confirmReview);
 $("scrim").addEventListener("click", closeOverlays);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlays(); });
+$("openHistory").addEventListener("click", openHistory);
+$("closeHistory").addEventListener("click", closeOverlays);
 $("newChat").addEventListener("click", () => {
   if (state.busy) return;
   startSession(newSessionId());
