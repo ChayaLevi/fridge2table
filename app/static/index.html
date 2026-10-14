@@ -21,7 +21,7 @@
   header { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
            padding-top: calc(10px + env(safe-area-inset-top, 0px));
            background: var(--surface); border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; white-space: nowrap; }
   .hbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; }
   .badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px;
            background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
@@ -76,14 +76,14 @@
   /* composer */
   .composer { background: var(--surface); border-top: 1px solid var(--line); padding: 8px 10px;
               padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
-  .pending { display: flex; gap: 6px; padding-bottom: 8px; overflow-x: auto; }
+  .pending { display: flex; gap: 6px; padding: 8px 8px 8px 0; overflow-x: auto; }  /* room for the × */
   .thumb { position: relative; flex: none; }
   .thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
   .thumb .tag { position: absolute; left: 3px; right: 3px; bottom: 3px; border: 0; border-radius: 6px; padding: 2px 0;
                 font-size: 11px; font-weight: 600; background: rgba(255,255,255,.92); }
   .thumb .rm { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%;
                border: 0; background: var(--text); color: #fff; font-size: 13px; line-height: 22px; padding: 0; }
-  .row { display: flex; gap: 8px; align-items: flex-end; }
+  .row { display: flex; gap: 6px; align-items: flex-end; }
   .iconbtn { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line);
              background: var(--surface); font-size: 19px; padding: 0; }
   #input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); border-radius: 21px; padding: 10px 14px;
@@ -164,8 +164,11 @@
   <form class="composer" id="composer">
     <div class="pending" id="pending" hidden></div>
     <div class="row">
-      <button class="iconbtn" id="attach" type="button" title="Add photos" aria-label="Add photos">📷</button>
+      <button class="iconbtn" id="attach" type="button" title="Take a photo" aria-label="Take a photo">📷</button>
+      <button class="iconbtn" id="gallery" type="button" title="Choose from gallery" aria-label="Choose photos from the gallery">🖼️</button>
+      <!-- capture opens the camera directly on a phone; the gallery input has no capture, so it opens the photo library -->
       <input id="file" type="file" accept="image/*" multiple capture="environment" hidden>
+      <input id="galleryFile" type="file" accept="image/*" multiple hidden>
       <textarea id="input" rows="1" placeholder="Ask what to cook, or say what you want to make…"></textarea>
       <button id="send" type="submit">Send</button>
     </div>
@@ -525,10 +528,11 @@ function renderInventory() {
 
 // --- photos --------------------------------------------------------------------------------------
 
-function pickPhotos(place) {
+// source: "file" = the camera (on a phone), "galleryFile" = the photo library.
+function pickPhotos(place, source = "file") {
   state.nextPlace = place || null;
   closeOverlays();
-  $("file").click();
+  $(source).click();
 }
 
 function addPhotos(files) {
@@ -569,6 +573,7 @@ function updateSend() {
 function setBusy(busy) {
   state.busy = busy;
   $("attach").disabled = busy;
+  $("gallery").disabled = busy;
   updateSend();
 }
 
@@ -644,7 +649,10 @@ $("input").addEventListener("keydown", (e) => {
   }
 });
 $("attach").addEventListener("click", () => pickPhotos(null));
-$("file").addEventListener("change", (e) => { addPhotos(e.target.files); e.target.value = ""; });
+$("gallery").addEventListener("click", () => pickPhotos(null, "galleryFile"));
+for (const id of ["file", "galleryFile"]) {
+  $(id).addEventListener("change", (e) => { addPhotos(e.target.files); e.target.value = ""; });
+}
 $("openInv").addEventListener("click", () => showOverlay("drawer"));
 $("closeInv").addEventListener("click", closeOverlays);
 $("closeSheet").addEventListener("click", closeOverlays);

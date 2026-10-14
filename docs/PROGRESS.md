@@ -85,6 +85,18 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Log
 
+### 2026-10-14 — Page: gallery button (the human's request)
+- The human asked whether a photo can be taken from inside the app. It already could: 📷 is an `<input capture="environment">`, which opens the phone camera and attaches the photo. But on Android `capture` offers the camera only, with no way to pick an existing photo. Added 🖼️ next to 📷: a second file input without `capture` (photo library, several at once). The panel's per-place camera buttons still open the camera. A live camera inside the page (getUserMedia) was not used: it needs HTTPS, and the app runs over plain http on the home network.
+- Also: thumbnail × no longer clipped, the title no longer wraps at 360 px.
+- Checked in headless Edge at 360×740: the gallery button opens a multi-file chooser, 2 photos attach with tags, text box 172 px wide, no page errors.
+
+**How to verify**
+```
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: on a phone on the same Wi-Fi open `http://<this computer's IP>:8000/` (on a computer: http://localhost:8000/). 📷 opens the camera (on a computer: a file picker); 🖼️ opens the photo library and lets you pick several photos; each appears above the text box with a Fridge tag.
+
 ### 2026-10-14 — Scope: the agent answers only kitchen questions (the human's request)
 - Why: in the browser the agent answered "How many countries are there in the world?" (195...). The human asked for enforcement: kitchen and recipe topics only, nothing else at all.
 - Built / changed:
