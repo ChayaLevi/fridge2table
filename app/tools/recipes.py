@@ -17,7 +17,7 @@ from pydantic_ai.models import Model
 
 from app import config
 from app.llm import thinking_settings
-from app.models import CATEGORIES, Constraints, Ingredient, Recipe
+from app.models import CATEGORIES, Constraints, Ingredient, Recipe, Substitution
 from app.store import Store
 from app.tools.checks import fill_uses_from_inventory
 from app.tools.inventory import get_inventory, inventory_summary
@@ -78,6 +78,8 @@ You write the cooking steps for a home recipe whose name, ingredients, time and 
 Rules:
 - 3 to 8 short steps, in order, each one action a home cook can follow. Use only the ingredients listed.
 - Fit the total time given. No introduction, no tips, no step numbers in the text.
+- If substitutes are listed, the ingredient list already uses them: write the steps for the substitute and \
+never mention the ingredient it replaces.
 """
 
 
@@ -229,29 +231,53 @@ async def get_recipe(store: Store, dish: str, *, model: Model | None = None) -> 
     return _finish(store, _clean(draft, dish))
 
 
-def _recipe_text(recipe: Recipe) -> str:
+def _recipe_text(recipe: Recipe, subs: dict[str, str] | None = None) -> str:
+    """The recipe for STEPS_PROMPT; with `subs` (missing -> use instead) the substitutes replace the originals."""
+    subs = subs or {}
     ingredients = "\n".join(
-        f"- {i.name}: {i.amount}" + ("" if i.essential else " (optional)") for i in recipe.ingredients
+        f"- {subs.get(i.name, i.name)}: {i.amount}" + ("" if i.essential else " (optional)")
+        for i in recipe.ingredients
     )
-    return (f"Recipe: {recipe.name}\nTime: {recipe.time_minutes} minutes, serves {recipe.servings}\n"
+    text = (f"Recipe: {recipe.name}\nTime: {recipe.time_minutes} minutes, serves {recipe.servings}\n"
             f"Ingredients:\n{ingredients}")
+    if subs:
+        text += "\nSubstitutes: " + "; ".join(f"{new} instead of {old}" for old, new in subs.items())
+    return text
 
 
-async def get_steps(store: Store, recipe_id: str, *, model: Model | None = None) -> Recipe:
+def _subs_for(recipe: Recipe, substitutions: list[Substitution] | None) -> dict[str, str]:
+    """missing -> use_instead (canonical), only for ingredients this recipe has, in a stable order."""
+    names = {i.name for i in recipe.ingredients}
+    pairs = {normalize(s.missing): normalize(s.use_instead) for s in substitutions or []}
+    return {old: new for old, new in sorted(pairs.items()) if old in names and new and new != old}
+
+
+async def get_steps(
+    store: Store,
+    recipe_id: str,
+    substitutions: list[Substitution] | None = None,
+    *,
+    model: Model | None = None,
+) -> Recipe:
     """The recipe with its cooking steps: generated on first request (one LLM call), then stored.
 
+    `substitutions` (from the agent's reply) are written into the steps ("mix the cottage cheese with the
+    egg", never "the ricotta"). Steps with substitutes are stored under their own key, so the plain version
+    and each substituted one are generated once each; the returned recipe keeps its id and ingredients.
     Raises KeyError if no recipe with that id was ever returned by suggest_meals / get_recipe.
     """
     recipe = store.load_recipe(recipe_id)
     if recipe is None:
         raise KeyError(recipe_id)
-    if recipe.steps:
-        return recipe
+    subs = _subs_for(recipe, substitutions)
+    key = recipe_id if not subs else f"{recipe_id}~" + "~".join(f"{old}>{new}" for old, new in subs.items())
+    cached = store.load_recipe(key) if subs else recipe
+    if cached is not None and cached.steps:
+        return recipe.model_copy(update={"steps": cached.steps})
     agent = Agent(_model(model), output_type=StepsDraft, instructions=STEPS_PROMPT)
-    draft: StepsDraft = await _run(agent, _recipe_text(recipe), "get_steps")
+    draft: StepsDraft = await _run(agent, _recipe_text(recipe, subs), "get_steps")
     steps = [" ".join(s.split()) for s in draft.steps if s.strip()]
     if not steps:
         raise ValueError(f"the model returned no steps for {recipe.name!r}")
-    recipe = recipe.model_copy(update={"steps": steps})
-    store.save_recipe(recipe)
-    return recipe
+    store.save_recipe(recipe.model_copy(update={"id": key, "steps": steps}))
+    return recipe.model_copy(update={"steps": steps})

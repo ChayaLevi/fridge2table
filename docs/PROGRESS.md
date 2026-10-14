@@ -41,7 +41,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great") and asked for the panel edits, staples, scope and gallery changes logged below; T3.2 stays `[~]` until it is tried on a phone.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 400 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 404 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -66,7 +66,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
-- (2026-10-14) Recipe steps ignore the substitutions: for a lasagna with "use your cottage cheese instead" of ricotta, `get_steps` still writes "mix the ricotta with the egg" (the steps are generated from the recipe, which does not know the reply's substitutions). Fix if the human wants it: pass the substitutions to `GET /recipe/{id}/steps` and into `STEPS_PROMPT`.
+- ~~(2026-10-14) Recipe steps ignored the substitutions ("mix the ricotta" with cottage cheese as the substitute)~~ Fixed the same day: the page sends the reply's substitutions to `GET /recipe/{id}/steps?sub=...`.
 - ~~(T3.2) Network loss on 2026-10-14~~ Resolved the same day: the app's `ModelAPIError: Connection error` was a real outage, gone later. Note: `curl` on this machine still fails with `CRYPT_E_NO_REVOCATION_CHECK` (Windows schannel cannot reach the certificate revocation server); that is curl only, Python (httpx) connects fine. To test the API connection, use `uv run python -c "import httpx; print(httpx.get('https://api.deepseek.com/models').status_code)"` (401 without a key = reachable), not curl.
 - (T3.2) Real Mode A replies said "a pantry photo would give more options" right after a pantry photo was scanned (2 of 2 runs, the pantry photo had only coffee). Agent prose only; rule 5 in `INSTRUCTIONS` could say "only while the pantry is NOT SCANNED" more firmly. Revisit in T3.3 / P6.
 - (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
@@ -86,6 +86,22 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — Steps with the substitutes, amounts in the shopping list, "Start over" (the human's requests)
+- Built / changed:
+  - `app/tools/recipes.py`: `get_steps(store, recipe_id, substitutions=None)`. The substitutes for ingredients the recipe has replace them in the prompt's ingredient list, plus a "Substitutes: cottage cheese instead of ricotta" line; `STEPS_PROMPT` gained "write the steps for the substitute and never mention the ingredient it replaces". Steps with substitutes are stored under their own key (`<id>~ricotta>cottage cheese`), so the plain and each substituted version are generated once each; the returned recipe keeps its id and its original ingredients (the page shows "use your cottage cheese instead" next to ricotta). Substitutes for ingredients the recipe lacks are ignored (same key as plain).
+  - `app/api.py`: `GET /recipe/{id}/steps?sub=ricotta:cottage cheese` (repeatable; malformed values ignored). New `POST /inventory/reset`: deletes every item and every scan date (`Store.clear_inventory`); preferences, staple choices (added or removed) and chats stay. `/admin/reset` still deletes everything.
+  - `app/static/index.html`: the recipe window passes the reply's substitutions when it asks for steps. Shopping lists (under the card and in the recipe) show the recipe's amount after each item: "ground beef · 500 g", "cottage cheese instead of ricotta · 450 g", "lasagna noodle · 12 sheets" (`amountFor` takes it from the reply's meals; nothing shown when the recipe has no amount). At the end of the inventory panel, "Start over: clear the inventory" → an in-page confirmation ("Clear all 21 items and the scan dates, then add new photos? Your preferences and staples stay." Cancel / Clear inventory) → `POST /inventory/reset`, the panel closes, a new chat starts and the welcome asks for fridge and pantry photos.
+  - Tests: 404 pass (+4): steps with substitutes (prompt has "- cottage cheese: 450 g" and no "- ricotta", cached per version, the plain version separate and stored under the recipe id), substitutes the recipe lacks are ignored, the API's `sub` parameter, the inventory reset keeps preferences, staples and chats.
+- Checked in headless Edge 390x844 with real models (demo seed): "The kids hated the eggplant last time.", then "I want to make lasagna": the chat block reads "USE INSTEAD cottage cheese instead of ricotta · 450 g | TO BUY ground beef · 500 g, mozzarella · 300 g, shredded, parmesan · 60 g, grated | CHECK YOUR PANTRY FIRST lasagna noodle · 12 sheets"; opening the card requests `/steps?sub=ricotta%3Acottage+cheese` and the steps mention cottage cheese, not ricotta. Panel → Start over → Cancel (nothing changes, 21 items) → Start over → Clear inventory: badge 0, panel closed, a new chat with the welcome; the server has 0 items and no scans; the eggplant preference is still stored. No page errors.
+
+**How to verify**
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `404 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: run `POST /admin/reset` and `POST /admin/seed` in http://localhost:8000/docs, open http://localhost:8000/ and send `I want to make lasagna`. The shopping block shows amounts ("ground beef · 500 g"); open the card: the steps say cottage cheese, not ricotta. Then open Inventory, scroll to the bottom, tap "Start over: clear the inventory", then "Clear inventory": the badge shows 0 and a new chat asks for photos of the fridge and the pantry.
 
 ### 2026-10-14 — Page: recipe window centered, shopping list inside it (the human's request)
 - The human asked: why is there no shopping list in the recipe; open the recipe in the middle of the screen, not from the bottom (it looked cut off); can a long recipe scroll?

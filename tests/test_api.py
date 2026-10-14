@@ -176,6 +176,19 @@ def test_patch_inventory_adds_a_staple_and_renames_an_uncertain_item(client, sto
     assert items["leftover rice"]["uncertain"] is False and "white container" not in items
 
 
+def test_inventory_reset_clears_items_and_scans_but_keeps_preferences_staples_and_chats(client, store):
+    store.add_preference(Preference(id="p", text="no pork", avoid=["pork"], created_at="2026-10-14T00:00:00"))
+    client.patch("/inventory", json=[{"op": "add_staple", "name": "rice"}, {"op": "remove", "name": "salt"}])
+    store.save_session_messages("s1", [])
+    body = client.post("/inventory/reset").json()
+    names = {i["name"] for i in body["inventory"]}
+    assert not any(i["source"] != "staple" for i in body["inventory"])  # spinach and egg are gone
+    assert "rice" in names and "salt" not in names  # staple choices kept
+    assert body["scan_state"]["scanned"] == {}
+    assert [p.text for p in store.load_preferences()] == ["no pork"]
+    assert store.load_session_messages("s1") == []  # the session row is still there (empty history)
+
+
 def test_patch_inventory_rejects_an_unknown_op(client):
     assert client.patch("/inventory", json=[{"op": "buy", "name": "milk"}]).status_code == 422
 
@@ -198,6 +211,23 @@ def test_steps_are_generated_once_then_read_from_the_store(client, store):
         r = client.get("/recipe/abc123/steps")
         assert r.status_code == 200 and r.json()["steps"] == ["Beat the eggs.", "Cook."]
     assert len(calls) == 1
+
+
+def test_steps_with_substitutes_from_the_query(client, store):
+    from app.models import Ingredient, Recipe
+
+    prompts = []
+
+    def fn(messages, info):
+        prompts.append(next(p.content for m in messages for p in m.parts if p.part_kind == "user-prompt"))
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {"steps": ["Mix the cottage cheese."]})])
+
+    api.app.dependency_overrides[api.get_recipe_model] = lambda: FunctionModel(fn)
+    store.save_recipe(Recipe(id="las001", name="Lasagna", time_minutes=60, ingredients=[
+        Ingredient(name="ricotta", amount="450 g", essential=True, category="dairy")]))
+    r = client.get("/recipe/las001/steps", params={"sub": ["ricotta:cottage cheese", "bad-format"]})
+    assert r.status_code == 200 and r.json()["steps"] == ["Mix the cottage cheese."]
+    assert "- cottage cheese: 450 g" in prompts[0] and r.json()["ingredients"][0]["name"] == "ricotta"
 
 
 def test_steps_for_an_unknown_recipe_is_404(client):

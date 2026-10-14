@@ -259,3 +259,38 @@ async def test_suggest_meals_forces_named_ingredients_essential(store):
                                             ing("spinach", "vegetable", essential=False))]})
     [r] = await suggest_meals(store, model=model)
     assert all(i.essential for i in r.ingredients)
+
+
+async def test_get_steps_with_substitutes_writes_them_in_and_caches_each_version(store):
+    from app.models import Substitution
+
+    lasagna = dish("Lasagna", ing("pasta", "pasta"), ing("ricotta", "dairy", amount="450 g"), ing("egg", "egg"))
+    m = await get_recipe(store, "lasagna", model=fake_model(lasagna)[0])
+    subs = [Substitution(missing="Ricotta", use_instead="cottage cheese")]
+
+    sub_model, sub_calls = fake_model({"steps": ["Mix the cottage cheese with the egg."]})
+    r = await get_steps(store, m.id, subs, model=sub_model)
+    assert r.id == m.id and r.steps == ["Mix the cottage cheese with the egg."]
+    assert [i.name for i in r.ingredients] == ["pasta", "ricotta", "egg"]  # the recipe itself is unchanged
+    instructions, prompt = sub_calls[0]
+    assert "never mention the ingredient it replaces" in instructions
+    assert "- cottage cheese: 450 g" in prompt and "- ricotta" not in prompt
+    assert "Substitutes: cottage cheese instead of ricotta" in prompt
+
+    # the same substitutes again: from the store; the plain version is generated separately, once
+    again = await get_steps(store, m.id, subs, model=fake_model({"steps": ["other"]})[0])
+    assert again.steps == ["Mix the cottage cheese with the egg."] and len(sub_calls) == 1
+    plain_model, plain_calls = fake_model({"steps": ["Mix the ricotta with the egg."]})
+    plain = await get_steps(store, m.id, model=plain_model)
+    assert plain.steps == ["Mix the ricotta with the egg."] and "Substitutes" not in plain_calls[0][1]
+    assert store.load_recipe(m.id).steps == ["Mix the ricotta with the egg."]
+
+
+async def test_get_steps_ignores_substitutes_for_ingredients_the_recipe_lacks(store):
+    from app.models import Substitution
+
+    m = await get_recipe(store, "omelette", model=fake_model(dish("Omelette", ing("egg", "egg")))[0])
+    model, calls = fake_model({"steps": ["Whisk the eggs."]})
+    await get_steps(store, m.id, [Substitution(missing="ricotta", use_instead="cottage cheese")], model=model)
+    assert "Substitutes" not in calls[0][1]
+    assert store.load_recipe(m.id).steps == ["Whisk the eggs."]  # stored as the plain version

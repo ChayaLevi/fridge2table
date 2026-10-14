@@ -146,6 +146,16 @@
                background: var(--bg); color: var(--text); }
   .add button { border: 0; border-radius: 8px; background: var(--accent-soft); color: var(--accent); padding: 0 12px; }
   .empty-loc { padding: 8px 12px; color: var(--muted); font-size: 13px; }
+  .shop .amount { color: var(--muted); font-size: 13px; }
+  .restart { margin: 18px 0 6px; text-align: center; }
+  .restart .link { border: 0; background: none; color: var(--warn); text-decoration: underline; padding: 6px; }
+  .restart .confirm { background: var(--warn-soft); border: 1px solid #f2d3b3; border-radius: var(--radius);
+                      padding: 12px; text-align: left; }
+  .restart .confirm p { margin: 0 0 10px; }
+  .restart .row2 { display: flex; gap: 8px; }
+  .restart .row2 button { flex: 1; height: 40px; border-radius: 20px; font-weight: 600; }
+  .restart .danger { border: 0; background: var(--warn); color: #fff; }
+  .restart .keep { border: 1px solid var(--line); background: var(--surface); }
   details.staples summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
 
   /* A centered window (recipe, review after a scan). Only its body scrolls; the shadows at its top and
@@ -388,19 +398,32 @@ function renderCard(meal, data) {
     el("div", { class: "open" }, "Open recipe ›"));
 }
 
+// The amount the reply's recipe(s) need of an ingredient ("500 g"), or "" (names are canonical).
+function amountFor(name, meals) {
+  const low = String(name).toLowerCase();
+  const amounts = (meals || []).flatMap((m) => m.ingredients.filter((i) => i.name.toLowerCase() === low))
+    .map((i) => i.amount).filter(Boolean);
+  return [...new Set(amounts)].join(" + ");
+}
+
+function shopLine(text, amount) {
+  return el("li", {}, text, amount ? el("span", { class: "amount" }, ` · ${amount}`) : null);
+}
+
 function renderShop(reply) {
   const box = el("div", { class: "shop" });
   const subs = reply.substitutions || [];
   const buy = reply.shopping_list || [];
   const check = reply.check_first || [];
+  const meals = reply.meals || [];
   if (subs.length) {
-    box.append(el("h3", {}, "Use instead"),
-      el("ul", {}, subs.map((s) => el("li", {}, `${displayName(s.use_instead)} instead of ${s.missing}`))));
+    box.append(el("h3", {}, "Use instead"), el("ul", {}, subs.map((s) =>
+      shopLine(`${displayName(s.use_instead)} instead of ${s.missing}`, amountFor(s.missing, meals)))));
   }
-  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => el("li", {}, x))));
+  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => shopLine(x, amountFor(x, meals)))));
   if (check.length) {
     box.append(el("h3", {}, "Check your pantry first"),
-      el("ul", { class: "check" }, check.map((x) => el("li", {}, x))));
+      el("ul", { class: "check" }, check.map((x) => shopLine(x, amountFor(x, meals)))));
   }
   if (!buy.length && !check.length) box.append(el("div", { class: "empty" }, "✓ Nothing to buy: you have everything."));
   return box;
@@ -457,7 +480,11 @@ async function openRecipe(meal, data) {
   showOverlay("sheet");
   body.scrollTop = 0;  // after showing: a hidden element keeps its old scroll position
   try {
-    const recipe = meal.steps && meal.steps.length ? meal : await api(`/recipe/${encodeURIComponent(meal.id)}/steps`);
+    // The reply's substitutes go along, so the steps say "cottage cheese", not "ricotta".
+    const subs = new URLSearchParams();
+    for (const s of reply.substitutions || []) subs.append("sub", `${s.missing}:${s.use_instead}`);
+    const query = subs.toString() ? `?${subs}` : "";
+    const recipe = meal.steps && meal.steps.length ? meal : await api(`/recipe/${encodeURIComponent(meal.id)}/steps${query}`);
     meal.steps = recipe.steps;
     steps.replaceChildren(el("ol", {}, recipe.steps.map((s) => el("li", {}, s))));
   } catch (err) {
@@ -631,6 +658,34 @@ function renderInventory() {
     el("summary", {}, `Staples (${staples.length}) — assumed in the kitchen`),
     el("ul", { class: "items" }, staples.map(renderItem)),
     renderAdd(null)));
+  body.append(renderRestart(own.length));
+}
+
+// Clear the inventory and rebuild it from new photos. Two taps: the link, then the confirm button.
+function renderRestart(count) {
+  const box = el("div", { class: "restart" });
+  const ask = () => box.replaceChildren(el("div", { class: "confirm" },
+    el("p", {}, `Clear all ${count} item${count === 1 ? "" : "s"} and the scan dates, then add new photos? `
+      + "Your preferences and staples stay."),
+    el("div", { class: "row2" },
+      el("button", { class: "keep", type: "button", onclick: () => box.replaceChildren(link) }, "Cancel"),
+      el("button", { class: "danger", type: "button", onclick: startOver }, "Clear inventory"))));
+  const link = el("button", { class: "link", type: "button", onclick: ask }, "Start over: clear the inventory");
+  box.append(link);
+  return box;
+}
+
+async function startOver() {
+  if (state.busy) return;
+  try {
+    setInventory(await api("/inventory/reset", { method: "POST" }));
+  } catch (err) {
+    addEntry({ role: "system", text: err.message });
+    return;
+  }
+  closeOverlays();
+  startSession(newSessionId());  // a fresh chat: the old one talks about items that are gone
+  await opening();  // empty inventory: the welcome asks for photos of the fridge and the pantry
 }
 
 // --- photos --------------------------------------------------------------------------------------

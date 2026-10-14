@@ -167,6 +167,12 @@ class Store:
                 (session_id, ModelMessagesTypeAdapter.dump_json(messages).decode()),
             )
 
+    def clear_inventory(self) -> None:
+        """Start the inventory over: no items, no place scanned. Preferences, staples and chats stay."""
+        with self._conn:
+            self._conn.execute("DELETE FROM inventory")
+            self._conn.execute("DELETE FROM scan_state")
+
     # tests and demo seeding
 
     def reset_all(self) -> None:

@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, get_args
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, computed_field
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior, UsageLimitExceeded
@@ -24,7 +24,8 @@ from app import config
 from app.agent import TurnResult, run_opening, run_turn
 from app.llm import setup_observability
 from app.models import (
-    AgentReply, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, ToolTraceItem, TurnUsage,
+    AgentReply, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
+    TurnUsage,
 )
 from app.store import Store
 from app.tools import inventory, recipes
@@ -191,13 +192,29 @@ def patch_inventory(store: StoreDep, changes: list[InventoryChange]) -> Inventor
     return InventoryState(**_state(store))
 
 
+@app.post("/inventory/reset")
+def reset_inventory(store: StoreDep) -> InventoryState:
+    """The panel's "Start over" (the user confirmed it): every item and every scan date is deleted, so new
+    photos rebuild the inventory. Preferences, staples (added or removed) and chats stay; /admin/reset is
+    the one that deletes everything."""
+    store.clear_inventory()
+    return InventoryState(**_state(store))
+
+
 @app.get("/recipe/{recipe_id}/steps")
 async def recipe_steps(
     recipe_id: str, store: StoreDep, model: Annotated[Model | None, Depends(get_recipe_model)],
+    sub: Annotated[list[str], Query(description="A substitute from the reply, as missing:use_instead "
+                                                "(e.g. ricotta:cottage cheese); repeat for several")] = [],
 ) -> Recipe:
-    """The recipe with its steps: one RECIPE_MODEL call the first time, then from the store."""
+    """The recipe with its steps: one RECIPE_MODEL call the first time, then from the store.
+
+    With `sub`, the steps use the substitutes ("mix the cottage cheese ...") and are stored separately.
+    """
+    pairs = [s.split(":", 1) for s in sub if ":" in s]
+    substitutions = [Substitution(missing=m.strip(), use_instead=u.strip()) for m, u in pairs if m.strip() and u.strip()]
     try:
-        return await recipes.get_steps(store, recipe_id, model=model)
+        return await recipes.get_steps(store, recipe_id, substitutions, model=model)
     except KeyError as e:
         raise HTTPException(404, f"Unknown recipe id {recipe_id!r}.") from e
     except ModelAPIError as e:
