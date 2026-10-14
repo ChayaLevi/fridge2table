@@ -45,6 +45,7 @@ EXPECT_KEYS = {
     "meals_valid", "meals_must_not_contain", "shopping_list_contains", "shopping_list_must_not_contain",
     "shopping_list_empty", "check_first_contains", "check_first_must_not_contain", "check_first_empty",
     "substitution_for", "preference_saved", "inventory_lacks", "max_questions", "message_matches", "asks_for_photo",
+    "message_must_not_match", "off_topic",
 }
 
 
@@ -183,6 +184,10 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
         fail(f"{len(reply.questions)} questions > {n}")
     if (rx := expect.get("message_matches")) and not re.search(rx, text, re.I):
         fail(f"message does not match /{rx}/: {text!r}")
+    if (rx := expect.get("message_must_not_match")) and re.search(rx, text, re.I):
+        fail(f"message matches /{rx}/: {text!r}")
+    if (want := expect.get("off_topic")) is not None and reply.off_topic != want:
+        fail(f"off_topic is {reply.off_topic}, expected {want}: {text!r}")
     if place := expect.get("asks_for_photo"):
         photo = r"photo|picture|pic\b|snap|scan|shot"
         if not (re.search(place, text, re.I) and re.search(photo, text, re.I)):

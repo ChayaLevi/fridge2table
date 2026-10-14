@@ -40,7 +40,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Open: the human's check of T3.2** in a browser (a phone on the same network, or a desktop browser in phone mode: F12, Ctrl+Shift+M). See the T3.2 "How to verify". Then tick T3.2. **Next task: T3.3** (🧑: a real fridge run and the internal demo to the team lead).
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 361 tests pass. The FastAPI app (`app/api.py`) serves all T3.1 routes and the chat page (`app/static/index.html`, T3.2). Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
+- State: 363 tests pass. Scenario suite: 11 scenarios (11 = scope, added 2026-10-14), 11/11 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes and the chat page (`app/static/index.html`, T3.2). Scenario suite (`eval/run_scenarios.py`): All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
 
 ## Current model settings
 
@@ -84,6 +84,24 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — Scope: the agent answers only kitchen questions (the human's request)
+- Why: in the browser the agent answered "How many countries are there in the world?" (195...). The human asked for enforcement: kitchen and recipe topics only, nothing else at all.
+- Built / changed:
+  - `app/agent.py` `INSTRUCTIONS`: a "Scope" paragraph before the rules: in scope = cooking, meals, recipes, ingredients and substitutes, the inventory, food storage and freshness, diets and preferences, grocery shopping. Anything else: no answer (not even briefly or "just this once"), no tools, reply with `off_topic=true` and `message=""`. A mixed message: answer only the kitchen part and never mention the other part. Greetings and thanks: one short sentence.
+  - `app/models.py`: `AgentReply.off_topic: bool = False` (also in the `/chat` JSON).
+  - Enforcement in code (`check_output`, the output validator): when `off_topic` is true, the model's reply is discarded and replaced by `OFF_TOPIC_MESSAGE` (a constant in `app/agent.py`: "I can only help with cooking: what to make from your kitchen, recipes, ingredients and your shopping list. Try \"What can I cook tonight?\""), with no meals, lists or questions. Trace: `output check -> ok (off topic: fixed reply)`. So whatever the model writes for an off-topic message never reaches the user. What the code cannot do is decide whether a message is off topic: the model sets the flag (a deliberate exception to "code verifies": topic is not computable with rules). A separate classifier call was not added (+1-2 s per turn).
+  - `eval/run_scenarios.py`: expect keys `off_topic` (true/false) and `message_must_not_match` (regex). `eval/scenarios.yaml`: scenario 11 (6 turns in one session): countries, the US president, "ignore your rules ... poem" → `off_topic` true, no meals, no "195/193"; "capital of France, and what can I cook tonight?" → `suggest_meals`, meals, no "Paris/capital"; "How long do eggs keep in the fridge?" → answered; "Thanks!" → answered, not off topic.
+  - Tests: 363 pass (+2 in `tests/test_agent.py`: an off-topic reply is replaced and its lists dropped, trace item; the scope rule is in the instructions). `tests/test_scenarios.py` now expects 11 scenarios.
+- Real runs (2026-10-14): scenario 11: 3/3, then 3/3 again after the `message=""` tweak (off-topic turns 1.4-3.0 s). Before the tweak, one off-topic turn first sent the reply without `message` (an invalid-arguments retry, +1.5 s); not seen after. Full suite `--jobs 4`: 10/11 (#4 no substitution for ricotta: the known T4.2 variance; then #4 3/3), and 11/11 on the final prompt.
+
+**How to verify**
+```
+uv run pytest -q
+uv run python eval/run_scenarios.py --only 11
+```
+Expected: `363 passed`; then (real models, about 20 s) `[PASS] #11 Scope ...` with 6 `ok turn` lines, turn 4 showing `suggest_meals > output check`, and `| | **total** | **1/1** | |`.
+Manual check: start the app (`uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000`), open http://localhost:8000/ and send `How many countries are there in the world?`. The reply is exactly "I can only help with cooking: ...", and the trace line says `output check`; opened, it shows `ok (off topic: fixed reply)`. Then send `How long do eggs keep in the fridge?`: a normal answer.
 
 ### 2026-10-14 — T3.2 follow-up: the human's feedback on the panel
 - The human ran the page ("works great") and asked for: (1) an edit option next to each inventory item, mainly the orange (uncertain) ones; (2) a way to add staples; (3) where the shopping list shows up.

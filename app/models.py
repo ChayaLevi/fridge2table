@@ -189,4 +189,6 @@ class AgentReply(BaseModel):
     shopping_list: list[str] = []  # "To buy"
     check_first: list[str] = []  # "Check your pantry first"
     questions: list[str] = []  # clarifying questions about uncertain items (max 3)
+    # True when the message is not about food or the kitchen; code then replaces message with a fixed reply
+    off_topic: bool = False
     # trace is attached by the server from the run's messages, not produced by the model

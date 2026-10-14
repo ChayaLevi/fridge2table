@@ -458,3 +458,24 @@ def test_agent_registers_the_planned_tools():
         "compute_missing", "validate_suggestion", "save_preference",
     }
     assert deps.images == [] and deps.recipes == {}
+
+
+# --- scope: off-topic messages ---------------------------------------------------------------------
+
+async def test_off_topic_reply_is_replaced_by_the_fixed_message(store):
+    from app.agent import OFF_TOPIC_MESSAGE
+
+    model, _ = scripted(reply(message="There are 195 countries in the world.", off_topic=True,
+                              shopping_list=["milk"], questions=["Anything else?"]))
+    turn = await run_turn(store, "s1", "How many countries are there in the world?", model=model)
+    assert turn.reply.message == OFF_TOPIC_MESSAGE and "195" not in turn.reply.message
+    assert turn.reply.off_topic and turn.reply.meals == [] and turn.reply.shopping_list == []
+    assert turn.reply.questions == []
+    assert [(t.tool, t.result_summary) for t in turn.trace] == [("output check", "ok (off topic: fixed reply)")]
+
+
+async def test_scope_rule_is_in_the_instructions(store):
+    model, seen = scripted(reply())
+    await run_turn(store, "s1", "hi", model=model)
+    instructions = seen[0][0]
+    assert "off_topic=true" in instructions and "only the kitchen part" in instructions

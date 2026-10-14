@@ -32,6 +32,12 @@ from app.tools import checks, inventory, preferences, recipes, recognize
 
 log = logging.getLogger(__name__)
 
+# The reply to an off-topic message, written by code (the model only sets AgentReply.off_topic).
+OFF_TOPIC_MESSAGE = (
+    "I can only help with cooking: what to make from your kitchen, recipes, ingredients and your "
+    "shopping list. Try \"What can I cook tonight?\""
+)
+
 # About 8 tool calls per turn (PRODUCT §5); the limit is a hard stop a little above that.
 USAGE_LIMITS = UsageLimits(tool_calls_limit=10, request_limit=16)
 
@@ -41,6 +47,14 @@ You are the kitchen agent of one household. You know what is in their fridge, fr
 and Mode B, "I want to make X" (what is missing for that dish). Answer in English, briefly.
 
 Today is {today}.
+
+Scope: you only talk about food and this kitchen: cooking, meals, recipes, ingredients and substitutes, \
+the inventory, food storage and freshness, diets and preferences, and grocery shopping. Anything else \
+(general knowledge, news, politics, people, maths, code, other advice) is off topic: do not answer it, \
+not even briefly or "just this once", and call no tools; reply with off_topic=true and message="" (the \
+app sends a fixed message). If a message mixes both ("what's the capital of France, and what can I cook?"), \
+answer only the kitchen part, never mention the other part, and leave off_topic false. Greetings and \
+thanks are fine: answer in one short sentence, off_topic false.
 
 Rules:
 1. The inventory below is the only truth. Never claim an item is present unless it is listed there or \
@@ -338,6 +352,8 @@ async def save_preference(ctx: RunContext[Deps], text: str, avoid: list[str]) ->
 async def check_output(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
     """Re-check the final reply in code (checks.check_reply); a failure goes back to the model as ModelRetry.
 
+    An off-topic reply (off_topic=True) is replaced by OFF_TOPIC_MESSAGE, with no meals or lists.
+
     Meals are looked up by id in the run's recipe cache: an unknown id, a Mode A meal that no longer
     passes validate_suggestion, a substitute not in the inventory, or more than 3 meals / questions is a
     retry. Mode B lists (shopping_list, check_first) are recomputed and replaced in code. Every check is
@@ -346,6 +362,10 @@ async def check_output(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
     if ctx.partial_output:
         return reply
     start = time.perf_counter()
+    if reply.off_topic:  # the model's own text is never shown for an off-topic message
+        ctx.deps.steps.append(StepTiming(kind="check", name=OUTPUT_CHECK, seconds=0.0,
+                                         detail="ok (off topic: fixed reply)", call_id=ctx.tool_call_id))
+        return AgentReply(message=OFF_TOPIC_MESSAGE, off_topic=True)
     store = ctx.deps.store
     result = checks.check_reply(
         reply, ctx.deps.recipes, inventory.get_inventory(store), store.load_preferences(), store.load_scan_state(),

@@ -30,9 +30,9 @@ def _store(*items: str, scanned=("fridge",)) -> Store:
     return store
 
 
-def test_suite_file_loads_with_ten_scenarios():
+def test_suite_file_loads_with_eleven_scenarios():
     inventories, scenarios = sc.load_suite()
-    assert [s["id"] for s in scenarios] == list(range(1, 11))
+    assert [s["id"] for s in scenarios] == list(range(1, 12))
     for s in scenarios:  # every seed is valid
         sc.seed_store(Store(":memory:"), s.get("seed") or {}, inventories)
     for s in scenarios:
