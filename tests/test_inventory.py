@@ -186,6 +186,68 @@ def test_rename_onto_existing_merges(store):
 
 # merge_recognized
 
+def staple(name):
+    return InventoryChange(op="add_staple", name=name)
+
+
+def test_add_staple_shows_it_as_a_staple_and_survives_reopen(tmp_path):
+    s = Store(tmp_path / "inv.db")
+    update_inventory(s, [staple("White Rice"), staple("garlic powder")])
+    s.close()
+    s = Store(tmp_path / "inv.db")
+    items = by_name(get_inventory(s))
+    assert items["white rice"].source == "staple" and items["white rice"].is_staple
+    assert items["garlic powder"].qty_level == "plenty"
+    assert [i.name for i in get_inventory(s) if i.source == "staple"][-2:] == ["white rice", "garlic powder"]
+    assert "white rice" in inventory_summary(get_inventory(s), ScanState(scanned={})).splitlines()[-1]
+    s.close()
+
+
+def test_add_staple_twice_or_a_default_one_adds_nothing_new(store):
+    update_inventory(store, [staple("rice"), staple("rice"), staple("salt")])
+    assert store.load_custom_staples() == ["rice"]
+    assert len(get_inventory(store)) == len(staple_names()) + 1
+
+
+def test_add_staple_restores_a_removed_default_staple(store):
+    update_inventory(store, [InventoryChange(op="remove", name="salt")])
+    update_inventory(store, [staple("salt")])
+    assert by_name(get_inventory(store))["salt"].source == "staple"
+    assert store.load_custom_staples() == []
+
+
+def test_add_staple_replaces_a_stored_item_with_that_name(store):
+    update_inventory(store, [add("rice", category="grain", location="pantry", qty_level="low")])
+    update_inventory(store, [staple("rice")])
+    rice = [i for i in get_inventory(store) if i.name == "rice"]
+    assert len(rice) == 1 and rice[0].source == "staple"
+
+
+def test_remove_user_staple_deletes_it(store):
+    update_inventory(store, [staple("rice")])
+    update_inventory(store, [InventoryChange(op="remove", name="rice")])
+    assert "rice" not in by_name(get_inventory(store))
+    assert store.load_custom_staples() == [] and "rice" not in store.load_removed_staples()
+
+
+def test_user_staple_counts_as_available_in_checks(store):
+    from app.models import Ingredient, Recipe
+    from app.tools.checks import compute_missing
+
+    recipe = Recipe(name="Rice bowl", time_minutes=20,
+                    ingredients=[Ingredient(name="rice", amount="1 cup", essential=True, category="grain")])
+    scanned = ScanState(scanned={"pantry": datetime(2026, 10, 14)})
+    assert compute_missing(recipe, get_inventory(store), scanned).missing_essential == ["rice"]
+    update_inventory(store, [staple("rice")])
+    assert compute_missing(recipe, get_inventory(store), scanned).missing_essential == []
+
+
+def test_reset_all_clears_user_staples(store):
+    update_inventory(store, [staple("rice")])
+    store.reset_all()
+    assert store.load_custom_staples() == []
+
+
 def test_merge_adds_new_items(store):
     inv = merge_recognized(store, [item("Tomatoes"), item("Scallion")])
     assert {"tomato", "green onion"} <= set(by_name(inv))

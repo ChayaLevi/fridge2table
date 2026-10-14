@@ -1,4 +1,4 @@
-"""SQLite persistence: inventory, preferences, removed staples, scan state, chat sessions.
+"""SQLite persistence: inventory, preferences, removed and added staples, scan state, chat sessions.
 
 One `Store` per database file. Rows hold the Pydantic models as JSON, so the
 schema stays small and the models in `app/models.py` remain the source of truth.
@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS preferences (
 CREATE TABLE IF NOT EXISTS staples_state (
     name TEXT PRIMARY KEY
 );
+CREATE TABLE IF NOT EXISTS custom_staples (
+    name TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS scan_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL
@@ -39,7 +42,7 @@ CREATE TABLE IF NOT EXISTS recipes (
 );
 """
 
-_TABLES = ("inventory", "preferences", "staples_state", "scan_state", "sessions", "recipes")
+_TABLES = ("inventory", "preferences", "staples_state", "custom_staples", "scan_state", "sessions", "recipes")
 
 
 class Store:
@@ -96,6 +99,19 @@ class Store:
                 self._conn.execute("INSERT OR IGNORE INTO staples_state (name) VALUES (?)", (name,))
             else:
                 self._conn.execute("DELETE FROM staples_state WHERE name = ?", (name,))
+
+    # staples the user added (beyond data/staples.json), in the order added
+
+    def load_custom_staples(self) -> list[str]:
+        rows = self._conn.execute("SELECT name FROM custom_staples ORDER BY rowid").fetchall()
+        return [r[0] for r in rows]
+
+    def set_custom_staple(self, name: str, present: bool = True) -> None:
+        with self._conn:
+            if present:
+                self._conn.execute("INSERT OR IGNORE INTO custom_staples (name) VALUES (?)", (name,))
+            else:
+                self._conn.execute("DELETE FROM custom_staples WHERE name = ?", (name,))
 
     # recipes (every recipe a tool returned, by id, so steps can be generated later for a card)
 

@@ -40,7 +40,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Open: the human's check of T3.2** in a browser (a phone on the same network, or a desktop browser in phone mode: F12, Ctrl+Shift+M). See the T3.2 "How to verify". Then tick T3.2. **Next task: T3.3** (🧑: a real fridge run and the internal demo to the team lead).
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 353 tests pass. The FastAPI app (`app/api.py`) serves all T3.1 routes and the chat page (`app/static/index.html`, T3.2). Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
+- State: 361 tests pass. The FastAPI app (`app/api.py`) serves all T3.1 routes and the chat page (`app/static/index.html`, T3.2). Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
 
 ## Current model settings
 
@@ -58,7 +58,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - ~~Model defaults were provisional Gemini/Claude strings~~ (superseded by the DeepSeek switch and T0.4; model values are bare DeepSeek IDs, see "Current model settings").
 - Extras beyond the plan (small): `.gitignore`, `pytest.ini` (asyncio_mode=auto), `httpx` dev dependency (needed by FastAPI TestClient), `LOG_LEVEL`/`LOGFIRE_TOKEN` in `.env.example` (CLAUDE.md debugging aids).
 - `data/synonyms.json` has 115 entries (112 + 3 added in the T1.1 redo) (flat map, no chains; a test enforces that targets are canonical). Ambiguous keys like bare `pepper` were left out on purpose.
-- `InventoryChange` fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
+- `InventoryChange` ops: add | remove | set_qty | set_use_soon | rename | **add_staple** (added 2026-10-14 at the human's request: staples of the user's own, table `custom_staples`). Fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
 - 2026-10-12 (later): PLAN/PRODUCT were updated (pantry coverage). T0.2 re-done: added `ScanState`, `PANTRY_CATEGORIES`, `Ingredient.category`, `MissingReport.check_first`, `AgentReply.check_first`, extended category list. Tests now 6 pass. T0.1/T0.3 unaffected. T0.5 now asks for 4–6 sets (≥2 fridge, ≥2 pantry), folders `<household>_<place>`.
 - Order change (user request, 2026-10-12): the human has no API keys/photos yet, so T0.4 is deferred and P1/P2 are built with mocked models. T0.4, the real run of T1.4 and T1.6, and T2.5 wait for keys/photos.
 - Repo was not a git repo; `git init` done in T0.1.
@@ -84,6 +84,25 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — T3.2 follow-up: the human's feedback on the panel
+- The human ran the page ("works great") and asked for: (1) an edit option next to each inventory item, mainly the orange (uncertain) ones; (2) a way to add staples; (3) where the shopping list shows up.
+- Built / changed:
+  - Panel (`app/static/index.html`): ✎ next to every non-staple item → inline name field (Enter / Save, Escape / Cancel), sent as `rename` (also confirms an uncertain item, even with the name unchanged). Uncertain items also get a ✓ ("yes, this is right": `rename` to the same name, which clears `uncertain`). A place with uncertain items shows a hint line: "Orange items: I'm not sure. ✎ fix the name, ✓ if it's right, × if it isn't there." PRODUCT §4 Flow 1 step 5 already listed rename in the panel; T3.2 had missed it.
+  - Staples: an "Add a staple, e.g. rice…" field at the end of the Staples section, sent as the new op `add_staple`.
+  - `app/models.py`: `InventoryChange.op` gained `add_staple`. `app/store.py`: table `custom_staples` (`load_custom_staples`, `set_custom_staple`; cleared by `reset_all`). `app/tools/inventory.py`: `all_staples(store)` = defaults + the user's; `get_inventory`, `update_inventory` and `merge_recognized` use it, so a user staple is a staple everywhere (the inventory summary in the prompts, `compute_missing`, `validate_suggestion`). `add_staple` of a default name restores it if removed; of a stored item's name replaces that item with the staple; removing a user staple deletes it. The agent's `update_inventory` docstring does not mention `add_staple` (prompt unchanged, scenarios not rerun).
+  - Bug fixed on the way: `Element.append()` printed `null` for missing buttons (seen in the screenshots, not by the test); rows now filter them out.
+  - Tests: 361 pass (+8). `tests/test_inventory.py` (+7: user staple shown and persisted, no duplicates, restore a removed default, replaces a stored item, remove deletes it, counts as available in `compute_missing`, reset clears it), `tests/test_api.py` (+1: PATCH `add_staple` + rename of an uncertain item).
+  - Checked in headless Edge at 390×844 (scratchpad script, a temp DB with two uncertain items from `merge_recognized`): hint shown, uncertain items first; ✎ rename "white container" → "leftover rice" (no longer uncertain, `source=manual`); ✓ on "sour cream" (hint gone); rename milk → oat milk; add staple "Basmati rice" (Staples 15 → 16, section stays open) then delete it (16 → 15); no "null", no page errors.
+- Answer to (3), no code change: the shopping list is Mode B. It appears when the user names a dish ("I want to make lasagna", "Can I make a spinach omelette?"): To buy, Check your pantry first (while the pantry is not scanned), and substitutions from the inventory. Mode A ("what can I cook?") suggests only dishes that can be made now, so it has no list, except when the request names a dish the inventory cannot make (scenario 3: "creamy pasta" without cream). A list to keep or copy across messages is the stretch T6.2.
+
+**How to verify**
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `361 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: open http://localhost:8000/ and tap Inventory. Tap ✎ next to an item, type a new name, press Enter: the name changes (an orange item turns white). On an orange item, ✓ turns it white without renaming. Open "Staples", type `rice` in "Add a staple…", tap Add: rice appears in the list and the count goes up by one. Close the panel and send `Can I make fried rice?`: rice is not under "To buy".
 
 ### 2026-10-13/14 — T3.2 Web page
 - Built / changed:

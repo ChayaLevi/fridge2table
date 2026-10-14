@@ -3,7 +3,8 @@
 The store holds only real items. Staples (data/staples.json) are virtual: get_inventory() adds
 every staple the user has not removed, unless a stored item already has that name (stored wins).
 Editing a staple (set_qty, set_use_soon, rename) turns it into a stored item; removing it records
-the removal in staples_state.
+the removal in staples_state. The user can add staples of their own (op add_staple, kept in
+custom_staples); they behave like the default ones, and removing one deletes it.
 """
 
 import json
@@ -36,6 +37,11 @@ def staple_names() -> tuple[str, ...]:
     return tuple(normalize(s) for s in json.loads(STAPLES_PATH.read_text(encoding="utf-8")))
 
 
+def all_staples(store: Store) -> tuple[str, ...]:
+    """The default staples, then the ones the user added (canonical names, no duplicates)."""
+    return tuple(dict.fromkeys([*staple_names(), *store.load_custom_staples()]))
+
+
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -54,7 +60,7 @@ def get_inventory(store: Store) -> list[InventoryItem]:
     have = {i.name for i in stored}
     removed = store.load_removed_staples()
     now = datetime.now()
-    staples = [_staple_item(s, now) for s in staple_names() if s not in removed and s not in have]
+    staples = [_staple_item(s, now) for s in all_staples(store) if s not in removed and s not in have]
     return stored + staples
 
 
@@ -66,20 +72,26 @@ def update_inventory(
     `source` is "manual" for the side panel (those items are then protected from recognition) and
     "chat" for the agent. Rules:
     - add: an existing canonical name is updated, not duplicated.
-    - remove: removing a staple records it in staples_state.
+    - remove: removing a staple records it in staples_state (a user-added staple is deleted).
+    - add_staple: the name becomes a staple (assumed always present); a stored item with that name
+      is replaced by the staple.
     - set_qty with qty_level=None means "below low": the item is removed.
     - Names that are not in the inventory are ignored for remove/set_qty/set_use_soon/rename.
     """
     stored = store.load_inventory()
     removed = store.load_removed_staples()
+    custom = set(store.load_custom_staples())
     now = datetime.now()
+
+    def is_staple(name: str) -> bool:
+        return name in staple_names() or name in custom
 
     def find(name: str) -> InventoryItem | None:
         """The stored item with this canonical name; a visible staple is materialized on demand."""
         for i in stored:
             if i.name == name:
                 return i
-        if name in staple_names() and name not in removed:
+        if is_staple(name) and name not in removed:
             item = _staple_item(name, now).model_copy(update={"id": _new_id()})
             stored.append(item)
             return item
@@ -87,7 +99,10 @@ def update_inventory(
 
     def drop(item: InventoryItem) -> None:
         stored.remove(item)
-        if item.name in staple_names():
+        if item.name in custom:
+            custom.discard(item.name)
+            store.set_custom_staple(item.name, present=False)
+        elif item.name in staple_names():
             removed.add(item.name)
             store.set_staple_removed(item.name)
 
@@ -98,6 +113,15 @@ def update_inventory(
     for ch in changes:
         name = normalize(ch.name)
         if not name:
+            continue
+        if ch.op == "add_staple":
+            if name in removed:
+                removed.discard(name)
+                store.set_staple_removed(name, removed=False)
+            if name not in staple_names() and name not in custom:
+                custom.add(name)
+                store.set_custom_staple(name)
+            stored = [i for i in stored if i.name != name]
             continue
         if ch.op == "add":
             if name in removed:
@@ -110,7 +134,7 @@ def update_inventory(
                     category=ch.category or STAPLE_CATEGORIES.get(name, "other"),
                     qty_level=ch.qty_level or "some", location=ch.location or "fridge",
                     confidence=1.0, uncertain=False, use_soon=bool(ch.use_soon),
-                    is_staple=name in staple_names(), source=source, updated_at=now,
+                    is_staple=is_staple(name), source=source, updated_at=now,
                 )
                 stored.append(item)
             else:
@@ -142,7 +166,7 @@ def update_inventory(
                 item = existing
             else:
                 item.name = new
-                item.is_staple = new in staple_names()
+                item.is_staple = is_staple(new)
             item.display_name = ch.display_name or (ch.new_name or "").strip()
             touch(item)
 
@@ -171,10 +195,11 @@ def merge_recognized(store: Store, items: list[InventoryItem]) -> list[Inventory
 
     stored = store.load_inventory()
     by_name = {i.name: i for i in stored}
+    staples = all_staples(store)
     for name, rec in incoming.items():
         old = by_name.get(name)
         if old is None:
-            stored.append(rec.model_copy(update={"is_staple": name in staple_names()}))
+            stored.append(rec.model_copy(update={"is_staple": name in staples}))
         elif old.source != "manual":
             old.qty_level, old.confidence, old.uncertain = rec.qty_level, rec.confidence, rec.uncertain
             old.use_soon = old.use_soon or rec.use_soon

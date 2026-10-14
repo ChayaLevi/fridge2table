@@ -88,7 +88,7 @@
              background: var(--surface); font-size: 19px; padding: 0; }
   #input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); border-radius: 21px; padding: 10px 14px;
            font: inherit; max-height: 120px; background: var(--bg); color: var(--text); }
-  #input:focus, .add input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  #input:focus, .add input:focus, .item.editing input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
   #send { flex: none; height: 42px; border: 0; border-radius: 21px; padding: 0 16px; background: var(--accent);
           color: #fff; font-weight: 600; }
   #send:disabled { opacity: .5; }
@@ -117,7 +117,15 @@
   .soon { border: 1px dashed var(--line); background: none; border-radius: 999px; padding: 3px 8px; font-size: 12px;
           color: #a3a8a4; }
   .soon.on { background: var(--warn); border-color: var(--warn); color: #fff; }
-  .del { border: 0; background: none; color: var(--muted); font-size: 18px; width: 28px; padding: 0; }
+  .del, .edit, .ok { border: 0; background: none; color: var(--muted); font-size: 18px; width: 28px; padding: 0; flex: none; }
+  .edit { font-size: 15px; }
+  .ok { color: var(--accent); font-weight: 700; }
+  .item.editing input { flex: 1; min-width: 0; border: 1px solid var(--accent); border-radius: 8px; padding: 5px 8px;
+                        font: inherit; background: var(--surface); color: var(--text); }
+  .item.editing .save { border: 0; border-radius: 8px; background: var(--accent); color: #fff; padding: 5px 10px; }
+  .item.editing .cancel { border: 0; background: none; color: var(--muted); padding: 5px 4px; }
+  .hint { padding: 6px 12px; font-size: 12px; color: var(--warn); background: var(--warn-soft);
+          border-bottom: 1px solid var(--line); }
   .add { display: flex; gap: 6px; padding: 8px 10px; }
   .add input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit;
                background: var(--bg); color: var(--text); }
@@ -426,8 +434,15 @@ async function editInventory(changes) {
 }
 
 function renderItem(item) {
-  return el("li", { class: "item" + (item.uncertain ? " uncertain" : "") },
+  const row = el("li", { class: "item" + (item.uncertain ? " uncertain" : "") });
+  row.append(...[
     el("span", { class: "name" }, item.display_name),
+    item.is_staple ? null : el("button", { class: "edit", type: "button", title: "Edit the name",
+                   "aria-label": `Edit ${item.display_name}`, onclick: () => editName(row, item) }, "✎"),
+    item.uncertain ? el("button", { class: "ok", type: "button", title: "Yes, this is right",
+                   "aria-label": `Confirm ${item.display_name}`,
+                   onclick: () => editInventory([{ op: "rename", name: item.name, new_name: item.display_name }]) }, "✓")
+                   : null,
     item.is_staple ? null : el("button", { class: "qty " + item.qty_level, type: "button", title: "Tap to change",
                    onclick: () => editInventory([{ op: "set_qty", name: item.name, qty_level: QTY_NEXT[item.qty_level] }]) },
       item.qty_level),
@@ -435,15 +450,40 @@ function renderItem(item) {
                    onclick: () => editInventory([{ op: "set_use_soon", name: item.name, use_soon: !item.use_soon }]) },
       "use soon"),
     el("button", { class: "del", type: "button", title: "Delete", "aria-label": `Delete ${item.display_name}`,
-                   onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×"));
+                   onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×"),
+  ].filter(Boolean));  // append() would print a null as "null"
+  return row;
 }
 
+// Inline rename. Saving also confirms an uncertain item, even with the name unchanged.
+function editName(row, item) {
+  const input = el("input", { type: "text", value: item.display_name, "aria-label": "New name" });
+  const save = () => {
+    const name = input.value.trim();
+    if (!name || (name === item.display_name && !item.uncertain)) { renderInventory(); return; }
+    editInventory([{ op: "rename", name: item.name, new_name: name }]);
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); save(); }
+    if (e.key === "Escape") { e.stopPropagation(); renderInventory(); }
+  });
+  row.className = "item editing";
+  row.replaceChildren(input,
+    el("button", { class: "save", type: "button", onclick: save }, "Save"),
+    el("button", { class: "cancel", type: "button", onclick: () => renderInventory() }, "Cancel"));
+  input.focus();
+  input.select();
+}
+
+// place: add an item there; null: add a staple (assumed always in the kitchen).
 function renderAdd(place) {
-  const input = el("input", { type: "text", placeholder: `Add to ${place}…`, "aria-label": `Add item to ${place}` });
+  const input = el("input", { type: "text",
+    placeholder: place ? `Add to ${place}…` : "Add a staple, e.g. rice…",
+    "aria-label": place ? `Add item to ${place}` : "Add a staple" });
   const add = () => {
     const name = input.value.trim();
     if (!name) return;
-    editInventory([{ op: "add", name, location: place, qty_level: "some" }]);
+    editInventory([place ? { op: "add", name, location: place, qty_level: "some" } : { op: "add_staple", name }]);
     input.value = "";
   };
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
@@ -463,6 +503,7 @@ function renderInventory() {
       .sort((a, b) => (b.uncertain - a.uncertain) || (b.use_soon - a.use_soon));
     const when = state.scanState.scanned[place];
     const declined = place === "freezer" && state.scanState.freezer_declined;
+    const unsure = here.some((i) => i.uncertain);
     body.append(el("section", { class: "loc" },
       el("div", { class: "loc-head" },
         el("h2", {}, place),
@@ -470,13 +511,16 @@ function renderInventory() {
           when ? ago(when) : declined ? "skipped" : "not scanned yet"),
         el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
                        "aria-label": `Add a photo of the ${place}`, onclick: () => pickPhotos(place) }, "📷")),
+      unsure ? el("div", { class: "hint" }, "Orange items: I'm not sure. ✎ fix the name, ✓ if it's right, × if it isn't there.")
+             : null,
       here.length ? el("ul", { class: "items" }, here.map(renderItem))
                   : el("div", { class: "empty-loc" }, "Nothing here yet."),
       renderAdd(place)));
   }
   body.append(el("details", { class: "loc staples", open: wasOpen },
     el("summary", {}, `Staples (${staples.length}) — assumed in the kitchen`),
-    el("ul", { class: "items" }, staples.map(renderItem))));
+    el("ul", { class: "items" }, staples.map(renderItem)),
+    renderAdd(null)));
 }
 
 // --- photos --------------------------------------------------------------------------------------

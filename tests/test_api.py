@@ -161,6 +161,21 @@ def test_patch_inventory_applies_panel_edits_as_manual(client, store):
     assert "salt" not in items and "salt" in store.load_removed_staples()
 
 
+def test_patch_inventory_adds_a_staple_and_renames_an_uncertain_item(client, store):
+    from app.tools.inventory import merge_recognized
+    from tests.test_inventory import item
+
+    merge_recognized(store, [item("white container", confidence=0.3, uncertain=True)])
+    r = client.patch("/inventory", json=[
+        {"op": "add_staple", "name": "Rice"},
+        {"op": "rename", "name": "white container", "new_name": "leftover rice"},
+    ])
+    assert r.status_code == 200, r.text
+    items = {i["name"]: i for i in r.json()["inventory"]}
+    assert items["rice"]["source"] == "staple"
+    assert items["leftover rice"]["uncertain"] is False and "white container" not in items
+
+
 def test_patch_inventory_rejects_an_unknown_op(client):
     assert client.patch("/inventory", json=[{"op": "buy", "name": "milk"}]).status_code == 422
 

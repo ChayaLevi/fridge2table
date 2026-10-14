@@ -30,7 +30,7 @@ class InventoryItem(BaseModel):
 
 
 class InventoryChange(BaseModel):
-    op: Literal["add", "remove", "set_qty", "set_use_soon", "rename"]
+    op: Literal["add", "remove", "set_qty", "set_use_soon", "rename", "add_staple"]
     name: str  # ingredient the change applies to
     display_name: str | None = None  # add
     category: str | None = None  # add
