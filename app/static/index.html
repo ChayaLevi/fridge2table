@@ -121,7 +121,7 @@
                      margin: 14px 0 4px; }
   .review-group .why { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
   .sheet .review-group .items { padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
-  .sheet .foot { display: flex; gap: 8px; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  .sheet .foot { display: flex; gap: 8px; padding: 10px 16px 12px;
                  border-top: 1px solid var(--line); }
   .sheet .foot button { flex: 1; height: 44px; border-radius: 22px; font-weight: 600; }
   .sheet .foot .primary { border: 0; background: var(--accent); color: #fff; }
@@ -148,18 +148,31 @@
   .empty-loc { padding: 8px 12px; color: var(--muted); font-size: 13px; }
   details.staples summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
 
-  .sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88dvh; z-index: 11; background: var(--surface);
-           border-radius: 18px 18px 0 0; display: flex; flex-direction: column; max-width: 720px; margin: 0 auto;
-           box-shadow: 0 -4px 20px rgba(0,0,0,.15); }
-  .sheet .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 0; }
-  .sheet .head { display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px 4px; }
+  /* A centered window (recipe, review after a scan). Only its body scrolls; the shadows at its top and
+     bottom edges appear when there is more to scroll (background-attachment: local). */
+  .sheet { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 11;
+           width: min(560px, calc(100vw - 24px)); max-height: min(85dvh, 800px); background: var(--surface);
+           border-radius: 18px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.25); }
+  .sheet .grip { display: none; }
+  .sheet .head { display: flex; align-items: flex-start; gap: 8px; padding: 14px 16px 6px;
+                 border-bottom: 1px solid var(--line); }
   .sheet .head h2 { flex: 1; margin: 0; font-size: 19px; }
-  .sheet .body { overflow-y: auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .sheet .body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 4px 16px 20px;
+                 background:
+                   linear-gradient(var(--surface) 30%, transparent) center top,
+                   linear-gradient(transparent, var(--surface) 70%) center bottom,
+                   radial-gradient(farthest-side at 50% 0, rgba(0,0,0,.14), transparent) center top,
+                   radial-gradient(farthest-side at 50% 100%, rgba(0,0,0,.14), transparent) center bottom;
+                 background-repeat: no-repeat; background-size: 100% 40px, 100% 40px, 100% 12px, 100% 12px;
+                 background-attachment: local, local, scroll, scroll; }
   .sheet .meta { color: var(--muted); margin-bottom: 8px; }
   .sheet h3 { font-size: 14px; margin: 14px 0 6px; }
   .sheet ul, .sheet ol { margin: 0; padding-left: 20px; }
   .sheet li { margin: 3px 0; }
   .sheet .have { color: var(--accent); font-size: 12px; }
+  .sheet .buy { color: var(--warn); font-size: 12px; font-weight: 600; }
+  .sheet .sub { color: var(--accent); font-size: 12px; font-weight: 600; }
+  .sheet .shop { margin: 10px 0 4px; }
   .sheet .opt { color: var(--muted); font-size: 12px; }
   .spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
              animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
@@ -347,7 +360,7 @@ function renderAgent(data) {
   }
 
   const meals = reply.meals || [];
-  if (meals.length) node.append(el("div", { class: "cards" }, meals.map(renderCard)));
+  if (meals.length) node.append(el("div", { class: "cards" }, meals.map((m) => renderCard(m, data))));
 
   const hasShop = (reply.shopping_list || []).length || (reply.check_first || []).length
     || (reply.substitutions || []).length;
@@ -362,14 +375,14 @@ function isModeB(data) {
   return (data.trace || []).some((t) => t.tool === "compute_missing");
 }
 
-function renderCard(meal) {
+function renderCard(meal, data) {
   const inv = itemsByName();
   const chips = (meal.uses_from_inventory || []).map((name) => {
     const item = inv.get(name);
     return el("span", { class: "chip" + (item && item.use_soon ? " soon" : "") },
       (item ? item.display_name : name) + (item && item.use_soon ? " · use soon" : ""));
   });
-  return el("button", { class: "card", type: "button", onclick: () => openRecipe(meal) },
+  return el("button", { class: "card", type: "button", onclick: () => openRecipe(meal, data) },
     el("div", { class: "title" }, el("span", {}, meal.name), el("span", { class: "time" }, `${meal.time_minutes} min`)),
     chips.length ? el("div", { class: "chips" }, chips) : null,
     el("div", { class: "open" }, "Open recipe ›"));
@@ -410,22 +423,39 @@ function renderTrace(trace, usage) {
 
 // --- recipe sheet --------------------------------------------------------------------------------
 
-async function openRecipe(meal) {
+// What an ingredient's line says: in the kitchen (staples too), the substitute to use, to buy, or check
+// the pantry. Names are canonical on both sides (the server normalizes them).
+function ingredientStatus(ing, reply) {
+  const low = (x) => String(x).toLowerCase();
+  const sub = (reply.substitutions || []).find((s) => low(s.missing) === low(ing.name));
+  if (itemsByName().has(ing.name)) return el("span", { class: "have" }, "✓ you have it");
+  if (sub) return el("span", { class: "sub" }, `use your ${displayName(sub.use_instead)} instead`);
+  if ((reply.shopping_list || []).some((x) => low(x) === low(ing.name))) return el("span", { class: "buy" }, "to buy");
+  if ((reply.check_first || []).some((x) => low(x) === low(ing.name))) {
+    return el("span", { class: "opt" }, "check your pantry");
+  }
+  return el("span", { class: "opt" }, ing.essential ? "not in your kitchen" : "optional, not in your kitchen");
+}
+
+async function openRecipe(meal, data) {
+  const reply = (data && data.reply) || {};
   $("sheetTitle").textContent = meal.name;
   const body = $("sheetBody");
-  const inv = itemsByName();
-  const have = new Set(meal.uses_from_inventory || []);
   const steps = el("div", {}, el("span", { class: "spinner" }), "Writing the steps…");
-  body.replaceChildren(
+  // Mode B: the same shopping block as under the card, at the top of the recipe.
+  const modeB = (reply.shopping_list || []).length || (reply.check_first || []).length
+    || (reply.substitutions || []).length || isModeB(data || {});
+  body.replaceChildren(...[
     el("div", { class: "meta" }, `${meal.time_minutes} min · serves ${meal.servings}`),
+    modeB ? renderShop(reply) : null,
     el("h3", {}, "Ingredients"),
     el("ul", {}, meal.ingredients.map((i) => el("li", {},
-      `${inv.get(i.name) ? inv.get(i.name).display_name : i.name}: ${i.amount} `,
-      have.has(i.name) ? el("span", { class: "have" }, "✓ you have it") : null,
-      i.essential ? null : el("span", { class: "opt" }, " (optional)")))),
+      `${displayName(i.name)}: ${i.amount}` + (i.essential ? "" : " (optional)") + " · ", ingredientStatus(i, reply)))),
     el("h3", {}, "Steps"),
-    steps);
+    steps,
+  ].filter(Boolean));
   showOverlay("sheet");
+  body.scrollTop = 0;  // after showing: a hidden element keeps its old scroll position
   try {
     const recipe = meal.steps && meal.steps.length ? meal : await api(`/recipe/${encodeURIComponent(meal.id)}/steps`);
     meal.steps = recipe.steps;

@@ -66,6 +66,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
+- (2026-10-14) Recipe steps ignore the substitutions: for a lasagna with "use your cottage cheese instead" of ricotta, `get_steps` still writes "mix the ricotta with the egg" (the steps are generated from the recipe, which does not know the reply's substitutions). Fix if the human wants it: pass the substitutions to `GET /recipe/{id}/steps` and into `STEPS_PROMPT`.
 - ~~(T3.2) Network loss on 2026-10-14~~ Resolved the same day: the app's `ModelAPIError: Connection error` was a real outage, gone later. Note: `curl` on this machine still fails with `CRYPT_E_NO_REVOCATION_CHECK` (Windows schannel cannot reach the certificate revocation server); that is curl only, Python (httpx) connects fine. To test the API connection, use `uv run python -c "import httpx; print(httpx.get('https://api.deepseek.com/models').status_code)"` (401 without a key = reachable), not curl.
 - (T3.2) Real Mode A replies said "a pantry photo would give more options" right after a pantry photo was scanned (2 of 2 runs, the pantry photo had only coffee). Agent prose only; rule 5 in `INSTRUCTIONS` could say "only while the pantry is NOT SCANNED" more firmly. Revisit in T3.3 / P6.
 - (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
@@ -85,6 +86,23 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — Page: recipe window centered, shopping list inside it (the human's request)
+- The human asked: why is there no shopping list in the recipe; open the recipe in the middle of the screen, not from the bottom (it looked cut off); can a long recipe scroll?
+- Findings: the shopping list was only in the chat (the block under the card), never in the recipe window; inside the recipe, an ingredient that was not in the kitchen had no mark at all, and staples (salt, oil) had no "✓" either, so they looked missing. The window did scroll (its body had `overflow-y: auto`) but nothing showed that there was more.
+- Built / changed (`app/static/index.html` only):
+  - `.sheet` is now a centered window (recipe, and the review after a scan): `min(560px, 100vw - 24px)` wide, at most `min(85dvh, 800px)` high, rounded, a header line; only its body scrolls, with shadows at the top and bottom edges when there is more to scroll (`background-attachment: local`), `overscroll-behavior: contain`.
+  - Recipe window: in Mode B the same shopping block as under the card (Use instead, To buy, Check your pantry first) at the top; every ingredient line ends with its status: "✓ you have it" (any inventory item, staples included), "use your cottage cheese instead", "to buy" (orange), "check your pantry", or "not in your kitchen" / "optional, not in your kitchen". Cards now carry their reply (`renderCard(meal, data)` → `openRecipe(meal, data)`); `ingredientStatus()` compares canonical names.
+  - The scroll position is reset after the window is shown (set while hidden, it was ignored, so a reopened recipe started where it was left).
+- Checked in headless Edge with real models (demo seed, "I want to make lasagna"): on 390x844 the window is centered (center 195,422 = screen center), 717 px high; Use instead / To buy (ground beef, mozzarella, parmesan) / Check your pantry first (lasagna noodle) at the top; 14 ingredient lines with the right status each (ricotta "use your cottage cheese instead", salt and black pepper "✓ you have it", basil "optional, not in your kitchen"); content 1233 px in 661 px, scrolling reaches the last step. On 1280x800: centered, 560 px wide. On 390x500: scrolled to 253, closed and reopened → 0. No page errors.
+- Open issue added: the steps still say "ricotta" when cottage cheese is the substitute.
+
+**How to verify**
+```
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: run `POST /admin/reset` and `POST /admin/seed` in http://localhost:8000/docs, open http://localhost:8000/, send `I want to make lasagna` and tap the card. The recipe opens in the middle of the screen with the shopping list at the top; each ingredient says "✓ you have it", "to buy", "use your cottage cheese instead" or "check your pantry". Scroll inside the window down to the last step; close it and open it again: it starts at the top.
 
 ### 2026-10-14 — T4.4 Trace UI polish
 - Built / changed:
