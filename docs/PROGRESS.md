@@ -102,7 +102,7 @@ uv run pytest -q
 uv run pytest tests/test_trace.py -q
 uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
 ```
-Expected: `400 passed`; then `32 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Expected: `400 passed`; then `22 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
 Manual check: run `POST /admin/reset` and `POST /admin/seed` in http://localhost:8000/docs, open http://localhost:8000/ (phone, or F12 then Ctrl+Shift+M), send `Something creamy with pasta tonight?`. Under the reply a grey line reads like "2 steps · 8 s · 5 ideas, 1 failed check (no cream) → checked by code", the failed part in orange. Tap it: one line per step with its seconds, and the technical detail in small grey text under each.
 
 ### 2026-10-14 — T4.3 Preferences end to end
