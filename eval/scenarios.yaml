@@ -8,6 +8,7 @@
 #   seed: inventory (a name from inventories, or a list of items), add (a list of items), remove (names),
 #         scanned (places marked scanned), preferences ([{text, avoid}])
 #   turns: [{message, photos: [[path, place]], scan: [places], new_session: bool, expect: {...}}]
+#          or {opening: true, expect: {...}}: the proactive greeting (run_opening) instead of a message
 # expect keys (all optional):
 #   tools_called: tool names in this order (others may come between); "output check" = the validator
 #   first_tool, tools_not_called, failed_check (a trace item marked failed)
@@ -217,3 +218,21 @@ scenarios:
         expect:
           off_topic: false
           max_meals: 0
+
+  - id: 12
+    name: Proactive opening (use-soon spinach, one valid meal), then a normal turn on top
+    seed: {inventory: demo, remove: [eggplant], scanned: [fridge]}
+    turns:
+      - opening: true
+        expect:
+          tools_called: [suggest_meals, output check]
+          min_meals: 1
+          max_meals: 1
+          meals_valid: true
+          message_matches: spinach
+          off_topic: false
+      - message: Sounds good. How long does it take?
+        expect:
+          off_topic: false
+          tools_not_called: [get_recipe]
+          message_matches: '\d+ ?(min|minute)'

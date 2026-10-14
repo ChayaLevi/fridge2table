@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import config  # noqa: E402
-from app.agent import run_turn  # noqa: E402
+from app.agent import run_opening, run_turn  # noqa: E402
 from app.llm import setup_observability  # noqa: E402
 from app.models import AgentReply, InventoryChange, ToolTraceItem  # noqa: E402
 from app.store import Store  # noqa: E402
@@ -231,11 +231,14 @@ async def run_scenario(scenario: dict, inventories: dict, stores: dict[int, Stor
         for place in turn.get("scan") or []:
             store.mark_scanned(place)
         photos = [(ROOT / p, loc) for p, loc in turn.get("photos") or []]
-        message = turn.get("message") or ""
+        message = "(opening)" if turn.get("opening") else turn.get("message") or ""
         start = time.perf_counter()
         out: dict[str, Any] = {"turn": i, "message": message, "photos": len(photos)}
         try:
-            res = await run_turn(store, session, message, photos)
+            if turn.get("opening"):
+                res = await run_opening(store, session)
+            else:
+                res = await run_turn(store, session, message, photos)
             out["latency_s"] = round(res.usage.latency_s, 1)
             out["tools"] = [t.tool for t in res.trace]
             out["trace"] = format_trace(res.trace)

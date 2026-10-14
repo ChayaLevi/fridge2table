@@ -135,7 +135,7 @@ def check_reply(
     unknown = [i for i in ids if i not in recipes]
     if unknown:
         known = ", ".join(f"{r.id} ({r.name})" for r in recipes.values()) or "none: call suggest_meals or get_recipe first"
-        problems.append(f"unknown meal id(s) {', '.join(unknown)}; use only ids returned by tools in this turn: {known}")
+        problems.append(f"unknown meal id(s) {', '.join(unknown)}; use only ids returned by tools in this turn or shown in your last reply: {known}")
     meals = [recipes[i] for i in ids if i in recipes]
     if len(ids) > MAX_MEALS:
         problems.append(f"{len(ids)} meals; show at most {MAX_MEALS}")

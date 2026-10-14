@@ -598,10 +598,7 @@ async function send(event) {
   state.pending = [];
   renderPending();
 
-  const typing = el("div", { class: "msg agent typing" },
-    el("div", { class: "bubble" }, photos.length ? "Looking at your photos" : "Thinking", el("span", { class: "dots" })));
-  $("messages").append(typing);
-  scrollDown();
+  const typing = showTyping(photos.length ? "Looking at your photos" : "Thinking");
   setBusy(true);
   try {
     const data = await api("/chat", { method: "POST", body: form });
@@ -617,19 +614,34 @@ async function send(event) {
   }
 }
 
+function showTyping(text) {
+  const typing = el("div", { class: "msg agent typing" }, el("div", { class: "bubble" }, text, el("span", { class: "dots" })));
+  $("messages").append(typing);
+  scrollDown();
+  return typing;
+}
+
 function autosize() {
   const t = $("input");
   t.style.height = "auto";
   t.style.height = Math.min(t.scrollHeight, 120) + "px";
 }
 
+// The proactive greeting: the agent may take a few seconds (one meal idea), so it shows the typing
+// bubble and blocks sending, like a turn.
 async function opening() {
+  const typing = showTyping("Thinking");
+  setBusy(true);
   try {
     const data = await api(`/opening?session_id=${encodeURIComponent(state.sessionId)}`);
     setInventory(data);
+    typing.remove();
     addEntry({ role: "agent", data });
   } catch (err) {
+    typing.remove();
     addEntry({ role: "system", text: err.message });
+  } finally {
+    setBusy(false);
   }
 }
 

@@ -24,8 +24,8 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T2.5 Scenario suite
 - [x] T3.1 API
 - [~] T3.2 Web page (page built and checked in a headless phone-size browser; the human's check in a browser is open)
-- [ ] T3.3 First real-fridge run + internal demo 🧑
-- [ ] T4.1 Proactive opening
+- [ ] T3.3 First real-fridge run + internal demo 🧑 (waiting: the human is away from home; P4 started meanwhile, 2026-10-14)
+- [x] T4.1 Proactive opening
 - [ ] T4.2 Substitutions in Mode B
 - [ ] T4.3 Preferences end to end
 - [ ] T4.4 Trace UI polish
@@ -37,10 +37,11 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Open: the human's check of T3.2** in a browser (a phone on the same network, or a desktop browser in phone mode: F12, Ctrl+Shift+M). See the T3.2 "How to verify". Then tick T3.2. **Next task: T3.3** (🧑: a real fridge run and the internal demo to the team lead).
+- **Next task: T4.2 Substitutions in Mode B** (nothing needed from the human). Check: `uv run python eval/run_scenarios.py --only 4 --repeat 3` must pass 3/3 (it passed 3/3 on 2026-10-14, but failed 1 of ~8 runs that day: no substitution for ricotta).
+- **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great") and asked for the panel edits, staples, scope and gallery changes logged below; T3.2 stays `[~]` until it is tried on a phone.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 363 tests pass. Scenario suite: 11 scenarios (11 = scope, added 2026-10-14), 11/11 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes and the chat page (`app/static/index.html`, T3.2). Scenario suite (`eval/run_scenarios.py`): All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
+- State: 370 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -70,7 +71,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
 - (T2.5) Turn latency varies with the API: the same Mode A turn took 11 s and 21 s on the same day, sequentially. With `--jobs 4` turns take 20-36 s (parallel load), so use `--jobs 1` for latency numbers (T5.2).
 - (T2.5) `ModelAPIError: Connection error` happened once in about 45 real turns; `run_turn` does not retry it. Since T3.1 `/chat` returns 503 with "The model service did not answer. Please try again."
-- (T2.4) Recipe ids are per run (`Deps.recipes`): when the user refers back to a dish from an earlier turn, the agent sometimes reuses the old id, gets an "unknown meal id" output-check retry, and then calls `get_recipe` again (seen once in a real run, +5 s). Correct (the validator catches it) but slow (seen again in T3.1: a photo turn after a Mode A turn reused the 3 old ids, +~8 s, 24 s total); if it shows up often, preload `Deps.recipes` with the recipes named in the session's last reply.
+- ~~(T2.4) Recipe ids are per run: reusing an old id cost an output-check retry~~ Fixed 2026-10-14 (T4.1): each run preloads the recipes of the session's last reply (`last_reply_recipes`), still re-validated by the output check. Ids from older replies still get the retry.
 - ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
 - (T2.1b, for T4.2) Mode B prose: the agent sometimes proposes a substitute only in `message` prose instead of `substitutions`, and the prose can contradict the code-fixed lists (T2.2 real runs: "you'd need to buy ... ricotta" while ricotta is substituted and not in `shopping_list`). The lists are right (code wins); the message text is not checked.
 - ~~(T2.1b) `deepseek-flash` marked ground beef / parmesan optional in lasagna~~ Fixed 2026-10-13 (T2.2): essential defined with examples in `INGREDIENT_RULES` + code rule `force_named_essential`. 3/3 real lasagna runs had all four essentials.
@@ -84,6 +85,26 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — T4.1 Proactive opening
+- Built / changed:
+  - `app/agent.py`: `run_opening(store, session_id)`. No items beyond the staples → `WELCOME_MESSAGE` (photos of fridge and pantry, tag each), no model call, nothing stored. Otherwise the agent runs on `OPENING_PROMPT` (a note from the app: greet in one sentence, call `suggest_meals` once with n=3 and a "built around the USE SOON items" request, show exactly one passed meal, name the use-soon item; with no use-soon items one quick idea). The meal goes through the same output check as any turn. In the stored history the prompt becomes a `SystemPromptPart` (`_hide_prompt`), so the session has no user turn the user did not write, but the next turn still knows what was offered. `run_turn` and `run_opening` share `_run`. `TurnResult.result` is `None` when no model ran.
+  - `app/agent.py`: `last_reply_recipes(store, history)`: every run preloads `Deps.recipes` with the recipes named in the session's last reply (from the store), so "yes, that one" can reuse the id without the "unknown meal id" retry. Such a meal is still re-validated (a test removes the eggs in the panel between turns: the reused omelette fails the check). Retry wording now says "this turn or your last reply". Done now because the opening made the old open issue frequent (2 of 3 real follow-up turns, +2 s each).
+  - `app/api.py`: `GET /opening?session_id=` calls `run_opening` (dependency `get_opening_runner`); `usage` is null when no model ran. A model failure (`ModelAPIError`, `UnexpectedModelBehavior`, `UsageLimitExceeded`) returns the static greeting (`OPENING_MESSAGE`), never an error: the page must not open on an error.
+  - `app/static/index.html`: the opening shows the "Thinking…" bubble and blocks Send / photos / New chat until it arrives (two runs on one session would overwrite each other's history). `showTyping()` shared with turns.
+  - `eval/run_scenarios.py`: a turn `{opening: true}` runs `run_opening`. `eval/scenarios.yaml`: scenario 12 (demo inventory without eggplant, so spinach is the only use-soon item, as in `data/demo_seed.json`): opening → `suggest_meals`, `output check`, exactly 1 valid meal, "spinach" in the message; then "Sounds good. How long does it take?" → answered with minutes, no `get_recipe`.
+  - Tests: 370 pass (+7): agent (welcome without a model and nothing stored; opening offers a validated meal, history has a system note and no user prompt, a next turn works on top; prompt content; the next turn reuses the last reply's id without a retry; a reused meal is re-checked against the current inventory), API (opening with the agent, welcome on an empty inventory, static fallback on a model error). `tests/test_scenarios.py` expects 12 scenarios.
+- Real runs (2026-10-14): scenario 12: 3/3 (opening 7.4-8.0 s, e.g. "Welcome! Your spinach needs using soon — how about a quick Spinach, Mushroom and Cheddar Omelette?"; once a candidate failed on "pantry not scanned: bread" and another passed one was shown). The follow-up turn hit the reused-id retry 2/3 times (3.3-3.7 s); after `last_reply_recipes`: 3/3 with no retry (1.7-1.9 s). Full suite `--jobs 4`: 12/12. Headless Edge: empty inventory → the welcome; after `/admin/seed`, New chat → "Thinking…" with Send disabled, then the greeting and one card in 8.5 s; no page errors.
+- Decisions / deviations: the hidden prompt is kept as a system note instead of being dropped, so a "yes, let's make it" turn has the context. Opening latency (~8 s) is one `suggest_meals` call (n=3) plus two agent requests.
+- Next task must know: T4.2: scenario 4 is the check. T4.3: scenario 7 (and 6). The opening is also where a stored preference shows (T4.3 "New chat" check).
+
+**How to verify**
+```
+uv run pytest -q
+uv run python eval/run_scenarios.py --only 12
+```
+Expected: `370 passed`; then (real models, about 10 s) `[PASS] #12 Proactive opening ...` with `ok turn 1: ... tools: suggest_meals > output check` and `ok turn 2: ... tools: output check`, and `| | **total** | **1/1** | |`.
+Manual check: start the app (`uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000`), open http://localhost:8000/docs and run `POST /admin/reset`, then open http://localhost:8000/ and press "New chat": the welcome asks for fridge and pantry photos (instantly). Run `POST /admin/seed` in /docs, press "New chat" again: "Thinking…" for about 8 s, then a greeting that names the spinach and one meal card. Reply `Sounds good, how long does it take?`: an answer in minutes within a few seconds.
 
 ### 2026-10-14 — Page: gallery button (the human's request)
 - The human asked whether a photo can be taken from inside the app. It already could: 📷 is an `<input capture="environment">`, which opens the phone camera and attaches the photo. But on Android `capture` offers the camera only, with no way to pick an existing photo. Added 🖼️ next to 📷: a second file input without `capture` (photo library, several at once). The panel's per-place camera buttons still open the camera. A live camera inside the page (getUserMedia) was not used: it needs HTTPS, and the app runs over plain http on the home network.

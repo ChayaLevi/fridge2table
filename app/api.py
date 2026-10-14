@@ -1,7 +1,7 @@
 """FastAPI routes: the chat turn, the inventory panel, recipe steps, the opening, demo admin.
 
 The agent, the store and the recipe model are FastAPI dependencies (`get_store`, `get_turn_runner`,
-`get_recipe_model`), so tests swap them with `app.dependency_overrides` and run without a network.
+`get_opening_runner`, `get_recipe_model`), so tests swap them with `app.dependency_overrides` and run without a network.
 Model and agent failures come back as JSON `{"detail": "..."}` with a message the page can show,
 never as a 500 traceback.
 """
@@ -21,7 +21,7 @@ from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior, Usage
 from pydantic_ai.models import Model
 
 from app import config
-from app.agent import TurnResult, run_turn
+from app.agent import TurnResult, run_opening, run_turn
 from app.llm import setup_observability
 from app.models import (
     AgentReply, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, ToolTraceItem, TurnUsage,
@@ -35,7 +35,7 @@ MAX_IMAGES = 4
 LOCATIONS: tuple[str, ...] = get_args(Location)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-# Static until T4.1 (proactive opening).
+# Shown when the proactive opening fails (model down, bad reply): the page never opens on an error.
 OPENING_MESSAGE = (
     "Hi! Send me photos of your fridge and pantry (tag each with its place), "
     "or ask me what you can cook tonight."
@@ -63,6 +63,11 @@ TurnRunner = Callable[..., Awaitable[TurnResult]]
 def get_turn_runner() -> TurnRunner:
     """The agent turn (`app.agent.run_turn` on AGENT_MODEL); tests inject one on a FunctionModel."""
     return run_turn
+
+
+def get_opening_runner() -> TurnRunner:
+    """The proactive greeting (`app.agent.run_opening`); tests inject one on a FunctionModel."""
+    return run_opening
 
 
 def get_recipe_model() -> Model | None:
@@ -98,7 +103,7 @@ class InventoryState(BaseModel):
 class ChatResponse(InventoryState):
     reply: AgentReply  # meals are filled (full recipes, without steps)
     trace: list[ToolTraceItem]
-    usage: TurnUsage | None = None  # None for the static opening
+    usage: TurnUsage | None = None  # None when no model ran (welcome or fallback greeting)
 
 
 def _state(store: Store) -> dict:
@@ -196,9 +201,21 @@ async def recipe_steps(
 
 
 @app.get("/opening")
-def opening(store: StoreDep, session_id: str = "") -> ChatResponse:
-    """Greeting when the page opens. Static for now; T4.1 makes it proactive."""
-    return ChatResponse(reply=AgentReply(message=OPENING_MESSAGE), trace=[], **_state(store))
+async def opening(
+    store: StoreDep, runner: Annotated[TurnRunner, Depends(get_opening_runner)], session_id: str,
+) -> ChatResponse:
+    """Greeting when the page opens or a new chat starts (T4.1).
+
+    Empty inventory: a fixed welcome asking for photos (no model call). Otherwise the agent greets and
+    offers one validated meal, preferring use-soon items. If that fails, a static greeting.
+    """
+    try:
+        turn = await runner(store, session_id)
+    except (ModelAPIError, UnexpectedModelBehavior, UsageLimitExceeded) as e:
+        log.warning("opening %s failed, static greeting: %s", session_id, e)
+        return ChatResponse(reply=AgentReply(message=OPENING_MESSAGE), trace=[], **_state(store))
+    usage = turn.usage if turn.result is not None else None
+    return ChatResponse(reply=turn.reply, trace=turn.trace, usage=usage, **_state(store))
 
 
 # --- demo admin -----------------------------------------------------------------------------------

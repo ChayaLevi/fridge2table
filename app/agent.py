@@ -4,8 +4,9 @@ The agent decides, the code verifies. Every tool here is a thin wrapper around a
 `app/tools/`; nothing that must be correct is left to the model. The instructions are rebuilt on every
 run so the current inventory, scan state and preferences are always in the prompt.
 
-Entry point: `run_turn(store, session_id, message, images)`; it loads the session history, runs one
-turn and saves the history back. `agent` is built without a model so importing this module needs no
+Entry points: `run_turn(store, session_id, message, images)` loads the session history, runs one turn
+and saves the history back; `run_opening(store, session_id)` is the proactive greeting when the app
+opens (T4.1). `agent` is built without a model so importing this module needs no
 API key; `run_turn` passes `agent_model()` (or the `model` given, e.g. a FunctionModel in tests).
 """
 
@@ -16,6 +17,9 @@ from datetime import date
 from pathlib import Path
 
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput, UsageLimits
+from pydantic_ai.messages import (
+    ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, ToolCallPart, UserPromptPart,
+)
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.toolsets import FunctionToolset
@@ -37,6 +41,15 @@ OFF_TOPIC_MESSAGE = (
     "I can only help with cooking: what to make from your kitchen, recipes, ingredients and your "
     "shopping list. Try \"What can I cook tonight?\""
 )
+
+# The opening (T4.1). An empty inventory gets WELCOME_MESSAGE (no model call); otherwise the agent runs
+# on OPENING_PROMPT, which is stored in the history as a system note, never as a user turn.
+WELCOME_MESSAGE = (
+    "Welcome! Take a photo of your fridge and one of your pantry, tag each with its place (tap the tag "
+    "on the photo), and I'll tell you what you can cook."
+)
+OPENING_PROMPT = """[Note from the app, not from the user: the user just opened the app and has not written anything yet.]
+Greet them in one short sentence and offer exactly one meal they can make now. Call suggest_meals once (request: "one quick everyday dish built around the USE SOON items", n=3) and put the id of the best passed candidate in meal_ids (one id only). Say which USE SOON item it uses ("Your spinach needs using: how about ...?"). If no item is marked USE SOON, offer one quick idea instead. No questions about uncertain items in this message."""
 
 # About 8 tool calls per turn (PRODUCT §5); the limit is a hard stop a little above that.
 USAGE_LIMITS = UsageLimits(tool_calls_limit=10, request_limit=16)
@@ -178,7 +191,7 @@ def _find_recipe(ctx: RunContext[Deps], ref: str) -> Recipe:
         known = ", ".join(f"{r.id} ({r.name})" for r in ctx.deps.recipes.values()) or "none yet"
         raise ModelRetry(
             f"Unknown recipe {ref!r}: call suggest_meals or get_recipe first and use the id it returned. "
-            f"Recipes from this turn: {known}."
+            f"Recipes from this turn and your last reply: {known}."
         )
     return recipe
 
@@ -412,7 +425,7 @@ def fill_meals(reply: AgentReply, cache: dict[str, Recipe]) -> AgentReply:
 @dataclass
 class TurnResult:
     reply: AgentReply
-    result: AgentRunResult[AgentReply]  # the run's messages and usage
+    result: AgentRunResult[AgentReply] | None  # the run's messages and usage; None when no model ran
     latency_s: float
     steps: list[StepTiming]  # every model call and tool call of the turn, timed, in order
     trace: list[ToolTraceItem]  # one short line per tool call and output check, for the user
@@ -436,12 +449,79 @@ async def run_turn(
     images = list(images or [])
     if not message.strip() and not images:
         raise ValueError("a turn needs a message or at least one photo")
-    deps = Deps(store=store, images=images, recipe_model=recipe_model, vision_model=vision_model)
+    return await _run(store, session_id, user_prompt(message, images), images,
+                      model=model, recipe_model=recipe_model, vision_model=vision_model)
+
+
+def has_items(store: Store) -> bool:
+    """True when the inventory has anything beyond the staples."""
+    return any(i.source != "staple" for i in inventory.get_inventory(store))
+
+
+async def run_opening(
+    store: Store,
+    session_id: str,
+    *,
+    model: Model | None = None,
+    recipe_model: Model | None = None,
+) -> TurnResult:
+    """The proactive greeting when the app opens (T4.1).
+
+    Empty inventory: WELCOME_MESSAGE, no model call, nothing stored. Otherwise the agent runs on
+    OPENING_PROMPT (one validated meal, preferring USE SOON items); in the stored history that prompt
+    becomes a system note, so the session holds no user turn the user did not write.
+    """
+    if not has_items(store):
+        return TurnResult(reply=AgentReply(message=WELCOME_MESSAGE), result=None, latency_s=0.0, steps=[], trace=[],
+                          usage=TurnUsage(latency_s=0.0, requests=0, tool_calls=0, input_tokens=0, output_tokens=0))
+    return await _run(store, session_id, OPENING_PROMPT, [], model=model, recipe_model=recipe_model, hidden=True)
+
+
+def last_reply_recipes(store: Store, history: list[ModelMessage]) -> dict[str, Recipe]:
+    """The recipes of the session's last reply (its meal_ids), from the store, by id.
+
+    Preloaded into the run's cache so "yes, that one" can reuse the id the user saw; the output check
+    still re-validates such a meal against the current inventory.
+    """
+    for msg in reversed(history):
+        if not isinstance(msg, ModelResponse):
+            continue
+        for part in msg.parts:
+            if isinstance(part, ToolCallPart) and part.tool_name == OUTPUT_TOOL_NAME:
+                ids = part.args_as_dict().get("meal_ids") or []
+                recipes = {i: r for i in ids if isinstance(i, str) and (r := store.load_recipe(i.strip()))}
+                return {r.id: r for r in recipes.values()}
+    return {}
+
+
+def _hide_prompt(messages: list[ModelMessage], prompt: str) -> None:
+    """Turn the run's user prompt into a system note, in place (the opening is not a user turn)."""
+    for msg in messages:
+        if isinstance(msg, ModelRequest):
+            for k, part in enumerate(msg.parts):
+                if isinstance(part, UserPromptPart) and part.content == prompt:
+                    msg.parts[k] = SystemPromptPart(content=prompt)
+                    return
+
+
+async def _run(
+    store: Store,
+    session_id: str,
+    prompt: str,
+    images: list[tuple[Path, Location]],
+    *,
+    model: Model | None,
+    recipe_model: Model | None,
+    vision_model: Model | None = None,
+    hidden: bool = False,
+) -> TurnResult:
     history = store.load_session_messages(session_id)
+    deps = Deps(store=store, images=images, recipe_model=recipe_model, vision_model=vision_model,
+                recipes=last_reply_recipes(store, history))
     model = model or llm.agent_model()
     start = time.perf_counter()
     result = await agent.run(
-        user_prompt(message, images),
+        prompt,
         deps=deps,
         model=TimedModel(model, deps.steps, f"agent {model.model_name}"),
         message_history=history or None,
@@ -450,12 +530,15 @@ async def run_turn(
     )
     latency = time.perf_counter() - start
     fill_meals(result.output, deps.recipes)
-    store.save_session_messages(session_id, result.all_messages())
+    messages = result.all_messages()
+    if hidden:
+        _hide_prompt(result.new_messages(), prompt)
+    store.save_session_messages(session_id, messages)
     u = result.usage
     usage = TurnUsage(latency_s=round(latency, 2), requests=u.requests, tool_calls=u.tool_calls,
                       input_tokens=u.input_tokens, output_tokens=u.output_tokens)
     trace = build_trace(result.new_messages(), deps.steps, deps.recipes)
-    log.info("agent turn %s: %.1fs, %d requests, %d tool calls, %s in / %s out tokens, %d meals",
-             session_id, latency, usage.requests, usage.tool_calls, usage.input_tokens, usage.output_tokens,
-             len(result.output.meals))
+    log.info("agent %s %s: %.1fs, %d requests, %d tool calls, %s in / %s out tokens, %d meals",
+             "opening" if hidden else "turn", session_id, latency, usage.requests, usage.tool_calls,
+             usage.input_tokens, usage.output_tokens, len(result.output.meals))
     return TurnResult(reply=result.output, result=result, latency_s=latency, steps=deps.steps, trace=trace, usage=usage)

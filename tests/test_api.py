@@ -10,7 +10,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app import api, config
-from app.agent import run_turn
+from app.agent import WELCOME_MESSAGE, run_opening, run_turn
 from app.models import InventoryChange, Preference
 from app.store import Store
 from app.tools.inventory import staple_names, update_inventory
@@ -61,7 +61,7 @@ class FakeRunner:
         self.calls: list[tuple] = []
         self.error = error
 
-    async def __call__(self, store, session_id, message, images):
+    async def __call__(self, store, session_id, message="hi", images=()):
         self.calls.append((session_id, message, images))
         if self.error:
             raise self.error
@@ -208,10 +208,43 @@ def test_steps_for_an_unknown_recipe_is_404(client):
 
 # --- /opening, /, admin ---------------------------------------------------------------------------
 
-def test_opening_is_a_static_greeting_with_the_panel_state(client):
+def opening_model() -> FunctionModel:
+    """Call suggest_meals, then offer the omelette."""
+
+    def fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {"request": "use soon", "n": 3})])
+        ids = ids_by_name(messages[-1].parts)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "message": "Hi! Your spinach needs using: how about an omelette?", "meal_ids": [ids["Spinach omelette"]]})])
+
+    return FunctionModel(fn)
+
+
+def use_opening(runner):
+    api.app.dependency_overrides[api.get_opening_runner] = lambda: runner
+
+
+def test_opening_runs_the_agent_and_offers_a_meal(client, store):
+    use_opening(partial(run_opening, model=opening_model(), recipe_model=RECIPE_MODEL))
     body = client.get("/opening", params={"session_id": "s1"}).json()
-    assert body["reply"]["message"] == api.OPENING_MESSAGE and body["trace"] == [] and body["usage"] is None
-    assert any(i["name"] == "spinach" for i in body["inventory"])
+    assert "spinach" in body["reply"]["message"]
+    assert [m["name"] for m in body["reply"]["meals"]] == ["Spinach omelette"]
+    assert [t["tool"] for t in body["trace"]] == ["suggest_meals", "output check"]
+    assert body["usage"]["requests"] == 2 and any(i["name"] == "spinach" for i in body["inventory"])
+
+
+def test_opening_with_an_empty_inventory_is_the_welcome_without_a_model(client, store):
+    store.reset_all()
+    use_opening(partial(run_opening, model=FunctionModel(lambda m, i: pytest.fail("model called"))))
+    body = client.get("/opening", params={"session_id": "s1"}).json()
+    assert body["reply"]["message"] == WELCOME_MESSAGE and body["trace"] == [] and body["usage"] is None
+
+
+def test_opening_falls_back_to_a_static_greeting_when_the_model_fails(client):
+    use_opening(FakeRunner(ModelAPIError("deepseek-v4-pro", "Connection error")))
+    r = client.get("/opening", params={"session_id": "s1"})
+    assert r.status_code == 200 and r.json()["reply"]["message"] == api.OPENING_MESSAGE
 
 
 def test_index_page_is_served(client):

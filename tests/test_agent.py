@@ -479,3 +479,84 @@ async def test_scope_rule_is_in_the_instructions(store):
     await run_turn(store, "s1", "hi", model=model)
     instructions = seen[0][0]
     assert "off_topic=true" in instructions and "only the kitchen part" in instructions
+
+
+# --- proactive opening (T4.1) ---------------------------------------------------------------------
+
+async def test_opening_with_only_staples_is_the_welcome_and_calls_no_model():
+    from app.agent import WELCOME_MESSAGE, run_opening
+
+    s = Store(":memory:")
+    turn = await run_opening(s, "s1", model=FunctionModel(lambda m, i: pytest.fail("model called")))
+    assert turn.reply.message == WELCOME_MESSAGE and turn.result is None and turn.trace == []
+    assert s.load_session_messages("s1") == []
+
+
+async def test_opening_offers_a_validated_meal_and_stores_no_user_turn(store):
+    from pydantic_ai.messages import SystemPromptPart, UserPromptPart
+
+    from app.agent import OPENING_PROMPT, run_opening
+
+    def fn(messages, info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {"request": "use soon", "n": 3})])
+        ids = ids_by_name(messages[-1].parts)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "message": "Your spinach needs using: omelette?", "meal_ids": [ids["Spinach omelette"]]})])
+
+    turn = await run_opening(store, "s1", model=FunctionModel(fn), recipe_model=RECIPE_MODEL)
+    assert [m.name for m in turn.reply.meals] == ["Spinach omelette"]
+    assert [t.tool for t in turn.trace] == ["suggest_meals", "output check"]
+
+    parts = [p for m in store.load_session_messages("s1") for p in getattr(m, "parts", [])]
+    assert not any(isinstance(p, UserPromptPart) for p in parts)
+    assert any(isinstance(p, SystemPromptPart) and p.content == OPENING_PROMPT for p in parts)
+
+    # The next real turn sees the opening (as a system note) and works on top of it.
+    model, seen = scripted(reply(message="Great choice."))
+    nxt = await run_turn(store, "s1", "Sounds good", model=model)
+    assert nxt.reply.message == "Great choice."
+    sent = [p for m in store.load_session_messages("s1") for p in getattr(m, "parts", [])]
+    assert [p.content for p in sent if isinstance(p, UserPromptPart)] == ["Sounds good"]
+
+
+def test_opening_prompt_asks_for_one_meal_from_use_soon_items():
+    from app.agent import OPENING_PROMPT
+
+    assert "exactly one meal" in OPENING_PROMPT and "USE SOON" in OPENING_PROMPT and "suggest_meals" in OPENING_PROMPT
+
+
+async def test_next_turn_can_reuse_the_meal_id_of_the_last_reply(store):
+    from app.agent import last_reply_recipes
+
+    def first(messages, info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {"request": "dinner"})])
+        ids = ids_by_name(messages[-1].parts)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(meal_ids=[ids["Spinach omelette"]]))])
+
+    turn = await run_turn(store, "s1", "dinner?", model=FunctionModel(first), recipe_model=RECIPE_MODEL)
+    omelette_id = turn.reply.meal_ids[0]
+    assert list(last_reply_recipes(store, store.load_session_messages("s1"))) == [omelette_id]
+
+    model, _ = scripted(reply(message="About 20 minutes.", meal_ids=[omelette_id]))
+    nxt = await run_turn(store, "s1", "Sounds good, how long?", model=model)
+    assert [m.id for m in nxt.reply.meals] == [omelette_id]
+    assert [(t.tool, t.failed) for t in nxt.trace] == [("output check", False)]  # no unknown-id retry
+
+
+async def test_a_reused_meal_is_still_rechecked_against_the_current_inventory(store):
+    def first(messages, info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {"request": "dinner"})])
+        ids = ids_by_name(messages[-1].parts)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(meal_ids=[ids["Spinach omelette"]]))])
+
+    turn = await run_turn(store, "s1", "dinner?", model=FunctionModel(first), recipe_model=RECIPE_MODEL)
+    omelette_id = turn.reply.meal_ids[0]
+    update_inventory(store, [InventoryChange(op="remove", name="egg")], source="manual")  # the panel wins
+
+    model, _ = scripted(reply(meal_ids=[omelette_id]), reply(message="No eggs left, so not the omelette."))
+    nxt = await run_turn(store, "s1", "Let's make it", model=model)
+    assert nxt.trace[0].failed and "needs egg" in nxt.trace[0].result_summary
+    assert nxt.reply.meals == []
