@@ -26,7 +26,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [~] T3.2 Web page (page built and checked in a headless phone-size browser; the human's check in a browser is open)
 - [ ] T3.3 First real-fridge run + internal demo 🧑 (waiting: the human is away from home; P4 started meanwhile, 2026-10-14)
 - [x] T4.1 Proactive opening
-- [ ] T4.2 Substitutions in Mode B
+- [x] T4.2 Substitutions in Mode B
 - [ ] T4.3 Preferences end to end
 - [ ] T4.4 Trace UI polish
 - [ ] T5.1 Vision model comparison
@@ -37,11 +37,11 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T4.2 Substitutions in Mode B** (nothing needed from the human). Check: `uv run python eval/run_scenarios.py --only 4 --repeat 3` must pass 3/3 (it passed 3/3 on 2026-10-14, but failed 1 of ~8 runs that day: no substitution for ricotta).
+- **Next task: T4.3 Preferences end to end** (needs the human only for the last browser check: state a preference, press "New chat", ask for dinner). Scenarios 6 and 7 are the check (`uv run python eval/run_scenarios.py --only 7` runs 6 then 7).
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great") and asked for the panel edits, staples, scope and gallery changes logged below; T3.2 stays `[~]` until it is tried on a phone.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 378 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 388 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -73,9 +73,9 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T2.5) `ModelAPIError: Connection error` happened once in about 45 real turns; `run_turn` does not retry it. Since T3.1 `/chat` returns 503 with "The model service did not answer. Please try again."
 - ~~(T2.4) Recipe ids are per run: reusing an old id cost an output-check retry~~ Fixed 2026-10-14 (T4.1): each run preloads the recipes of the session's last reply (`last_reply_recipes`), still re-validated by the output check. Ids from older replies still get the retry.
 - ~~(T2.1) Mode A turn takes 50-80 s~~ Fixed 2026-10-13 (T2.1b): Mode A 11-14 s, Mode B 9-10 s. See the T2.1b log entry.
-- (T2.1b, for T4.2) Mode B prose: the agent sometimes proposes a substitute only in `message` prose instead of `substitutions`, and the prose can contradict the code-fixed lists (T2.2 real runs: "you'd need to buy ... ricotta" while ricotta is substituted and not in `shopping_list`). The lists are right (code wins); the message text is not checked.
+- ~~(T2.1b, for T4.2) Mode B prose contradicted the code-fixed lists, and substitutes appeared only in the message~~ Fixed 2026-10-14 (T4.2): the output check rejects a Mode B message that names items of To buy / Check first; the prompt asks for one sentence with only the substitution pairs and no counts. Still possible: the message names only some of the substitutions (seen once: cheddar for mozzarella listed but not mentioned); not a contradiction.
 - ~~(T2.1b) `deepseek-flash` marked ground beef / parmesan optional in lasagna~~ Fixed 2026-10-13 (T2.2): essential defined with examples in `INGREDIENT_RULES` + code rule `force_named_essential`. 3/3 real lasagna runs had all four essentials.
-- (T2.2) One real lasagna run substituted chicken for ground beef ("a chicken lasagna"). Valid (chicken is in the inventory) but a stretch; watch in T4.2.
+- (T2.2) One real lasagna run substituted chicken for ground beef. T4.2 added "do not swap the ingredient that defines the dish" to rule 4; not seen in the 11 Mode B runs after it (prompt only, not checked by code).
 - (T2.1) Synonym gaps seen in real Mode B runs: ~~`ricotta cheese` != `ricotta`~~ (fixed in T2.5), `crushed tomato` / `tomato paste` are separate names (both correct but noisy in `check_first`); `lasagna noodle` vs `pasta` as before.
 - ~~(T1.6) `suggest_meals` takes ~28 s~~ Fixed 2026-10-13: 5-7 s without steps and without thinking (`get_recipe` 2-3 s).
 - (T1.6) `lasagna noodle` does not normalize to `pasta` (no synonym), so plain pasta in the inventory does not cover lasagna sheets. Arguably right; revisit if Mode B looks wrong in scenarios.
@@ -85,6 +85,32 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — T4.2 Substitutions in Mode B
+- Baseline (5 real runs of scenario 4 before any change): 5/5 passed the scenario, but in 4/5 the message contradicted the code-fixed lists ("you'd need to buy ground beef, ricotta, ..." while ricotta was substituted and not under To buy), once a substitute was only in the prose ("for the meat, you could use the chicken"), and twice the model put ricotta on its own shopping list (code fixed it). The lists were right; the words were not checked.
+- Built / changed:
+  - `app/tools/checks.py`: `items_named_in(message, names, dish_names)` (whole words, plural and hyphen allowed, dish names removed first so "Beef lasagna" does not count as "beef"). `check_reply`, Mode B: if the message names any item of the code-fixed To buy or Check first lists, it is a problem → `ModelRetry` ("Write one sentence that names no ingredient except the substitution pairs, and no counts"). Deterministic, so no contradiction between the message and the lists can reach the user.
+  - `app/agent.py` rule 4: before replying, go through each missing essential and look for a substitute that plays the same role (cottage cheese for ricotta, greek yogurt for sour cream, butter for oil, one hard cheese for another); never swap the ingredient that defines the dish (no chicken in a beef bolognese, no other noodles for lasagna sheets); every substitute goes in `substitutions`, never only in the message; the message is one sentence naming only the substitution pairs, no counts ("You can make it with your cottage cheese instead of ricotta; the shopping list is below." / "You have everything for it." / "You need a few things for it; the list is below.").
+  - `eval/run_scenarios.py`: `substitution_for` skips an item no meal uses (one real `get_recipe` returned a lasagna with no ricotta at all, a bechamel version; nothing to substitute, so not an agent failure).
+  - Tests: 388 pass (+10): `items_named_in` (7 cases), `check_reply` Mode B message naming the list vs a short message with a substitution, and an agent run where the first reply lists the shopping items, is sent back, and the second passes. `tests/test_scenarios.py`: `substitution_for` skips items the recipe lacks.
+- Real runs (2026-10-14), scenario 4:
+
+  | Version | Pass | Output-check retries | Mean latency | Message agrees with the lists |
+  |---|---|---|---|---|
+  | baseline | 5/5 | 0 (lists fixed silently 2x) | 8.9 s | 1/5 |
+  | check + "no listing, say how many to buy" | 4/5 (1 = recipe without ricotta) | 4/5 | 11.4 s | 5/5 after the retry; 1 count wrong ("3 things", 2 on the list) |
+  | check + "one sentence, only substitution pairs, no counts" | 5/5 | 0/5 | 8.7 s | 5/5 |
+
+  Then the full suite `--jobs 4`: 12/12; Mode B messages in #5 / #10: "You have everything you need for pancakes.", "You need a few things for it; the list is below."
+- Decisions: the message check is code (rule 1 of CLAUDE.md: what must be correct is computed by code); counts were dropped from the message instead of being checked, because they were a second way to contradict the list.
+
+**How to verify**
+```
+uv run pytest -q
+uv run python eval/run_scenarios.py --only 4 --repeat 3 -v
+```
+Expected: `388 passed`; then (real models, about 30 s) three `[PASS] #4 ...` blocks, each with `tools: get_recipe > compute_missing > output check` (one output check, no retry) and a `msg:` like `'You can make it with your cottage cheese instead of ricotta; the shopping list is below.'`, `subs: cottage cheese for ricotta`, a `to buy:` list without ricotta, and `| | **total** | **3/3** | |`.
+Manual check: start the app (`uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000`), run `POST /admin/reset` and `POST /admin/seed` in http://localhost:8000/docs, open http://localhost:8000/ and send `I want to make lasagna`. The message is one sentence about cottage cheese instead of ricotta; the block under the card shows "Use instead: cottage cheese instead of ricotta", "To buy" without ricotta, and "Check your pantry first" with the lasagna noodles.
 
 ### 2026-10-14 — Rescan: items not seen are flagged, and a review sheet after every scan (the human's request)
 - Why: the human asked what happens to the old inventory when a new photo is sent. Recognition only adds and updates (it never removes: a photo misses things), so finished items stayed forever. The human chose: flag the items of a re-photographed place that were not seen, and open a window to confirm and edit after every scan, not only the side panel.

@@ -4,6 +4,7 @@
 removed. A staple counts as available only through that list, so a removed staple is missing.
 """
 
+import re
 from dataclasses import dataclass, field
 
 from app.models import (
@@ -127,7 +128,8 @@ def check_reply(
     - Every substitution's use_instead must be in the inventory.
     - Mode A (no shopping_list, check_first or substitutions): every meal must pass validate_suggestion.
     - Mode B (any of them present): shopping_list and check_first are recomputed from compute_missing of
-      the meals, minus the substituted items; the model's lists are replaced (code wins).
+      the meals, minus the substituted items; the model's lists are replaced (code wins). The message
+      must not name the items of those lists (the app shows them; prose could contradict them).
     """
     problems: list[str] = []
     fixes: list[str] = []
@@ -167,9 +169,35 @@ def check_reply(
         if [normalize(n) for n in reply.check_first] != check_first:
             fixes.append(f"check_first {reply.check_first} -> {check_first}")
         reply = reply.model_copy(update={"shopping_list": to_buy, "check_first": check_first})
+        named = items_named_in(reply.message, to_buy + check_first, [m.name for m in meals])
+        if named:
+            problems.append(
+                f"message names items of the shopping lists ({', '.join(named)}): the app shows To buy and "
+                "Check your pantry first under the recipe, and your words can contradict them. Write one "
+                "sentence that names no ingredient except the substitution pairs, and no counts (\"You can "
+                "make it with your cottage cheese instead of ricotta; the shopping list is below.\")")
 
     reply = reply.model_copy(update={"meal_ids": [m.id for m in meals]})
     return ReplyCheck(reply=reply, problems=problems, fixes=fixes)
+
+
+def items_named_in(message: str, names: list[str], dish_names: list[str] = ()) -> list[str]:
+    """The names (canonical, from the lists) that the message mentions as whole words, plural allowed.
+
+    Dish names are removed from the message first, so "Beef lasagna" does not count as naming "beef".
+    """
+    text = message.lower()
+    for dish in dish_names:
+        text = text.replace(dish.lower(), " ")
+    found = []
+    for name in names:
+        words = name.lower().split()
+        if not words:
+            continue
+        pattern = r"\b" + r"[\s-]+".join(re.escape(w) for w in words) + r"(?:e?s)?\b"
+        if re.search(pattern, text):
+            found.append(name)
+    return found
 
 
 def _why(res: ValidationResult) -> str:

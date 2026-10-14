@@ -331,3 +331,38 @@ def test_check_reply_substitute_must_be_in_inventory():
                 shopping_list=["ground beef"])
     assert res.problems == ["substitute 'mascarpone' (for ricotta) is not in the inventory; "
                             "use an inventory item or put the missing item on the shopping list"]
+
+
+# --- Mode B message must not list the shopping lists (T4.2) ------------------------------------------
+
+@pytest.mark.parametrize("message, names, dishes, expected", [
+    ("You need to buy ground beef and ricotta.", ["ground beef", "ricotta"], [], ["ground beef", "ricotta"]),
+    ("Check your pantry for lasagna noodles.", ["lasagna noodle"], [], ["lasagna noodle"]),
+    ("Grab some tomatoes.", ["tomato"], [], ["tomato"]),
+    ("Use ground-beef or not.", ["ground beef"], [], ["ground beef"]),
+    ("The eggplant is fine.", ["egg"], [], []),  # whole words only
+    ("For the Beef lasagna you need 2 things.", ["beef"], ["Beef lasagna"], []),  # dish names do not count
+    ("You can make it with your cottage cheese instead; 2 things to buy.", ["ground beef", "pasta"], [], []),
+])
+def test_items_named_in(message, names, dishes, expected):
+    from app.tools.checks import items_named_in
+
+    assert items_named_in(message, names, dishes) == expected
+
+
+def test_check_reply_mode_b_message_listing_the_shopping_list_is_a_problem():
+    res = check_reply(AgentReply(
+        message="For lasagna you need to buy ground beef and ricotta.", meal_ids=[LASAGNA.id],
+        substitutions=[Substitution(missing="ricotta", use_instead="cottage cheese")], shopping_list=["ground beef"],
+    ), CACHE, INV, KIDS, ALL_SCANNED)
+    assert len(res.problems) == 1 and "message names items of the shopping lists (pasta, ground beef)" not in res.problems[0]
+    assert "message names items of the shopping lists (ground beef)" in res.problems[0]  # ricotta is substituted
+
+
+def test_check_reply_mode_b_short_message_with_substitution_passes():
+    res = check_reply(AgentReply(
+        message="You can make lasagna with your cottage cheese instead of ricotta; you need 2 things from the shop.",
+        meal_ids=[LASAGNA.id], substitutions=[Substitution(missing="ricotta", use_instead="cottage cheese")],
+        shopping_list=["ground beef", "pasta"],
+    ), CACHE, INV, KIDS, ALL_SCANNED)
+    assert res.ok, res.problems

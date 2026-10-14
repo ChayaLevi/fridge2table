@@ -578,3 +578,24 @@ def test_photo_rule_says_not_seen_items_get_one_sentence():
     from app.agent import INSTRUCTIONS
 
     assert "not seen in these photos" in INSTRUCTIONS and "no question per item" in INSTRUCTIONS
+
+
+async def test_mode_b_message_that_lists_the_shopping_list_is_sent_back(store):
+    ids: dict[str, str] = {}
+    calls = []
+
+    def fn(messages, info):
+        ids.update(ids_by_name(messages[-1].parts))
+        if not ids:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        calls.append(1)
+        text = ("You need to buy ground beef and ricotta." if len(calls) == 1
+                else "You can make it with your cottage cheese instead of ricotta; 1 thing to buy.")
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(
+            message=text, meal_ids=[ids["Lasagna"]],
+            substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}], shopping_list=["ground beef"]))])
+
+    turn = await run_turn(store, "s1", "lasagna", model=FunctionModel(fn), recipe_model=LASAGNA_MODEL)
+    [retry] = retries(turn)
+    assert "message names items of the shopping lists (ground beef)" in retry
+    assert turn.reply.message.startswith("You can make it") and turn.reply.shopping_list == ["ground beef"]

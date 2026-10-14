@@ -167,8 +167,10 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
         if expect.get(f"{key}_empty") and items:
             fail(f"{key} not empty: {items}")
     subs = [s.missing for s in reply.substitutions]
+    in_meals = [i.name for m in meals for i in m.ingredients]
     for w in expect.get("substitution_for") or []:
-        if not _has(subs, w):
+        # Only when the recipe needs it: some lasagna recipes have no ricotta at all.
+        if _has(in_meals, w) and not _has(subs, w):
             fail(f"no substitution for {w} (substitutions: {[(s.missing, s.use_instead) for s in reply.substitutions]})")
 
     avoided = [a for p in store.load_preferences() for a in p.avoid]

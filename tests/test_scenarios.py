@@ -101,10 +101,12 @@ def test_check_turn_mode_b():
               "shopping_list_contains": ["ground beef"], "check_first_contains": ["lasagna noodle"]}
     assert sc.check_turn(expect, reply, _trace("get_recipe", "compute_missing", "output check"), store) == []
     fails = sc.check_turn({"shopping_list_empty": True, "check_first_must_not_contain": ["pasta"],
-                           "meals_valid": True, "substitution_for": ["mozzarella"]}, reply, [], store)
-    # list not empty, Mode B where Mode A was expected, the lasagna is invalid, no mozzarella substitution;
-    # "lasagna noodle" is not pasta, so check_first passes
+                           "meals_valid": True, "substitution_for": ["mozzarella", "pasta"]}, reply, [], store)
+    # list not empty, Mode B where Mode A was expected, the lasagna is invalid, no pasta substitution;
+    # mozzarella is skipped (this lasagna has none); "lasagna noodle" is not pasta, so check_first passes
     assert len(fails) == 4
+    assert any("no substitution for pasta" in f for f in fails)
+    assert not any("mozzarella" in f for f in fails)
 
 
 def test_check_turn_preference_and_messages():

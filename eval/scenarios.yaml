@@ -16,7 +16,7 @@
 #   meals_must_not_contain: ingredient names (any ingredient of any meal)
 #   shopping_list_contains, shopping_list_must_not_contain, shopping_list_empty
 #   check_first_contains, check_first_must_not_contain, check_first_empty
-#   substitution_for: missing items that must have a substitution
+#   substitution_for: missing items that must have a substitution (skipped when no meal uses the item)
 #   preference_saved: ingredients that must be in a stored preference's avoid list
 #   inventory_lacks: ingredients that must not be in the inventory after the turn
 #   max_questions, message_matches (regex on message + questions), asks_for_photo (a place)
