@@ -111,6 +111,18 @@
   .item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .item.uncertain { background: var(--warn-soft); }
   .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 700; }
+  .item.notseen { background: #f0efea; }
+  .item.notseen .name { color: var(--muted); font-style: italic; }
+  .drawer .item.notseen .name::after { content: " · not seen"; font-size: 12px; font-style: normal; }
+  .review-group h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+                     margin: 14px 0 4px; }
+  .review-group .why { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .sheet .review-group .items { padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .sheet .foot { display: flex; gap: 8px; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+                 border-top: 1px solid var(--line); }
+  .sheet .foot button { flex: 1; height: 44px; border-radius: 22px; font-weight: 600; }
+  .sheet .foot .primary { border: 0; background: var(--accent); color: #fff; }
+  .sheet .foot .secondary { border: 1px solid var(--line); background: var(--surface); }
   .qty { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 3px 10px; font-size: 12px;
          min-width: 62px; }
   .qty.low { color: var(--warn); }
@@ -185,6 +197,16 @@
   <div class="body" id="invBody"></div>
 </aside>
 
+<section class="sheet" id="review" hidden aria-label="Check the inventory">
+  <div class="grip"></div>
+  <div class="head"><h2 id="reviewTitle">Check what I found</h2></div>
+  <div class="body" id="reviewBody"></div>
+  <div class="foot">
+    <button class="secondary" id="reviewLater" type="button">Later</button>
+    <button class="primary" id="reviewOk" type="button">All correct</button>
+  </div>
+</section>
+
 <section class="sheet" id="sheet" hidden aria-label="Recipe">
   <div class="grip"></div>
   <div class="head"><h2 id="sheetTitle"></h2><button class="hbtn" id="closeSheet" type="button">Close</button></div>
@@ -204,6 +226,7 @@ const state = {
   scanState: { scanned: {} },
   pending: [],          // [{file, url, place}]
   nextPlace: null,      // set by a panel camera button: the place for the next picked photos
+  reviewPlaces: null,   // places shown in the review sheet while it is open
   busy: false,
   transcript: [],       // what is shown, so a reload of the same session shows it again
 };
@@ -416,6 +439,46 @@ function closeOverlays() {
   $("scrim").hidden = true;
   $("drawer").hidden = true;
   $("sheet").hidden = true;
+  $("review").hidden = true;
+  state.reviewPlaces = null;
+}
+
+// --- review after a photo scan ---------------------------------------------------------------------
+
+// Opens by itself after a turn that recognized photos: the items of the photographed places, the ones
+// that need a decision first. Edits go through PATCH /inventory like the panel; the sheet redraws.
+function openReview(places) {
+  state.reviewPlaces = places;
+  renderReview();
+  showOverlay("review");
+}
+
+function reviewItems() {
+  return state.inventory.filter((i) => i.source !== "staple" && state.reviewPlaces.includes(i.location));
+}
+
+function renderReview() {
+  const items = reviewItems();
+  const unsure = items.filter((i) => i.uncertain);
+  const unseen = items.filter((i) => !i.uncertain && i.not_seen);
+  const found = items.filter((i) => !i.uncertain && !i.not_seen);
+  $("reviewTitle").textContent = `Check what I found · ${state.reviewPlaces.map(cap).join(", ")}`;
+  const group = (title, why, list) => list.length ? el("div", { class: "review-group" },
+    el("h3", {}, `${title} (${list.length})`), why ? el("div", { class: "why" }, why) : null,
+    el("ul", { class: "items" }, list.map(renderItem))) : null;
+  $("reviewBody").replaceChildren(...[
+    group("Not sure what this is", "✎ fix the name, ✓ if it's right, × if it isn't there.", unsure),
+    group("Not seen this time", "They were here before. ✓ still there, × finished.", unseen),
+    group("In the list", "", found),
+    items.length ? null : el("div", { class: "empty-loc" }, "Nothing recognized in these photos."),
+  ].filter(Boolean));
+  $("reviewOk").textContent = unsure.length || unseen.length ? "All correct" : "Done";
+}
+
+async function confirmReview() {
+  const flagged = reviewItems().filter((i) => i.uncertain || i.not_seen);
+  if (flagged.length) await editInventory(flagged.map((i) => ({ op: "confirm", name: i.name })));
+  closeOverlays();
 }
 
 // --- inventory panel -----------------------------------------------------------------------------
@@ -423,7 +486,12 @@ function closeOverlays() {
 function setInventory(data) {
   state.inventory = data.inventory;
   state.scanState = data.scan_state;
+  redrawLists();
+}
+
+function redrawLists() {
   renderInventory();
+  if (state.reviewPlaces) renderReview();
 }
 
 async function editInventory(changes) {
@@ -437,15 +505,16 @@ async function editInventory(changes) {
 }
 
 function renderItem(item) {
-  const row = el("li", { class: "item" + (item.uncertain ? " uncertain" : "") });
+  const flag = item.uncertain ? " uncertain" : item.not_seen ? " notseen" : "";
+  const row = el("li", { class: "item" + flag });
   row.append(...[
     el("span", { class: "name" }, item.display_name),
     item.is_staple ? null : el("button", { class: "edit", type: "button", title: "Edit the name",
                    "aria-label": `Edit ${item.display_name}`, onclick: () => editName(row, item) }, "✎"),
-    item.uncertain ? el("button", { class: "ok", type: "button", title: "Yes, this is right",
+    flag ? el("button", { class: "ok", type: "button", title: item.uncertain ? "Yes, this is right" : "Still there",
                    "aria-label": `Confirm ${item.display_name}`,
-                   onclick: () => editInventory([{ op: "rename", name: item.name, new_name: item.display_name }]) }, "✓")
-                   : null,
+                   onclick: () => editInventory([{ op: "confirm", name: item.name }]) }, "✓")
+         : null,
     item.is_staple ? null : el("button", { class: "qty " + item.qty_level, type: "button", title: "Tap to change",
                    onclick: () => editInventory([{ op: "set_qty", name: item.name, qty_level: QTY_NEXT[item.qty_level] }]) },
       item.qty_level),
@@ -463,17 +532,17 @@ function editName(row, item) {
   const input = el("input", { type: "text", value: item.display_name, "aria-label": "New name" });
   const save = () => {
     const name = input.value.trim();
-    if (!name || (name === item.display_name && !item.uncertain)) { renderInventory(); return; }
+    if (!name || (name === item.display_name && !item.uncertain && !item.not_seen)) { redrawLists(); return; }
     editInventory([{ op: "rename", name: item.name, new_name: name }]);
   };
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); save(); }
-    if (e.key === "Escape") { e.stopPropagation(); renderInventory(); }
+    if (e.key === "Escape") { e.stopPropagation(); redrawLists(); }
   });
   row.className = "item editing";
   row.replaceChildren(input,
     el("button", { class: "save", type: "button", onclick: save }, "Save"),
-    el("button", { class: "cancel", type: "button", onclick: () => renderInventory() }, "Cancel"));
+    el("button", { class: "cancel", type: "button", onclick: redrawLists }, "Cancel"));
   input.focus();
   input.select();
 }
@@ -506,7 +575,7 @@ function renderInventory() {
       .sort((a, b) => (b.uncertain - a.uncertain) || (b.use_soon - a.use_soon));
     const when = state.scanState.scanned[place];
     const declined = place === "freezer" && state.scanState.freezer_declined;
-    const unsure = here.some((i) => i.uncertain);
+    const unsure = here.some((i) => i.uncertain || i.not_seen);
     body.append(el("section", { class: "loc" },
       el("div", { class: "loc-head" },
         el("h2", {}, place),
@@ -514,7 +583,8 @@ function renderInventory() {
           when ? ago(when) : declined ? "skipped" : "not scanned yet"),
         el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
                        "aria-label": `Add a photo of the ${place}`, onclick: () => pickPhotos(place) }, "📷")),
-      unsure ? el("div", { class: "hint" }, "Orange items: I'm not sure. ✎ fix the name, ✓ if it's right, × if it isn't there.")
+      unsure ? el("div", { class: "hint" },
+        "Orange: I'm not sure what it is. Grey: not seen in the last photo. ✎ fix, ✓ if it's right, × if it's gone.")
              : null,
       here.length ? el("ul", { class: "items" }, here.map(renderItem))
                   : el("div", { class: "empty-loc" }, "Nothing here yet."),
@@ -605,6 +675,8 @@ async function send(event) {
     setInventory(data);
     typing.remove();
     addEntry({ role: "agent", data });
+    const scanned = (data.trace || []).some((s) => s.tool === "recognize_inventory" && !s.failed);
+    if (scanned && photos.length) openReview([...new Set(photos.map((p) => p.place))]);
   } catch (err) {
     typing.remove();
     addEntry({ role: "system", text: err.message });
@@ -668,6 +740,8 @@ for (const id of ["file", "galleryFile"]) {
 $("openInv").addEventListener("click", () => showOverlay("drawer"));
 $("closeInv").addEventListener("click", closeOverlays);
 $("closeSheet").addEventListener("click", closeOverlays);
+$("reviewLater").addEventListener("click", closeOverlays);
+$("reviewOk").addEventListener("click", confirmReview);
 $("scrim").addEventListener("click", closeOverlays);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlays(); });
 $("newChat").addEventListener("click", () => {

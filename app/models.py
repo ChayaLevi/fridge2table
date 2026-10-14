@@ -24,13 +24,16 @@ class InventoryItem(BaseModel):
     confidence: float  # 0..1, from recognition; 1.0 for manual
     uncertain: bool  # confidence below threshold, or flagged by the model
     use_soon: bool = False
+    # Was in a place the user photographed again, but not recognized in the new photos (maybe finished).
+    # Kept until the user confirms (still there) or removes it, or a later photo shows it.
+    not_seen: bool = False
     is_staple: bool = False
     source: Literal["photo", "chat", "manual", "staple"]
     updated_at: datetime
 
 
 class InventoryChange(BaseModel):
-    op: Literal["add", "remove", "set_qty", "set_use_soon", "rename", "add_staple"]
+    op: Literal["add", "remove", "set_qty", "set_use_soon", "rename", "add_staple", "confirm"]
     name: str  # ingredient the change applies to
     display_name: str | None = None  # add
     category: str | None = None  # add

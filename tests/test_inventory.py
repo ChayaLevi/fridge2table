@@ -348,3 +348,51 @@ def test_summary_length_for_60_items(store):
     assert len(names) == 60
     assert all(n in text for n in names)
     assert len(text) < 1500, len(text)
+
+
+# --- not seen in a new photo of the same place ------------------------------------------------------
+
+def test_rescan_marks_items_of_that_place_not_seen_without_removing_them(store):
+    store.save_inventory([item("milk"), item("butter"), item("rice", location="pantry")])
+    merge_recognized(store, [item("milk", confidence=0.95)], places=["fridge"])
+    inv = by_name(get_inventory(store))
+    assert inv["butter"].not_seen and not inv["milk"].not_seen
+    assert not inv["rice"].not_seen  # the pantry was not photographed
+    assert not inv["salt"].not_seen  # staples are never flagged
+    assert stored_names(store) == ["milk", "butter", "rice"]
+
+
+def test_without_places_nothing_is_marked_not_seen(store):
+    store.save_inventory([item("milk"), item("butter")])
+    merge_recognized(store, [item("milk")])
+    assert not any(i.not_seen for i in get_inventory(store))
+
+
+def test_seen_again_clears_not_seen_even_for_manual_items(store):
+    store.save_inventory([item("butter", source="manual", not_seen=True)])
+    merge_recognized(store, [item("butter", qty_level="low")], places=["fridge"])
+    butter = by_name(get_inventory(store))["butter"]
+    assert not butter.not_seen and butter.qty_level == "some"  # manual: quantity not overridden
+
+
+def test_confirm_clears_not_seen_and_uncertain(store):
+    store.save_inventory([item("butter", not_seen=True), item("white container", uncertain=True, confidence=0.3)])
+    update_inventory(store, [InventoryChange(op="confirm", name="butter"),
+                             InventoryChange(op="confirm", name="white container"),
+                             InventoryChange(op="confirm", name="salt")], source="manual")
+    inv = by_name(get_inventory(store))
+    assert not inv["butter"].not_seen and inv["butter"].source == "manual"
+    assert not inv["white container"].uncertain and inv["white container"].confidence == 1.0
+    assert inv["salt"].source == "staple"  # a virtual staple is left alone
+
+
+def test_any_edit_clears_not_seen(store):
+    store.save_inventory([item("butter", not_seen=True)])
+    update_inventory(store, [InventoryChange(op="set_qty", name="butter", qty_level="low")], source="manual")
+    assert not by_name(get_inventory(store))["butter"].not_seen
+
+
+def test_summary_marks_not_seen_items_first(store):
+    store.save_inventory([item("milk"), item("butter", not_seen=True)])
+    line = inventory_summary(get_inventory(store), ScanState(scanned={})).splitlines()[0]
+    assert line.index("butter (some, NOT SEEN IN LAST PHOTO)") < line.index("milk")

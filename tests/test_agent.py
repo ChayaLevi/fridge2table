@@ -560,3 +560,21 @@ async def test_a_reused_meal_is_still_rechecked_against_the_current_inventory(st
     nxt = await run_turn(store, "s1", "Let's make it", model=model)
     assert nxt.trace[0].failed and "needs egg" in nxt.trace[0].result_summary
     assert nxt.reply.meals == []
+
+
+
+async def test_recognize_inventory_reports_items_not_seen_in_the_new_photos(store):
+    # store: spinach, egg, cottage cheese in the fridge; the photo shows only milk and a white container
+    model, seen = scripted(("recognize_inventory", {}), reply(message="Found 2."))
+    await run_turn(store, "s1", "", images=[(FIXTURE_IMAGE, "fridge")], model=model, vision_model=VISION_MODEL)
+    out = tool_returns(seen[1][1])["recognize_inventory"]
+    assert "Not seen in these photos" in out and "spinach" in out and "cottage cheese" in out
+    inv = {i.name: i for i in get_inventory(store)}
+    assert inv["spinach"].not_seen and inv["spinach"].use_soon  # kept, flags intact
+    assert not inv["milk"].not_seen
+
+
+def test_photo_rule_says_not_seen_items_get_one_sentence():
+    from app.agent import INSTRUCTIONS
+
+    assert "not seen in these photos" in INSTRUCTIONS and "no question per item" in INSTRUCTIONS

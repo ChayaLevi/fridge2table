@@ -10,6 +10,7 @@ custom_staples); they behave like the default ones, and removing one deletes it.
 import json
 import uuid
 from datetime import datetime
+from collections.abc import Iterable
 from functools import lru_cache
 from typing import Literal
 
@@ -73,6 +74,7 @@ def update_inventory(
     "chat" for the agent. Rules:
     - add: an existing canonical name is updated, not duplicated.
     - remove: removing a staple records it in staples_state (a user-added staple is deleted).
+    - confirm: the user says the item is right and still there (clears uncertain and not_seen).
     - add_staple: the name becomes a staple (assumed always present); a stored item with that name
       is replaced by the staple.
     - set_qty with qty_level=None means "below low": the item is removed.
@@ -108,11 +110,15 @@ def update_inventory(
 
     def touch(item: InventoryItem) -> None:
         # A user or agent edit confirms the item.
-        item.source, item.confidence, item.uncertain, item.updated_at = source, 1.0, False, now
+        item.source, item.confidence, item.uncertain, item.not_seen, item.updated_at = source, 1.0, False, False, now
 
     for ch in changes:
         name = normalize(ch.name)
         if not name:
+            continue
+        if ch.op == "confirm":  # stored items only: a virtual staple needs no confirming
+            if (item := next((i for i in stored if i.name == name), None)) is not None:
+                touch(item)
             continue
         if ch.op == "add_staple":
             if name in removed:
@@ -174,12 +180,16 @@ def update_inventory(
     return get_inventory(store)
 
 
-def merge_recognized(store: Store, items: list[InventoryItem]) -> list[InventoryItem]:
+def merge_recognized(
+    store: Store, items: list[InventoryItem], places: Iterable[Location] = (),
+) -> list[InventoryItem]:
     """Merge recognition results into the stored inventory and return the full inventory.
 
     New names are added. For a name already stored: qty_level, confidence and uncertain are updated,
     but use_soon is never cleared and items with source="manual" are left alone.
-    Recognition never removes anything.
+    Recognition never removes anything. `places` are the places photographed in this scan: their
+    stored items that were not recognized get not_seen=True (the user confirms or removes them);
+    a recognized item gets not_seen=False.
     """
     # Two photos of the same item: keep the more confident reading.
     incoming: dict[str, InventoryItem] = {}
@@ -204,6 +214,12 @@ def merge_recognized(store: Store, items: list[InventoryItem]) -> list[Inventory
             old.qty_level, old.confidence, old.uncertain = rec.qty_level, rec.confidence, rec.uncertain
             old.use_soon = old.use_soon or rec.use_soon
             old.updated_at = rec.updated_at
+        if old is not None:
+            old.not_seen = False
+    places = set(places)
+    for item in stored:
+        if item.location in places and not item.is_staple and item.name not in incoming:
+            item.not_seen = True
     store.save_inventory(stored)
     return get_inventory(store)
 
@@ -214,6 +230,8 @@ def _item_text(i: InventoryItem) -> str:
         flags.append("USE SOON")
     if i.uncertain:
         flags.append("UNCERTAIN")
+    if i.not_seen:
+        flags.append("NOT SEEN IN LAST PHOTO")
     return f"{i.name} ({', '.join(flags)})"
 
 
@@ -232,7 +250,7 @@ def inventory_summary(items: list[InventoryItem], scan_state: ScanState) -> str:
         else:
             header = f"{loc} (NOT SCANNED)"
         here = [i for i in items if i.location == loc and i.source != "staple"]
-        here.sort(key=lambda i: (not i.uncertain, not i.use_soon))
+        here.sort(key=lambda i: (not i.uncertain, not i.not_seen, not i.use_soon))
         body = ", ".join(_item_text(i) for i in here) if here else "nothing"
         lines.append(f"{header}: {body}")
     staples = [i.name for i in items if i.source == "staple"]

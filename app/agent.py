@@ -48,8 +48,13 @@ WELCOME_MESSAGE = (
     "Welcome! Take a photo of your fridge and one of your pantry, tag each with its place (tap the tag "
     "on the photo), and I'll tell you what you can cook."
 )
-OPENING_PROMPT = """[Note from the app, not from the user: the user just opened the app and has not written anything yet.]
-Greet them in one short sentence and offer exactly one meal they can make now. Call suggest_meals once (request: "one quick everyday dish built around the USE SOON items", n=3) and put the id of the best passed candidate in meal_ids (one id only). Say which USE SOON item it uses ("Your spinach needs using: how about ...?"). If no item is marked USE SOON, offer one quick idea instead. No questions about uncertain items in this message."""
+OPENING_PROMPT = """\
+[Note from the app, not from the user: the user just opened the app and has not written anything yet.]
+Greet them in one short sentence and offer exactly one meal they can make now. Call suggest_meals once \
+(request: "one quick everyday dish built around the USE SOON items", n=3) and put the id of the best \
+passed candidate in meal_ids (one id only). Say which USE SOON item it uses ("Your spinach needs using: \
+how about ...?"). If no item is marked USE SOON, offer one quick idea instead. No questions about \
+uncertain items in this message."""
 
 # About 8 tool calls per turn (PRODUCT §5); the limit is a hard stop a little above that.
 USAGE_LIMITS = UsageLimits(tool_calls_limit=10, request_limit=16)
@@ -90,8 +95,10 @@ canned goods, baking items, sauces, condiments, spices, snacks) is missing; it g
 staples, and mention once that a pantry photo would give more options.
 6. Photos: when the message says the user attached photos, call recognize_inventory first (it takes no \
 arguments). Then say briefly how many items were found, ask about at most 3 uncertain items (in \
-questions), and if a place is still NOT SCANNED ask once for a photo of it. The freezer is optional: \
-never ask for it again once the user declined.
+questions), and if a place is still NOT SCANNED ask once for a photo of it. If the tool lists items not \
+seen in these photos, say so in one sentence ("I didn't see the milk and the yogurt this time: tick or \
+remove them in the list") with no question per item: the app shows the user a list to confirm. The \
+freezer is optional: never ask for it again once the user declined.
 7. Respect the stored preferences. When the user states a lasting like or dislike ("the kids hated the \
 eggplant", "we don't eat pork"), call save_preference with the ingredients to avoid, then confirm in one \
 sentence what you will remember.
@@ -224,23 +231,29 @@ async def recognize_inventory(ctx: RunContext[Deps]) -> str:
 
     Call this first, once, whenever the message says the user attached photos. Takes no arguments: the
     photos and their place tags (fridge / freezer / pantry) are already known. Returns what was found,
-    which items are uncertain, and the updated inventory.
+    which items are uncertain, which earlier items of those places were not seen this time (kept, marked
+    for the user to check), and the updated inventory.
     """
     images = ctx.deps.images
     if not images:
         _log("recognize_inventory", "", "no photos")
         return "No photos are attached to this message. Ask the user to attach photos of the fridge, freezer or pantry."
     items = await recognize.recognize_inventory(images, store=ctx.deps.store, model=_vision_model(ctx))
-    inventory.merge_recognized(ctx.deps.store, items)
+    scanned = list(dict.fromkeys(loc for _, loc in images))
+    now = inventory.merge_recognized(ctx.deps.store, items, scanned)
     ctx.deps.images = []  # the same photos are not processed twice in one run
     uncertain = [i.display_name for i in items if i.uncertain]
-    places = ", ".join(dict.fromkeys(loc for _, loc in images))
-    lines = [f"Recognized {len(items)} items in {len(images)} photo(s) of: {places}."]
+    not_seen = [i.display_name for i in now if i.not_seen and i.location in scanned]
+    lines = [f"Recognized {len(items)} items in {len(images)} photo(s) of: {', '.join(scanned)}."]
     if uncertain:
         lines.append(f"Uncertain ({len(uncertain)}): {', '.join(uncertain)}")
+    if not_seen:
+        lines.append(f"Not seen in these photos, kept and marked for the user to check ({len(not_seen)}): "
+                     f"{', '.join(not_seen)}")
     lines.append(f"Inventory now:\n{_inventory_text(ctx.deps.store)}")
     out = "\n".join(lines)
-    _log("recognize_inventory", f"{len(images)} photos", f"{len(items)} items, {len(uncertain)} uncertain")
+    _log("recognize_inventory", f"{len(images)} photos",
+         f"{len(items)} items, {len(uncertain)} uncertain, {len(not_seen)} not seen")
     return out
 
 

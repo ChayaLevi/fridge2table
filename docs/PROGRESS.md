@@ -41,7 +41,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great") and asked for the panel edits, staples, scope and gallery changes logged below; T3.2 stays `[~]` until it is tried on a phone.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 370 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 378 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -59,7 +59,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - ~~Model defaults were provisional Gemini/Claude strings~~ (superseded by the DeepSeek switch and T0.4; model values are bare DeepSeek IDs, see "Current model settings").
 - Extras beyond the plan (small): `.gitignore`, `pytest.ini` (asyncio_mode=auto), `httpx` dev dependency (needed by FastAPI TestClient), `LOG_LEVEL`/`LOGFIRE_TOKEN` in `.env.example` (CLAUDE.md debugging aids).
 - `data/synonyms.json` has 115 entries (112 + 3 added in the T1.1 redo) (flat map, no chains; a test enforces that targets are canonical). Ambiguous keys like bare `pepper` were left out on purpose.
-- `InventoryChange` ops: add | remove | set_qty | set_use_soon | rename | **add_staple** (added 2026-10-14 at the human's request: staples of the user's own, table `custom_staples`). Fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
+- `InventoryChange` ops: add | remove | set_qty | set_use_soon | rename | **add_staple** | **confirm** (2026-10-14) (added 2026-10-14 at the human's request: staples of the user's own, table `custom_staples`). Fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
 - 2026-10-12 (later): PLAN/PRODUCT were updated (pantry coverage). T0.2 re-done: added `ScanState`, `PANTRY_CATEGORIES`, `Ingredient.category`, `MissingReport.check_first`, `AgentReply.check_first`, extended category list. Tests now 6 pass. T0.1/T0.3 unaffected. T0.5 now asks for 4–6 sets (≥2 fridge, ≥2 pantry), folders `<household>_<place>`.
 - Order change (user request, 2026-10-12): the human has no API keys/photos yet, so T0.4 is deferred and P1/P2 are built with mocked models. T0.4, the real run of T1.4 and T1.6, and T2.5 wait for keys/photos.
 - Repo was not a git repo; `git init` done in T0.1.
@@ -85,6 +85,26 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — Rescan: items not seen are flagged, and a review sheet after every scan (the human's request)
+- Why: the human asked what happens to the old inventory when a new photo is sent. Recognition only adds and updates (it never removes: a photo misses things), so finished items stayed forever. The human chose: flag the items of a re-photographed place that were not seen, and open a window to confirm and edit after every scan, not only the side panel.
+- Built / changed:
+  - `app/models.py`: `InventoryItem.not_seen: bool = False`; `InventoryChange.op` gained `confirm`.
+  - `app/tools/inventory.py`: `merge_recognized(store, items, places=())`: stored non-staple items of the photographed `places` that were not recognized get `not_seen=True` (never removed; manual items too, it is only a question); a recognized item gets `not_seen=False`. `update_inventory`: `confirm` (stored items only) clears `uncertain` and `not_seen`; any edit (`touch`) clears `not_seen`. Summary flag `NOT SEEN IN LAST PHOTO`, sorted after uncertain items. Still true: recognition never removes anything.
+  - `app/agent.py`: the `recognize_inventory` wrapper passes the tagged places and lists "Not seen in these photos, kept and marked for the user to check (N): ..." in its result. Rule 6: say so in one sentence ("tick or remove them in the list"), no question per item, because the app shows the list.
+  - `app/static/index.html`: a review sheet ("Check what I found · Fridge") opens by itself after a turn whose trace has a successful `recognize_inventory` and that sent photos. It lists the items of the photographed places in three groups: "Not sure what this is" (uncertain), "Not seen this time" (✓ still there, × finished), "In the list". Rows are the panel's rows (✎ rename, ✓ confirm, quantity, use soon, ×) and every edit redraws both the sheet and the panel. Buttons: "Later" (close, flags stay) and "All correct" (`confirm` for every flagged item shown, then close; "Done" when nothing is flagged). In the panel, not-seen items are grey and italic with "· not seen" and a ✓; the hint line explains orange vs grey. The panel's ✓ now sends `confirm` instead of a rename to the same name.
+  - Also: `OPENING_PROMPT` and the scope paragraph had been written as one long source line each (in this environment a bash heredoc turns `\\` into `\`, which Python then read as a line continuation); `OPENING_PROMPT` re-wrapped with the same value (checked against the committed one). Lesson: write edit scripts with the Write tool, not a heredoc, when they contain backslashes.
+  - Tests: 378 pass (+8): inventory (rescan flags only that place and never staples, no places → no flags, seen again clears even for manual items without overriding their quantity, `confirm` clears both flags and leaves virtual staples alone, any edit clears `not_seen`, summary flag and order), agent (the tool result lists the not-seen items and keeps their use-soon flag; rule 6 text).
+- Checked: headless Edge 390x844 with real models: demo seed, a coffee photo tagged Fridge from the gallery → the agent: "I found 1 item in your fridge photo. I didn't see most of the fridge items this time (milk, eggs, spinach and the rest): tick or remove them in the list." and the sheet opened by itself after 7.6-9.6 s with "Not seen this time (21)" and "In the list (1)"; × milk and ✓ butter moved them (19 / 2); "All correct" closed it and the panel had no grey rows left; no page errors. Full scenario suite `--jobs 4`: 12/12.
+- Known limit: a photo of one shelf flags everything else in that place as not seen (21 items in the test). "All correct" clears them in one tap; a smarter rule (e.g. flag only when the new photos found many of the old items) can come after the real-fridge run if it is annoying.
+
+**How to verify**
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `378 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: in http://localhost:8000/docs run `POST /admin/reset` and `POST /admin/seed`. Open http://localhost:8000/, tap 🖼️, pick any food photo (the tag says Fridge), Send. After about 10 s the agent says some items were not seen, and the "Check what I found · Fridge" window opens by itself: what the photo showed under "In the list", the old fridge items under "Not seen this time". Tap × on one (it disappears), ✓ on another (it moves to "In the list"), then "All correct": the window closes, and in Inventory no item is grey.
 
 ### 2026-10-14 — T4.1 Proactive opening
 - Built / changed:
