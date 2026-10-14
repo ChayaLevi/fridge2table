@@ -65,7 +65,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
-- (T3.2) This machine lost its network connection on 2026-10-14 (`curl` to api.deepseek.com and google.com: SSL connect error, exit 35), so `/chat` returned 503 for every real turn. Check the VPN/proxy before the next real run.
+- ~~(T3.2) Network loss on 2026-10-14~~ Resolved the same day: the app's `ModelAPIError: Connection error` was a real outage, gone later. Note: `curl` on this machine still fails with `CRYPT_E_NO_REVOCATION_CHECK` (Windows schannel cannot reach the certificate revocation server); that is curl only, Python (httpx) connects fine. To test the API connection, use `uv run python -c "import httpx; print(httpx.get('https://api.deepseek.com/models').status_code)"` (401 without a key = reachable), not curl.
 - (T3.2) Real Mode A replies said "a pantry photo would give more options" right after a pantry photo was scanned (2 of 2 runs, the pantry photo had only coffee). Agent prose only; rule 5 in `INSTRUCTIONS` could say "only while the pantry is NOT SCANNED" more firmly. Revisit in T3.3 / P6.
 - (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
 - (T2.5) Turn latency varies with the API: the same Mode A turn took 11 s and 21 s on the same day, sequentially. With `--jobs 4` turns take 20-36 s (parallel load), so use `--jobs 1` for latency numbers (T5.2).
@@ -97,14 +97,15 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - Checks run:
   - `node --check` on the page script.
   - Headless Edge (Playwright, run from the scratchpad, not a project dependency) at 390×844, touch, against `uvicorn`:
-    - Real models (2026-10-13): opening, panel (21 items, pantry "not scanned yet"), a pantry-tagged photo (12.2 s, pantry then "scanned today"), "What can I cook tonight? Under 30 minutes." (12.7 s, 3 cards, trace `2 steps · 10.5 s — suggest_meals → output check`), recipe sheet steps in 3.6 s (7 steps). The rest was blocked by the network loss (see Open issues).
+    - Real models (2026-10-13): opening, panel (21 items, pantry "not scanned yet"), a pantry-tagged photo (12.2 s, pantry then "scanned today"), "What can I cook tonight? Under 30 minutes." (12.7 s, 3 cards, trace `2 steps · 10.5 s — suggest_meals → output check`), recipe sheet steps in 3.6 s (7 steps). The rest was blocked by a network outage that day.
+    - Real models again (2026-10-14, after the network came back): the whole flow passes with no page errors: photo tagged Pantry 7.5 s → pantry "scanned today" → 3 cards in 10.1 s (trace `2 steps · 9.1 s — suggest_meals → output check`) → steps in 3.1 s → delete egg in the panel → "Can I make a spinach omelette?" 8.0 s: Spinach Omelette card + To buy: egg (trace `get_recipe → compute_missing → output check`) → reload keeps 4 replies → New chat shows only the greeting. The pantry-prose issue did not show up this time.
     - Scripted models (2026-10-14, the real app with FunctionModels for agent, recipe and vision via `dependency_overrides`): the whole flow passes with no page errors: photo → panel "scanned today" → 2 cards (one candidate failed, shown in the trace) → recipe sheet → delete eggs and lower spinach in the panel → "Can I make a spinach omelette?" → To buy: egg (the first try of that turn showed that the edit reached the agent: the output check rejected the omelette with "needs egg, not in inventory") → reload keeps 4 replies → New chat shows only the greeting.
 - Decisions / deviations:
   - The transcript is kept in the browser (`localStorage`), not fetched from the server: there is no history endpoint, and it is only for display (the agent's history stays in the store).
   - No streaming of the message text (PRODUCT §8 says "if possible"; `run_turn` returns the whole reply). Left for T5.2.
   - No dark theme; one light palette.
 - Next task must know: T4.1 only changes what `/opening` returns (same shape). T4.4 changes `renderTrace()` in the page. For an offline UI check, override `get_turn_runner` / `get_recipe_model` with scripted models (as in `tests/test_api.py`).
-- Open issues: network loss on this machine; pantry-photo prose after a pantry scan (see Open issues).
+- Open issues: pantry-photo prose after a pantry scan (see Open issues).
 
 **How to verify**
 ```
