@@ -1,2 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Fridge-to-Table</title>
-<p>Fridge-to-Table API is running. The page comes in T3.2; until then use <a href="/docs">/docs</a>.</p>
+<style>
+  :root {
+    --bg: #f6f5f1; --surface: #fff; --text: #1f2421; --muted: #6b716d; --line: #e3e1da;
+    --accent: #2f7d4f; --accent-soft: #e4f1e8; --warn: #b5530b; --warn-soft: #fdf0e3;
+    --user: #2f7d4f; --user-text: #fff; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
+
+  .app { display: flex; flex-direction: column; height: 100dvh; max-width: 720px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+           padding-top: calc(10px + env(safe-area-inset-top, 0px));
+           background: var(--surface); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  .hbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; }
+  .badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px;
+           background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
+
+  /* chat */
+  #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 92%; }
+  .msg.user { align-self: flex-end; }
+  .msg.agent, .msg.system { align-self: flex-start; }
+  .bubble { padding: 9px 12px; border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .user .bubble { background: var(--user); color: var(--user-text); border-bottom-right-radius: 4px; }
+  .agent .bubble { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .system .bubble { background: var(--warn-soft); color: var(--warn); border: 1px solid #f2d3b3; }
+  .user .photos { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 4px; flex-wrap: wrap; }
+  .user .photos figure { margin: 0; position: relative; }
+  .user .photos img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; display: block; }
+  .user .photos figcaption { position: absolute; left: 2px; bottom: 2px; font-size: 10px; padding: 0 4px;
+                             background: rgba(0,0,0,.6); color: #fff; border-radius: 4px; }
+
+  .questions { margin: 6px 0 0; padding-left: 18px; color: var(--text); }
+  .cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .card { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 10px 12px; width: 100%; }
+  .card:active { background: var(--accent-soft); }
+  .card .title { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .card .time { color: var(--muted); font-weight: 400; white-space: nowrap; }
+  .card .open { color: var(--accent); font-size: 13px; margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .chip.soon { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+
+  .shop { margin-top: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 10px 12px; }
+  .shop h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin: 8px 0 4px; color: var(--muted); }
+  .shop h3:first-child { margin-top: 0; }
+  .shop ul { margin: 0; padding-left: 18px; }
+  .shop .check { color: var(--muted); }
+  .shop .empty { color: var(--accent); }
+
+  details.trace { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  details.trace summary { cursor: pointer; list-style: none; }
+  details.trace summary::before { content: "▸ "; }
+  details.trace[open] summary::before { content: "▾ "; }
+  details.trace ol { margin: 4px 0 0; padding-left: 20px; }
+  details.trace li { margin: 2px 0; overflow-wrap: anywhere; }
+  details.trace .fail { color: var(--warn); }
+
+  .typing .bubble { color: var(--muted); }
+  .dots::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+  /* composer */
+  .composer { background: var(--surface); border-top: 1px solid var(--line); padding: 8px 10px;
+              padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .pending { display: flex; gap: 6px; padding-bottom: 8px; overflow-x: auto; }
+  .thumb { position: relative; flex: none; }
+  .thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
+  .thumb .tag { position: absolute; left: 3px; right: 3px; bottom: 3px; border: 0; border-radius: 6px; padding: 2px 0;
+                font-size: 11px; font-weight: 600; background: rgba(255,255,255,.92); }
+  .thumb .rm { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%;
+               border: 0; background: var(--text); color: #fff; font-size: 13px; line-height: 22px; padding: 0; }
+  .row { display: flex; gap: 8px; align-items: flex-end; }
+  .iconbtn { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line);
+             background: var(--surface); font-size: 19px; padding: 0; }
+  #input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); border-radius: 21px; padding: 10px 14px;
+           font: inherit; max-height: 120px; background: var(--bg); color: var(--text); }
+  #input:focus, .add input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  #send { flex: none; height: 42px; border: 0; border-radius: 21px; padding: 0 16px; background: var(--accent);
+          color: #fff; font-weight: 600; }
+  #send:disabled { opacity: .5; }
+
+  /* overlays: inventory drawer and recipe sheet */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 10; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--bg); z-index: 11;
+            display: flex; flex-direction: column; box-shadow: -4px 0 20px rgba(0,0,0,.15); }
+  .drawer header { position: sticky; top: 0; }
+  .drawer .body { overflow-y: auto; padding: 12px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .loc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
+  .loc-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
+  .loc-head h2 { font-size: 15px; margin: 0; text-transform: capitalize; }
+  .loc-head .when { flex: 1; font-size: 12px; color: var(--muted); }
+  .loc-head .when.no { color: var(--warn); }
+  .loc-head .iconbtn { width: 34px; height: 34px; font-size: 16px; }
+  .items { list-style: none; margin: 0; padding: 0; }
+  .item { display: flex; align-items: center; gap: 6px; padding: 7px 10px 7px 12px; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .item.uncertain { background: var(--warn-soft); }
+  .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 700; }
+  .qty { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 3px 10px; font-size: 12px;
+         min-width: 62px; }
+  .qty.low { color: var(--warn); }
+  .soon { border: 1px dashed var(--line); background: none; border-radius: 999px; padding: 3px 8px; font-size: 12px;
+          color: #a3a8a4; }
+  .soon.on { background: var(--warn); border-color: var(--warn); color: #fff; }
+  .del { border: 0; background: none; color: var(--muted); font-size: 18px; width: 28px; padding: 0; }
+  .add { display: flex; gap: 6px; padding: 8px 10px; }
+  .add input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit;
+               background: var(--bg); color: var(--text); }
+  .add button { border: 0; border-radius: 8px; background: var(--accent-soft); color: var(--accent); padding: 0 12px; }
+  .empty-loc { padding: 8px 12px; color: var(--muted); font-size: 13px; }
+  details.staples summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
+
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88dvh; z-index: 11; background: var(--surface);
+           border-radius: 18px 18px 0 0; display: flex; flex-direction: column; max-width: 720px; margin: 0 auto;
+           box-shadow: 0 -4px 20px rgba(0,0,0,.15); }
+  .sheet .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 0; }
+  .sheet .head { display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px 4px; }
+  .sheet .head h2 { flex: 1; margin: 0; font-size: 19px; }
+  .sheet .body { overflow-y: auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .sheet .meta { color: var(--muted); margin-bottom: 8px; }
+  .sheet h3 { font-size: 14px; margin: 14px 0 6px; }
+  .sheet ul, .sheet ol { margin: 0; padding-left: 20px; }
+  .sheet li { margin: 3px 0; }
+  .sheet .have { color: var(--accent); font-size: 12px; }
+  .sheet .opt { color: var(--muted); font-size: 12px; }
+  .spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+             animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Fridge-to-Table</h1>
+    <button class="hbtn" id="newChat" type="button">New chat</button>
+    <button class="hbtn" id="openInv" type="button">Inventory<span class="badge" id="invCount">0</span></button>
+  </header>
+
+  <main id="messages" aria-live="polite"></main>
+
+  <form class="composer" id="composer">
+    <div class="pending" id="pending" hidden></div>
+    <div class="row">
+      <button class="iconbtn" id="attach" type="button" title="Add photos" aria-label="Add photos">📷</button>
+      <input id="file" type="file" accept="image/*" multiple capture="environment" hidden>
+      <textarea id="input" rows="1" placeholder="Ask what to cook, or say what you want to make…"></textarea>
+      <button id="send" type="submit">Send</button>
+    </div>
+  </form>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<aside class="drawer" id="drawer" hidden aria-label="Inventory">
+  <header>
+    <h1>Inventory</h1>
+    <button class="hbtn" id="closeInv" type="button">Close</button>
+  </header>
+  <div class="body" id="invBody"></div>
+</aside>
+
+<section class="sheet" id="sheet" hidden aria-label="Recipe">
+  <div class="grip"></div>
+  <div class="head"><h2 id="sheetTitle"></h2><button class="hbtn" id="closeSheet" type="button">Close</button></div>
+  <div class="body" id="sheetBody"></div>
+</section>
+
+<script>
+"use strict";
+const PLACES = ["fridge", "freezer", "pantry"];
+const QTY_NEXT = { plenty: "some", some: "low", low: "plenty" };
+const MAX_PHOTOS = 4;
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  sessionId: null,
+  inventory: [],
+  scanState: { scanned: {} },
+  pending: [],          // [{file, url, place}]
+  nextPlace: null,      // set by a panel camera button: the place for the next picked photos
+  busy: false,
+  transcript: [],       // what is shown, so a reload of the same session shows it again
+};
+
+// --- small helpers -------------------------------------------------------------------------------
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) node.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) node.append(c);
+  return node;
+}
+
+function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function storageSet(key, value) { try { localStorage.setItem(key, value); } catch { /* private mode etc. */ } }
+
+function newSessionId() {
+  return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+}
+
+function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+function ago(iso) {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return "scanned today";
+  if (days === 1) return "scanned yesterday";
+  return `scanned ${days} days ago`;
+}
+
+function itemsByName() {
+  const map = new Map();
+  for (const i of state.inventory) map.set(i.name, i);
+  return map;
+}
+
+function displayName(name) {
+  const item = itemsByName().get(name);
+  return item ? item.display_name : name;
+}
+
+async function api(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(path, options);
+  } catch {
+    throw new Error("Cannot reach the server. Check the connection and try again.");
+  }
+  let body = null;
+  try { body = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok) {
+    const detail = body && body.detail;
+    throw new Error(typeof detail === "string" ? detail : `Request failed (${res.status}).`);
+  }
+  return body;
+}
+
+// --- session and transcript ----------------------------------------------------------------------
+
+function saveTranscript() {
+  storageSet("ftt.transcript." + state.sessionId, JSON.stringify(state.transcript.slice(-60)));
+}
+
+function loadTranscript() {
+  try { return JSON.parse(storageGet("ftt.transcript." + state.sessionId)) || []; } catch { return []; }
+}
+
+function startSession(id) {
+  state.sessionId = id;
+  storageSet("ftt.session", id);
+  state.transcript = loadTranscript();
+  $("messages").replaceChildren();
+  for (const entry of state.transcript) renderEntry(entry);
+  scrollDown();
+}
+
+// --- rendering messages --------------------------------------------------------------------------
+
+function scrollDown() { const m = $("messages"); m.scrollTop = m.scrollHeight; }
+
+function addEntry(entry) {
+  state.transcript.push(entry);
+  saveTranscript();
+  renderEntry(entry);
+  scrollDown();
+}
+
+function renderEntry(entry) {
+  const box = $("messages");
+  if (entry.role === "user") box.append(renderUser(entry));
+  else if (entry.role === "agent") box.append(renderAgent(entry.data));
+  else box.append(el("div", { class: "msg system" }, el("div", { class: "bubble" }, entry.text)));
+}
+
+function renderUser(entry) {
+  const node = el("div", { class: "msg user" });
+  if (entry.photos && entry.photos.length) {
+    node.append(el("div", { class: "photos" }, entry.photos.map((p) =>
+      el("figure", {}, p.url ? el("img", { src: p.url, alt: "" }) : el("div", { class: "bubble" }, "📷"),
+         el("figcaption", {}, cap(p.place))))));
+  }
+  if (entry.text) node.append(el("div", { class: "bubble" }, entry.text));
+  return node;
+}
+
+function renderAgent(data) {
+  const reply = data.reply;
+  const node = el("div", { class: "msg agent" }, el("div", { class: "bubble" }, reply.message));
+
+  if (reply.questions && reply.questions.length) {
+    node.append(el("ul", { class: "questions" }, reply.questions.map((q) => el("li", {}, q))));
+  }
+
+  const meals = reply.meals || [];
+  if (meals.length) node.append(el("div", { class: "cards" }, meals.map(renderCard)));
+
+  const hasShop = (reply.shopping_list || []).length || (reply.check_first || []).length
+    || (reply.substitutions || []).length;
+  // Mode B: a single recipe with nothing missing still gets the block, saying so.
+  if (hasShop || (meals.length === 1 && isModeB(data))) node.append(renderShop(reply));
+
+  if (data.trace && data.trace.length) node.append(renderTrace(data.trace, data.usage));
+  return node;
+}
+
+function isModeB(data) {
+  return (data.trace || []).some((t) => t.tool === "compute_missing");
+}
+
+function renderCard(meal) {
+  const inv = itemsByName();
+  const chips = (meal.uses_from_inventory || []).map((name) => {
+    const item = inv.get(name);
+    return el("span", { class: "chip" + (item && item.use_soon ? " soon" : "") },
+      (item ? item.display_name : name) + (item && item.use_soon ? " · use soon" : ""));
+  });
+  return el("button", { class: "card", type: "button", onclick: () => openRecipe(meal) },
+    el("div", { class: "title" }, el("span", {}, meal.name), el("span", { class: "time" }, `${meal.time_minutes} min`)),
+    chips.length ? el("div", { class: "chips" }, chips) : null,
+    el("div", { class: "open" }, "Open recipe ›"));
+}
+
+function renderShop(reply) {
+  const box = el("div", { class: "shop" });
+  const subs = reply.substitutions || [];
+  const buy = reply.shopping_list || [];
+  const check = reply.check_first || [];
+  if (subs.length) {
+    box.append(el("h3", {}, "Use instead"),
+      el("ul", {}, subs.map((s) => el("li", {}, `${displayName(s.use_instead)} instead of ${s.missing}`))));
+  }
+  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => el("li", {}, x))));
+  if (check.length) {
+    box.append(el("h3", {}, "Check your pantry first"),
+      el("ul", { class: "check" }, check.map((x) => el("li", {}, x))));
+  }
+  if (!buy.length && !check.length) box.append(el("div", { class: "empty" }, "✓ Nothing to buy: you have everything."));
+  return box;
+}
+
+function renderTrace(trace, usage) {
+  const failed = trace.filter((t) => t.failed).length;
+  const parts = [`${trace.length} step${trace.length === 1 ? "" : "s"}`];
+  if (failed) parts.push(`${failed} failed check${failed === 1 ? "" : "s"}`);
+  if (usage) parts.push(`${usage.latency_s.toFixed(1)} s`);
+  return el("details", { class: "trace" },
+    el("summary", {}, parts.join(" · ") + " — " + trace.map((t) => t.tool).join(" → ")),
+    el("ol", {}, trace.map((t) => el("li", { class: t.failed ? "fail" : "" },
+      `${t.tool}(${t.args_summary}) → ${t.result_summary}` + (t.seconds != null ? ` (${t.seconds.toFixed(1)} s)` : "")))));
+}
+
+// --- recipe sheet --------------------------------------------------------------------------------
+
+async function openRecipe(meal) {
+  $("sheetTitle").textContent = meal.name;
+  const body = $("sheetBody");
+  const inv = itemsByName();
+  const have = new Set(meal.uses_from_inventory || []);
+  const steps = el("div", {}, el("span", { class: "spinner" }), "Writing the steps…");
+  body.replaceChildren(
+    el("div", { class: "meta" }, `${meal.time_minutes} min · serves ${meal.servings}`),
+    el("h3", {}, "Ingredients"),
+    el("ul", {}, meal.ingredients.map((i) => el("li", {},
+      `${inv.get(i.name) ? inv.get(i.name).display_name : i.name}: ${i.amount} `,
+      have.has(i.name) ? el("span", { class: "have" }, "✓ you have it") : null,
+      i.essential ? null : el("span", { class: "opt" }, " (optional)")))),
+    el("h3", {}, "Steps"),
+    steps);
+  showOverlay("sheet");
+  try {
+    const recipe = meal.steps && meal.steps.length ? meal : await api(`/recipe/${encodeURIComponent(meal.id)}/steps`);
+    meal.steps = recipe.steps;
+    steps.replaceChildren(el("ol", {}, recipe.steps.map((s) => el("li", {}, s))));
+  } catch (err) {
+    steps.replaceChildren(el("div", { class: "opt" }, err.message));
+  }
+}
+
+// --- overlays ------------------------------------------------------------------------------------
+
+function showOverlay(id) {
+  $("scrim").hidden = false;
+  $(id).hidden = false;
+}
+
+function closeOverlays() {
+  $("scrim").hidden = true;
+  $("drawer").hidden = true;
+  $("sheet").hidden = true;
+}
+
+// --- inventory panel -----------------------------------------------------------------------------
+
+function setInventory(data) {
+  state.inventory = data.inventory;
+  state.scanState = data.scan_state;
+  renderInventory();
+}
+
+async function editInventory(changes) {
+  try {
+    setInventory(await api("/inventory", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes),
+    }));
+  } catch (err) {
+    addEntry({ role: "system", text: err.message });
+  }
+}
+
+function renderItem(item) {
+  return el("li", { class: "item" + (item.uncertain ? " uncertain" : "") },
+    el("span", { class: "name" }, item.display_name),
+    item.is_staple ? null : el("button", { class: "qty " + item.qty_level, type: "button", title: "Tap to change",
+                   onclick: () => editInventory([{ op: "set_qty", name: item.name, qty_level: QTY_NEXT[item.qty_level] }]) },
+      item.qty_level),
+    item.is_staple ? null : el("button", { class: "soon" + (item.use_soon ? " on" : ""), type: "button",
+                   onclick: () => editInventory([{ op: "set_use_soon", name: item.name, use_soon: !item.use_soon }]) },
+      "use soon"),
+    el("button", { class: "del", type: "button", title: "Delete", "aria-label": `Delete ${item.display_name}`,
+                   onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×"));
+}
+
+function renderAdd(place) {
+  const input = el("input", { type: "text", placeholder: `Add to ${place}…`, "aria-label": `Add item to ${place}` });
+  const add = () => {
+    const name = input.value.trim();
+    if (!name) return;
+    editInventory([{ op: "add", name, location: place, qty_level: "some" }]);
+    input.value = "";
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+  return el("div", { class: "add" }, input, el("button", { type: "button", onclick: add }, "Add"));
+}
+
+function renderInventory() {
+  const own = state.inventory.filter((i) => i.source !== "staple");
+  const staples = state.inventory.filter((i) => i.source === "staple");
+  $("invCount").textContent = own.length;
+
+  const body = $("invBody");
+  const wasOpen = body.querySelector("details.staples")?.open || false;
+  body.replaceChildren();
+  for (const place of PLACES) {
+    const here = own.filter((i) => i.location === place)
+      .sort((a, b) => (b.uncertain - a.uncertain) || (b.use_soon - a.use_soon));
+    const when = state.scanState.scanned[place];
+    const declined = place === "freezer" && state.scanState.freezer_declined;
+    body.append(el("section", { class: "loc" },
+      el("div", { class: "loc-head" },
+        el("h2", {}, place),
+        el("span", { class: "when" + (when ? "" : " no") },
+          when ? ago(when) : declined ? "skipped" : "not scanned yet"),
+        el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
+                       "aria-label": `Add a photo of the ${place}`, onclick: () => pickPhotos(place) }, "📷")),
+      here.length ? el("ul", { class: "items" }, here.map(renderItem))
+                  : el("div", { class: "empty-loc" }, "Nothing here yet."),
+      renderAdd(place)));
+  }
+  body.append(el("details", { class: "loc staples", open: wasOpen },
+    el("summary", {}, `Staples (${staples.length}) — assumed in the kitchen`),
+    el("ul", { class: "items" }, staples.map(renderItem))));
+}
+
+// --- photos --------------------------------------------------------------------------------------
+
+function pickPhotos(place) {
+  state.nextPlace = place || null;
+  closeOverlays();
+  $("file").click();
+}
+
+function addPhotos(files) {
+  let place = state.nextPlace;
+  state.nextPlace = null;
+  const room = MAX_PHOTOS - state.pending.length;
+  const chosen = [...files].filter((f) => f.type.startsWith("image/"));
+  for (const file of chosen.slice(0, room)) {
+    // Default: the first photo is Fridge, each next one copies the previous tag.
+    const last = state.pending[state.pending.length - 1];
+    place = place || (last ? last.place : "fridge");
+    state.pending.push({ file, url: URL.createObjectURL(file), place });
+    place = null;
+  }
+  if (chosen.length > room) addEntry({ role: "system", text: `Up to ${MAX_PHOTOS} photos per message.` });
+  renderPending();
+}
+
+function renderPending() {
+  const box = $("pending");
+  box.hidden = !state.pending.length;
+  box.replaceChildren(...state.pending.map((p, i) => el("div", { class: "thumb" },
+    el("img", { src: p.url, alt: `Photo ${i + 1}` }),
+    el("button", { class: "tag", type: "button", title: "Tap to change the place",
+                   onclick: () => { p.place = PLACES[(PLACES.indexOf(p.place) + 1) % PLACES.length]; renderPending(); } },
+      cap(p.place)),
+    el("button", { class: "rm", type: "button", "aria-label": "Remove photo",
+                   onclick: () => { state.pending.splice(i, 1); renderPending(); } }, "×"))));
+  updateSend();
+}
+
+// --- sending -------------------------------------------------------------------------------------
+
+function updateSend() {
+  $("send").disabled = state.busy || (!$("input").value.trim() && !state.pending.length);
+}
+
+function setBusy(busy) {
+  state.busy = busy;
+  $("attach").disabled = busy;
+  updateSend();
+}
+
+async function send(event) {
+  event.preventDefault();
+  if (state.busy) return;
+  const text = $("input").value.trim();
+  const photos = state.pending;
+  if (!text && !photos.length) return;
+
+  const form = new FormData();
+  form.append("session_id", state.sessionId);
+  form.append("message", text);
+  for (const p of photos) { form.append("images", p.file); form.append("locations", p.place); }
+
+  // Object URLs do not survive a reload; the transcript keeps the tags only.
+  renderEntry({ role: "user", text, photos: photos.map((p) => ({ url: p.url, place: p.place })) });
+  state.transcript.push({ role: "user", text, photos: photos.map((p) => ({ place: p.place })) });
+  saveTranscript();
+  $("input").value = "";
+  autosize();
+  state.pending = [];
+  renderPending();
+
+  const typing = el("div", { class: "msg agent typing" },
+    el("div", { class: "bubble" }, photos.length ? "Looking at your photos" : "Thinking", el("span", { class: "dots" })));
+  $("messages").append(typing);
+  scrollDown();
+  setBusy(true);
+  try {
+    const data = await api("/chat", { method: "POST", body: form });
+    setInventory(data);
+    typing.remove();
+    addEntry({ role: "agent", data });
+  } catch (err) {
+    typing.remove();
+    addEntry({ role: "system", text: err.message });
+  } finally {
+    setBusy(false);
+    $("input").focus();
+  }
+}
+
+function autosize() {
+  const t = $("input");
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight, 120) + "px";
+}
+
+async function opening() {
+  try {
+    const data = await api(`/opening?session_id=${encodeURIComponent(state.sessionId)}`);
+    setInventory(data);
+    addEntry({ role: "agent", data });
+  } catch (err) {
+    addEntry({ role: "system", text: err.message });
+  }
+}
+
+async function refreshInventory() {
+  try { setInventory(await api("/inventory")); } catch (err) { addEntry({ role: "system", text: err.message }); }
+}
+
+// --- wiring --------------------------------------------------------------------------------------
+
+$("composer").addEventListener("submit", send);
+$("input").addEventListener("input", () => { autosize(); updateSend(); });
+$("input").addEventListener("keydown", (e) => {
+  // Enter sends on a computer; on a phone the keyboard's Enter adds a line (use the Send button).
+  if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) {
+    e.preventDefault();
+    $("composer").requestSubmit();
+  }
+});
+$("attach").addEventListener("click", () => pickPhotos(null));
+$("file").addEventListener("change", (e) => { addPhotos(e.target.files); e.target.value = ""; });
+$("openInv").addEventListener("click", () => showOverlay("drawer"));
+$("closeInv").addEventListener("click", closeOverlays);
+$("closeSheet").addEventListener("click", closeOverlays);
+$("scrim").addEventListener("click", closeOverlays);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlays(); });
+$("newChat").addEventListener("click", () => {
+  if (state.busy) return;
+  startSession(newSessionId());
+  opening();
+});
+
+(async function init() {
+  // The inventory first, so the saved transcript's meal cards show display names and "use soon".
+  await refreshInventory();
+  startSession(storageGet("ftt.session") || newSessionId());
+  if (!state.transcript.length) await opening();
+  updateSend();
+})();
+</script>
+</body>
+</html>

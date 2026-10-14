@@ -23,7 +23,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T2.4 Terminal chat
 - [x] T2.5 Scenario suite
 - [x] T3.1 API
-- [ ] T3.2 Web page
+- [~] T3.2 Web page (page built and checked in a headless phone-size browser; the human's check in a browser is open)
 - [ ] T3.3 First real-fridge run + internal demo 🧑
 - [ ] T4.1 Proactive opening
 - [ ] T4.2 Substitutions in Mode B
@@ -37,10 +37,10 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T3.2 Web page** (nothing needed from the human until the phone check). The API is in `app/api.py`; every route returns the panel state (`inventory` + `scan_state`) so the page can redraw it after any call; `/chat` and `/opening` share one response shape (`reply`, `trace`, `usage`, `inventory`, `scan_state`). Errors come back as `{"detail": "..."}` (400 bad input, 502 agent failed, 503 model service down): show `detail` in the chat. Replace the placeholder `app/static/index.html`.
+- **Open: the human's check of T3.2** in a browser (a phone on the same network, or a desktop browser in phone mode: F12, Ctrl+Shift+M). See the T3.2 "How to verify". Then tick T3.2. **Next task: T3.3** (🧑: a real fridge run and the internal demo to the team lead).
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 353 tests pass. The FastAPI app (`app/api.py`) serves all T3.1 routes. Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
+- State: 353 tests pass. The FastAPI app (`app/api.py`) serves all T3.1 routes and the chat page (`app/static/index.html`, T3.2). Scenario suite (`eval/run_scenarios.py`): 10/10 pass on real models (39/40 over the T2.5 runs, the one failure a network error). All P1 tools, the agent (`app/agent.py`, `run_turn`), per-step timing, the output validator, the trace (`app/trace.py`, `TurnResult.trace` / `.usage`) and the terminal chat (`scripts/chat.py`) exist.
 
 ## Current model settings
 
@@ -65,6 +65,8 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Open issues
 
+- (T3.2) This machine lost its network connection on 2026-10-14 (`curl` to api.deepseek.com and google.com: SSL connect error, exit 35), so `/chat` returned 503 for every real turn. Check the VPN/proxy before the next real run.
+- (T3.2) Real Mode A replies said "a pantry photo would give more options" right after a pantry photo was scanned (2 of 2 runs, the pantry photo had only coffee). Agent prose only; rule 5 in `INSTRUCTIONS` could say "only while the pantry is NOT SCANNED" more firmly. Revisit in T3.3 / P6.
 - (T2.5) Scenarios 8 and 9 use `tests/fixtures/coffee.jpg` (one coffee photo) because `eval/fridges` is still empty; swap in a real eval set when it exists (`photos:` in `eval/scenarios.yaml`).
 - (T2.5) Turn latency varies with the API: the same Mode A turn took 11 s and 21 s on the same day, sequentially. With `--jobs 4` turns take 20-36 s (parallel load), so use `--jobs 1` for latency numbers (T5.2).
 - (T2.5) `ModelAPIError: Connection error` happened once in about 45 real turns; `run_turn` does not retry it. Since T3.1 `/chat` returns 503 with "The model service did not answer. Please try again."
@@ -82,6 +84,41 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-13/14 — T3.2 Web page
+- Built / changed:
+  - `app/static/index.html` (one file, plain JS, no build, no external resources): mobile-first page for PRODUCT §8.
+    - Header: title, "New chat" (new session id, then `/opening`), "Inventory" with a count badge (non-staple items).
+    - Chat: user and agent bubbles, a "Thinking…" / "Looking at your photos…" bubble while the agent runs (Send and photo buttons disabled), errors from the API (`detail`) as an orange system bubble. Agent messages show questions, up to 3 meal cards (name, time, uses-from-inventory chips; "use soon" chips orange), the shopping block (Use instead, To buy, Check your pantry first in a muted style; a Mode B reply with nothing missing says "Nothing to buy"), and the trace in a collapsed `<details>` line ("2 steps · 1 failed check · 10.5 s — suggest_meals → output check"; expanded: one line per call, failed ones orange; T4.4 polishes the sentence).
+    - Photos: `<input type="file" accept="image/*" multiple capture="environment">`, up to 4; thumbnails with a place tag that cycles Fridge → Freezer → Pantry on tap and an × to remove. Default: the first is Fridge, each next copies the previous tag. A panel camera button pre-tags the picked photos with that place. Sent as `images` + `locations` in order.
+    - Meal card tap → bottom sheet: time, servings, ingredients ("✓ you have it" for inventory items, "(optional)"), steps from `GET /recipe/{id}/steps` with a spinner (cached on the card after the first load).
+    - Inventory drawer: one section per place with "scanned today / yesterday / N days ago" or "not scanned yet" (freezer: "skipped" when declined) and a camera button; items sorted uncertain first (orange, "?"), then use soon; quantity button cycles plenty → some → low → plenty; "use soon" toggle; × delete; an "Add to <place>…" input per place (qty "some", category default `other`). Staples in a collapsed section (delete only: their quantity is not stored, so it is not a button). Every edit calls `PATCH /inventory` and redraws from the response; every `/chat` response redraws the panel too.
+    - Session id in `localStorage` (`ftt.session`), the visible transcript per session in `localStorage` too (last 60 entries, photos as tags only), all wrapped in try/catch, so a reload shows the same chat; "New chat" starts an empty one. Enter sends on a computer; on a touch screen Enter adds a line.
+- Checks run:
+  - `node --check` on the page script.
+  - Headless Edge (Playwright, run from the scratchpad, not a project dependency) at 390×844, touch, against `uvicorn`:
+    - Real models (2026-10-13): opening, panel (21 items, pantry "not scanned yet"), a pantry-tagged photo (12.2 s, pantry then "scanned today"), "What can I cook tonight? Under 30 minutes." (12.7 s, 3 cards, trace `2 steps · 10.5 s — suggest_meals → output check`), recipe sheet steps in 3.6 s (7 steps). The rest was blocked by the network loss (see Open issues).
+    - Scripted models (2026-10-14, the real app with FunctionModels for agent, recipe and vision via `dependency_overrides`): the whole flow passes with no page errors: photo → panel "scanned today" → 2 cards (one candidate failed, shown in the trace) → recipe sheet → delete eggs and lower spinach in the panel → "Can I make a spinach omelette?" → To buy: egg (the first try of that turn showed that the edit reached the agent: the output check rejected the omelette with "needs egg, not in inventory") → reload keeps 4 replies → New chat shows only the greeting.
+- Decisions / deviations:
+  - The transcript is kept in the browser (`localStorage`), not fetched from the server: there is no history endpoint, and it is only for display (the agent's history stays in the store).
+  - No streaming of the message text (PRODUCT §8 says "if possible"; `run_turn` returns the whole reply). Left for T5.2.
+  - No dark theme; one light palette.
+- Next task must know: T4.1 only changes what `/opening` returns (same shape). T4.4 changes `renderTrace()` in the page. For an offline UI check, override `get_turn_runner` / `get_recipe_model` with scripted models (as in `tests/test_api.py`).
+- Open issues: network loss on this machine; pantry-photo prose after a pantry scan (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `353 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Manual check (needs a working network connection for the models): open http://localhost:8000/docs and run `POST /admin/reset` then `POST /admin/seed`. Open http://localhost:8000/ in Chrome or Edge; for a phone view press F12, then Ctrl+Shift+M (or open `http://<this computer's IP>:8000/` on a phone on the same Wi-Fi). Then:
+1. The greeting appears; "Inventory 21" opens the panel: Fridge "scanned today" with spinach marked "use soon", Pantry "not scanned yet".
+2. Tap 📷, pick 1-2 food photos, tap a tag until it says Pantry, Send: after about 10-20 s the agent says what it found and the panel shows Pantry "scanned today".
+3. Type `What can I cook tonight?` and Send: 1-3 cards; tap the small grey line under them to open the trace.
+4. Tap a card: the recipe opens from the bottom, the steps appear after a few seconds.
+5. In the panel, delete `egg` (×). Type `Can I make an omelette?`: the answer lists egg under "To buy".
+6. Reload the page: the chat is still there. "New chat": only the greeting.
 
 ### 2026-10-13 — T3.1 API
 - Built / changed:
