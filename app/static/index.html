@@ -66,8 +66,11 @@
   details.trace summary::before { content: "▸ "; }
   details.trace[open] summary::before { content: "▾ "; }
   details.trace ol { margin: 4px 0 0; padding-left: 20px; }
-  details.trace li { margin: 2px 0; overflow-wrap: anywhere; }
-  details.trace .fail { color: var(--warn); }
+  details.trace li { margin: 4px 0; overflow-wrap: anywhere; }
+  details.trace .step { display: block; color: var(--text); }
+  details.trace .tech { display: block; font-size: 11px; font-family: ui-monospace, Consolas, monospace; color: var(--muted); }
+  details.trace .fail, details.trace .fail .step { color: var(--warn); }
+  details.trace summary .fail { font-weight: 600; }
 
   .typing .bubble { color: var(--muted); }
   .dots::after { content: ""; animation: dots 1.2s steps(4) infinite; }
@@ -390,15 +393,19 @@ function renderShop(reply) {
   return box;
 }
 
+// Collapsed: one sentence from the steps' plain labels ("3 steps · updated the inventory (removed egg) →
+// 5 ideas, 1 failed check (no cream) → checked by code"), failed steps in the warning colour.
+// Expanded: one line per step, its label and seconds, with the technical detail under it.
+// Replies saved before T4.4 have no labels: the tool name stands in.
 function renderTrace(trace, usage) {
-  const failed = trace.filter((t) => t.failed).length;
-  const parts = [`${trace.length} step${trace.length === 1 ? "" : "s"}`];
-  if (failed) parts.push(`${failed} failed check${failed === 1 ? "" : "s"}`);
-  if (usage) parts.push(`${usage.latency_s.toFixed(1)} s`);
+  const steps = `${trace.length} step${trace.length === 1 ? "" : "s"}`;
+  const parts = trace.flatMap((t, i) => [
+    i ? " → " : "", el("span", { class: t.failed ? "fail" : "" }, t.label || t.tool)]);
   return el("details", { class: "trace" },
-    el("summary", {}, parts.join(" · ") + " — " + trace.map((t) => t.tool).join(" → ")),
+    el("summary", {}, `${steps}${usage ? ` · ${usage.latency_s.toFixed(1)} s` : ""} · `, ...parts),
     el("ol", {}, trace.map((t) => el("li", { class: t.failed ? "fail" : "" },
-      `${t.tool}(${t.args_summary}) → ${t.result_summary}` + (t.seconds != null ? ` (${t.seconds.toFixed(1)} s)` : "")))));
+      el("span", { class: "step" }, (t.label || t.tool) + (t.seconds != null ? ` · ${t.seconds.toFixed(1)} s` : "")),
+      el("span", { class: "tech" }, `${t.tool}(${t.args_summary}) → ${t.result_summary}`)))));
 }
 
 // --- recipe sheet --------------------------------------------------------------------------------

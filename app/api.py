@@ -16,7 +16,7 @@ from typing import Annotated, get_args
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.models import Model
 
@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.store import Store
 from app.tools import inventory, recipes
+from app.trace import trace_sentence
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +105,12 @@ class ChatResponse(InventoryState):
     reply: AgentReply  # meals are filled (full recipes, without steps)
     trace: list[ToolTraceItem]
     usage: TurnUsage | None = None  # None when no model ran (welcome or fallback greeting)
+
+    @computed_field
+    @property
+    def trace_summary(self) -> str:
+        """The collapsed trace line: "3 steps · updated the inventory (removed egg) → 5 ideas → checked by code"."""
+        return trace_sentence(self.trace)
 
 
 def _state(store: Store) -> dict:

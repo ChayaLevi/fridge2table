@@ -28,7 +28,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T4.1 Proactive opening
 - [x] T4.2 Substitutions in Mode B
 - [x] T4.3 Preferences end to end
-- [ ] T4.4 Trace UI polish
+- [~] T4.4 Trace UI polish (built; waiting for the human to confirm it reads well on a phone)
 - [ ] T5.1 Vision model comparison
 - [ ] T5.2 Latency
 - [ ] T5.3 Real user run #1 + decision point 🧑
@@ -37,11 +37,11 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Next task: T4.4 Trace UI polish** (🧑 at the end: the human confirms the trace line reads well on a phone, or in a desktop browser in phone mode). `renderTrace()` in `app/static/index.html`; `ToolTraceItem.tool` / `failed` / `result_summary` are in every `/chat` response.
+- **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task after that: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing) and **T5.2 Latency** (no human needed). P4 is otherwise done.
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great") and asked for the panel edits, staples, scope and gallery changes logged below; T3.2 stays `[~]` until it is tried on a phone.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 388 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 400 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -85,6 +85,25 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-14 — T4.4 Trace UI polish
+- Built / changed:
+  - `app/trace.py`: `step_label(tool, args, content, failed, detail)` gives each step plain words, and `trace_sentence(trace)` joins them: "3 steps · updated the inventory (removed egg) → 3 ideas → checked by code". Labels: `recognize_inventory` "read 2 photos: 23 items, 2 unsure, 4 not seen"; `update_inventory` "updated the inventory (removed egg, added chicken)"; `suggest_meals` "5 ideas, 1 failed check (no cream or parmesan)"; `get_recipe` "recipe for Lasagna"; `compute_missing` "5 missing, 1 not confirmed" (counts before substitutes, so it never says "to buy" with a number that differs from the To buy list); `validate_suggestion` "checked: ok" / "failed check (no cream)"; `save_preference` "remembered: no eggplant" / "already remembered"; output check "checked by code" / "lists fixed by code" / "answer sent back (old meal id)" / "off topic"; a tool retry "suggest meals retried" / "invalid tool call, retried". `short_reason()` turns check reasons into a few words ("missing: cream, parmesan" → "no cream or parmesan", "violates preferences: eggplant (...)" → "avoids eggplant", "unknown meal id(s) ..." → "old meal id", "message names items ..." → "message listed the shopping items").
+  - `app/models.py`: `ToolTraceItem.label`. `app/api.py`: `ChatResponse.trace_summary` (computed field, the sentence).
+  - `app/static/index.html` `renderTrace()`: collapsed = "N steps · 8.4 s · " + the labels joined by →, failed steps orange and bold; expanded = one line per step (label · seconds) with the technical line (`tool(args) → result`) under it in small grey monospace. Replies saved in the browser before this change have no labels: the tool name stands in.
+  - Tests: 400 pass (+12): `short_reason` (10 cases), `step_label` (save/already, recognition counts, no photos, off topic, a failed validation, nothing missing), the sentence of a mocked Mode A run with a failed candidate and a sent-back answer ("4 steps · updated the inventory (removed cottage cheese, added chicken) → 2 ideas, 1 failed check (no cream or egg...) → answer sent back (old meal id) → checked by code") and of a Mode B run; existing build_trace tests now include labels.
+  - Bug found on the way: `short_reason` split on ";" but one problem can contain "; " ("unknown meal id(s) x; use only ids ..."); unknown fragments are now used only when nothing before them was recognized.
+- Checked in headless Edge 390x844 with real models (demo seed): "We're out of eggs. Something quick for dinner?" → "3 steps · 10.9 s · updated the inventory (removed egg) → 3 ideas → checked by code"; "Something creamy with pasta tonight?" → "2 steps · 8.4 s · 3 ideas, 1 failed check (no cream, parmesan) → checked by code" with the failed part orange (before the "or" fix); "I want to make lasagna" → "3 steps · 8.1 s · recipe for Lasagna → ... → checked by code"; the page's line equals `trace_summary` from the server; no page errors.
+- No agent prompt change, so the scenarios were not rerun.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_trace.py -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `400 passed`; then `32 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Manual check: run `POST /admin/reset` and `POST /admin/seed` in http://localhost:8000/docs, open http://localhost:8000/ (phone, or F12 then Ctrl+Shift+M), send `Something creamy with pasta tonight?`. Under the reply a grey line reads like "2 steps · 8 s · 5 ideas, 1 failed check (no cream) → checked by code", the failed part in orange. Tap it: one line per step with its seconds, and the technical detail in small grey text under each.
 
 ### 2026-10-14 — T4.3 Preferences end to end
 - Most of it already worked from earlier tasks: `save_preference` (T1.7), preferences in the instructions and in `suggest_meals`' prompt (T2.1, T1.6), the code checks (`validate_suggestion`, output check), rule 7's "confirm in one sentence what you will remember".

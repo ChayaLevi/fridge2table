@@ -1,5 +1,6 @@
 """T2.3: the trace (one short line per tool call) and the per-turn usage, from mocked runs (no network)."""
 
+import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
@@ -8,7 +9,9 @@ from app.models import (
     FailedCandidate, MealCandidate, MissingReport, Recipe, StepTiming, SuggestResult, ToolTraceItem, ValidationResult,
 )
 from app.store import Store
-from app.trace import args_summary, build_trace, format_trace, result_summary, short
+from app.trace import (
+    args_summary, build_trace, format_trace, result_summary, short, short_reason, step_label, trace_sentence,
+)
 from tests.test_agent import LASAGNA_MODEL, RECIPE_MODEL, ids_by_name, reply, store  # noqa: F401 (fixture)
 
 
@@ -94,11 +97,12 @@ def test_build_trace_pairs_calls_with_returns_retries_and_steps():
     trace = build_trace(messages, steps)
     assert trace == [
         ToolTraceItem(tool="validate_suggestion", args_summary="nope", result_summary="retry: Unknown recipe 'nope'",
-                      failed=True, seconds=0.25),
+                      failed=True, seconds=0.25, label="validate suggestion retried"),
         ToolTraceItem(tool="compute_missing", args_summary="7", result_summary="retry: invalid arguments",
-                      failed=True, seconds=None),  # args failed validation: the tool never ran
+                      failed=True, seconds=None, label="invalid tool call, retried"),  # the tool never ran
         ToolTraceItem(tool="output check", args_summary="no meals",
-                      result_summary="ok (fixed check_first [] -> ['pasta'])", failed=False, seconds=0.01),
+                      result_summary="ok (fixed check_first [] -> ['pasta'])", failed=False, seconds=0.01,
+                      label="lists fixed by code"),
     ]
 
 
@@ -107,7 +111,8 @@ def test_build_trace_skips_calls_without_an_outcome_and_works_without_steps():
         ModelResponse(parts=[ToolCallPart("get_inventory", {}, tool_call_id="a"), ToolCallPart("reply", {}, tool_call_id="b")]),
         ModelRequest(parts=[ToolReturnPart("reply", "Final result processed.", tool_call_id="b")]),
     ]
-    assert build_trace(messages) == [ToolTraceItem(tool="output check", args_summary="no meals", result_summary="ok")]
+    assert build_trace(messages) == [ToolTraceItem(tool="output check", args_summary="no meals", result_summary="ok",
+                                                   label="checked by code")]
 
 
 # --- the trace of a mocked run (Done when) ----------------------------------------------------------
@@ -152,6 +157,10 @@ async def test_trace_of_a_mode_a_run_with_a_failed_output_check(store):
     text = format_trace(turn.trace)
     assert text.splitlines()[0].startswith("  - update_inventory(remove cottage cheese, add chicken) -> removed 1")
     assert text.splitlines()[2].startswith("  ! output check(zzz999) -> output check failed")
+    # T4.4: the collapsed line, in plain words
+    assert trace_sentence(turn.trace) == (
+        "4 steps · updated the inventory (removed cottage cheese, added chicken) → 2 ideas, 1 failed check "
+        "(no cream, pasta not confirmed) → answer sent back (old meal id) → checked by code")
 
 
 async def test_trace_of_a_mode_b_run(store):
@@ -175,6 +184,8 @@ async def test_trace_of_a_mode_b_run(store):
         ("output check", "Lasagna; to buy 1", "ok"),
     ]
     assert not any(t.failed for t in turn.trace)
+    assert trace_sentence(turn.trace) == (
+        "3 steps · recipe for Lasagna → 2 missing, 1 not confirmed → checked by code")
 
 
 async def test_trace_of_a_turn_without_tools(store):
@@ -197,3 +208,40 @@ def test_trace_from_stored_history_has_no_seconds():
     s.save_session_messages("s", messages)
     [item] = build_trace(s.load_session_messages("s"))
     assert item.result_summary == "to buy: cream" and item.seconds is None
+
+
+# --- plain-language labels (T4.4) -------------------------------------------------------------------
+
+@pytest.mark.parametrize("reason, expected", [
+    ("missing: cream", "no cream"),
+    ("missing: cream, egg; pantry not scanned: pasta not confirmed", "no cream or egg, pasta not confirmed"),
+    ("missing: cream, parmesan, egg", "no cream, parmesan or egg"),
+    ("violates preferences: eggplant (kids dislike eggplant)", "avoids eggplant"),
+    ("output check failed: Kung pao chicken needs peanut, not in inventory. Replace it", "no peanut"),
+    ("output check failed: Egg pasta needs pasta, not confirmed (pantry not scanned)", "pasta not confirmed"),
+    ("output check failed: unknown meal id(s) zzz; use only ids", "old meal id"),
+    ("output check failed: substitute 'mascarpone' (for ricotta) is not in the inventory", "mascarpone not in the inventory"),
+    ("output check failed: message names items of the shopping lists (ground beef): the app", "message listed the shopping items"),
+    ("output check failed: 4 meals; show at most 3", "too many meals"),
+])
+def test_short_reason(reason, expected):
+    assert short_reason(reason) == expected
+
+
+def test_step_labels():
+    assert step_label("save_preference", {"avoid": ["eggplant"]}, "Saved: kids dislike eggplant", False) == \
+        "remembered: no eggplant"
+    assert step_label("save_preference", {"avoid": []}, "Already noted: no pork", False) == "already remembered"
+    scan = ("Recognized 23 items in 2 photo(s) of: fridge.\nUncertain (2): a, b\n"
+            "Not seen in these photos, kept and marked for the user to check (4): x")
+    assert step_label("recognize_inventory", {}, scan, False) == "read 2 photos: 23 items, 2 unsure, 4 not seen"
+    assert step_label("recognize_inventory", {}, "No photos are attached to this message.", False) == "no photos to read"
+    assert step_label("reply", {}, None, False, "ok (off topic: fixed reply)") == "off topic"
+    assert step_label("validate_suggestion", {}, ValidationResult(ok=False, missing_essential=["cream"],
+                      violated_preferences=[], reason="missing: cream"), True) == "failed check (no cream)"
+    assert step_label("compute_missing", {}, MissingReport(missing_essential=[], check_first=[], missing_optional=[]),
+                      False) == "nothing missing"
+
+
+def test_trace_sentence_of_no_steps_is_empty():
+    assert trace_sentence([]) == ""

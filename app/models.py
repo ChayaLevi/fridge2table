@@ -172,6 +172,7 @@ class ToolTraceItem(BaseModel):
     result_summary: str  # short: "removed 1", "5 candidates: 4 passed, 1 failed (Carbonara: missing: cream)"
     failed: bool = False  # a failed check (incl. failed candidates), a retry or an error (warning colour, T4.4)
     seconds: float | None = None  # from TurnResult.steps; None when the call never ran (bad args)
+    label: str = ""  # plain words for the collapsed line: "5 ideas, 1 failed check (no cream)" (T4.4)
 
 
 class TurnUsage(BaseModel):
