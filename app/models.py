@@ -81,6 +81,7 @@ class Recipe(BaseModel):
     servings: int = 4
     uses_from_inventory: list[str] = []  # canonical names, filled by code, not by the model
     requested: bool = False  # True for a dish the user named (get_recipe), False for a suggest_meals idea
+    photo_query: str = ""  # 1-3 words for the card's photo search ("spinach frittata"); "" = search by the name
 
 
 class MealCandidate(BaseModel):

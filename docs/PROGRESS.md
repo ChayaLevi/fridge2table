@@ -42,7 +42,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 425 tests pass. Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 445 tests pass (2026-10-15, after the dish photos). Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -90,9 +90,32 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 - (T0.4) The human's `.env` still sets `VISION_MODEL=deepseek-v4-flash-vision-exp` / `RECIPE_MODEL=deepseek-v4-flash` (retired aliases, still served by `deepseek-flash`). Change both to `deepseek-flash`.
 - (T0.4) `CLAUDE.md`, `docs/PRODUCT.md` §9 and `docs/PLAN.md` still name the old model IDs; the human should update them or confirm the new defaults.
+- (2026-10-15, the human's question) **Named dish in Only what I have:** "I want to make a birthday cake" in 🏠 mode answers with a shopping list (powdered sugar). That is the T4.5 spec (a named dish gets its list in both modes), but the human found it surprising. Offered, waiting for a decision: (a) in home mode the agent first looks for a substitute from the inventory (powdered sugar from blended sugar), (b) in home mode it also offers a dish that needs nothing.
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-15 — Page: dish photos on the meal cards and a colourful recipe window (the human's request)
+- Why: the human wanted a more colourful card with a real photo of the dish ("I want a real photo", not the drawn emoji mock-up), and a recipe window that is less white. Not in `docs/PLAN.md`; asked for directly.
+- Built:
+  - `app/tools/photos.py` (new): `recipe_photo(recipe)` searches Pixabay (`PIXABAY_API_KEY`; Wikimedia Commons without a key), keeps hits whose first tags name the kind of dish (`rank_photos`), has `VISION_MODEL` look at the best 2 candidates per search (`PHOTO_CHECK_PROMPT`: name the dish in the photo, then accept or not), searches only the kind of dish ("frittata") if the full query found nothing, downloads the accepted image to `data/photos/<id>.jpg` (Pixabay asks for downloads, not hotlinks). A miss is remembered as `<id>.none`; a network or model failure is not. Two calls at once share one fetch.
+  - `app/models.py` / `app/tools/recipes.py`: `Recipe.photo_query` (2-3 words ending with the kind of dish, written by RECIPE_MODEL in the same call; old recipes fall back to the name up to "with").
+  - `app/api.py`: `GET /recipe/{id}/photo` (the JPEG, 404 when no photo fits, 503 when the photo service or the vision model is down). `app/config.py`: `PIXABAY_API_KEY`, `PHOTO_DIR`. `.env.example`, `.gitignore` (`data/photos/`).
+  - `app/static/index.html`: card = photo on top (fades in; a thin colour band when there is none), bigger title, chips in four colours, a green "Open recipe ›" button; the dish emoji tile is gone. Recipe window = the photo as its header with the title on it (a colour block without a photo), a floating Close, pills (⏱ time, 👥 serves, ✓ N of M at home), ingredients on a green panel with name in bold, amount in black, and a coloured tag (✓ have / use your X / 🛒 to buy on an orange row / check pantry / optional / not at home), steps on a cream panel with coloured numbered circles and the recipe's ingredients in bold. Amounts in the shopping block are black too. No emoji per ingredient (the human's choice).
+  - Tests: `tests/test_photos.py` (20, no network: `httpx.MockTransport` + a FunctionModel vision), 2 in `tests/test_api.py`, 1 in `tests/test_recipes.py`. 445 pass.
+- Decisions: tags alone are not enough: on real data a potato tortilla tagged "pizza, lasagna, pasta" and spinach dumplings for a chicken skillet got through, so the vision check was added; it is told a stand-in is fine but another kind of dish is not. A wrong photo is worse than none. This is a model judgment, not a code check, which is fine for decoration (CLAUDE.md rule 1 covers ingredients and preferences).
+- Checked on real services: 15 dish names, each photo looked at by hand, all fitting; one dish (tacos, an early version) got none. First load of a photo is 5-25 s on the company network (Pixabay's image host is slow, plus 2-7 s per check), the card shows meanwhile; then it is served from disk. Headless Edge 390x844, demo seed: the opening card and a "birthday cake" card show photos; the recipe window shows the photo edge to edge with the title, "7 of 11 at home", powdered sugar as "check pantry", 7 numbered steps with ingredients in bold, amount colour rgb(31,36,33). No page errors. (A first try had the photo inset: the welcome card's `.hero` class clashed; renamed to `.cover`.)
+- Next task must know: each new dish costs 1-4 vision calls the first time its card is shown. Without network the cards simply have no photo.
+- Open issues: see "Named dish in Only what I have" under Open issues.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_photos.py -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `445 passed`; then `20 passed`; then the server starts (needs `PIXABAY_API_KEY` in `.env`).
+Manual check: open http://localhost:8000, ask "What can I cook tonight?". Within a few seconds each card shows a photo of its dish. Tap "Open recipe": the photo is the header with the name on it, coloured pills, ingredient rows with coloured tags and black amounts, numbered coloured steps.
 
 ### 2026-10-15 — T5.2 Latency
 - Built:

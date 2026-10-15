@@ -100,6 +100,10 @@ class RecipeDraft(BaseModel):
     ingredients: list[Ingredient]
     time_minutes: int
     servings: int = 4
+    photo_query: str = Field("", description="2 or 3 English words to search a stock photo of the finished dish: "
+                                             "its main ingredient, then the kind of dish as the LAST word, never an "
+                                             "ingredient: 'spinach frittata', 'tomato pasta', 'lentil soup', "
+                                             "'chicken skillet', 'beef taco'")
 
 
 class StepsDraft(BaseModel):
@@ -154,7 +158,7 @@ def _clean(draft: RecipeDraft, *dish_names: str) -> Recipe:
     return Recipe(
         name=draft.name.strip(),
         ingredients=force_named_essential(list(ingredients.values()), draft.name, *dish_names),
-        time_minutes=draft.time_minutes, servings=draft.servings,
+        time_minutes=draft.time_minutes, servings=draft.servings, photo_query=" ".join(draft.photo_query.split()),
     )
 
 

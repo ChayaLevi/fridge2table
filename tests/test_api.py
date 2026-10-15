@@ -314,3 +314,39 @@ def test_demo_seed_file_is_valid():
         InventoryChange(op="add", **item)
     for pref in seed.get("preferences", []):
         Preference.model_validate(pref)
+
+
+# --- /recipe/{id}/photo ---------------------------------------------------------------------------
+
+def test_photo_is_served_or_404(client, store, tmp_path, monkeypatch):
+    from app.models import Recipe
+    from app.tools import photos
+
+    found = tmp_path / "abc123.jpg"
+    found.write_bytes(b"\xff\xd8jpeg")
+    monkeypatch.setattr(photos, "recipe_photo", lambda r: _done(found if r.id == "abc123" else None))
+    for rid in ("abc123", "def456"):
+        store.save_recipe(Recipe(id=rid, name="Omelette", time_minutes=10, ingredients=[]))
+    r = client.get("/recipe/abc123/photo")
+    assert r.status_code == 200 and r.content == b"\xff\xd8jpeg" and r.headers["content-type"] == "image/jpeg"
+    assert client.get("/recipe/def456/photo").status_code == 404
+    assert client.get("/recipe/nope/photo").status_code == 404
+
+
+def test_photo_service_down_is_503(client, store, monkeypatch):
+    import httpx
+
+    from app.models import Recipe
+    from app.tools import photos
+
+    async def down(_):
+        raise httpx.ConnectError("no network")
+
+    monkeypatch.setattr(photos, "recipe_photo", down)
+    store.save_recipe(Recipe(id="abc123", name="Omelette", time_minutes=10, ingredients=[]))
+    r = client.get("/recipe/abc123/photo")
+    assert r.status_code == 503 and r.json()["detail"] == "The photo service did not answer."
+
+
+async def _done(value):
+    return value

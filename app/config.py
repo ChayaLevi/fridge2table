@@ -24,9 +24,11 @@ if not DB_PATH.is_absolute():
 UNCERTAIN_THRESHOLD = float(os.getenv("UNCERTAIN_THRESHOLD") or 0.6)
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN") or None
+PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY") or None  # dish photos; without it Wikimedia Commons is searched
 
 DATA_DIR = ROOT / "data"
 STAPLES_PATH = DATA_DIR / "staples.json"
 SYNONYMS_PATH = DATA_DIR / "synonyms.json"
 DEMO_SEED_PATH = DATA_DIR / "demo_seed.json"
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or DATA_DIR / "uploads")  # photos sent to /chat
+PHOTO_DIR = Path(os.getenv("PHOTO_DIR") or DATA_DIR / "photos")  # downloaded dish photos, one per recipe id

@@ -65,6 +65,16 @@ async def test_suggest_meals_parses_and_normalizes(store):
     assert r.time_minutes == 20 and r.servings == 4
 
 
+async def test_suggest_meals_keeps_the_photo_query(store):
+    model, _ = fake_model({"recipes": [
+        {**dish("Spinach and feta frittata", ing("egg", "egg")), "photo_query": "  spinach   frittata "},
+        dish("Toast", ing("bread", "grain")),
+    ]})
+    frittata, toast = await suggest_meals(store, model=model)
+    assert frittata.photo_query == "spinach frittata" and toast.photo_query == ""
+    assert store.load_recipe(frittata.id).photo_query == "spinach frittata"
+
+
 async def test_suggest_meals_fills_uses_from_inventory_use_soon_first(store):
     model, _ = fake_model({"recipes": [
         dish("Frittata", ing("egg", "egg"), ing("cheddar", "dairy"), ing("spinach", "vegetable"), ing("salt", "spice")),

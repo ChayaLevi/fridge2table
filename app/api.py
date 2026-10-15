@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, get_args
 
+import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, computed_field
@@ -28,7 +29,7 @@ from app.models import (
     TurnUsage,
 )
 from app.store import Store
-from app.tools import inventory, recipes
+from app.tools import inventory, photos, recipes
 from app.trace import trace_sentence
 
 log = logging.getLogger(__name__)
@@ -223,6 +224,25 @@ async def recipe_steps(
     except (UnexpectedModelBehavior, ValueError) as e:
         log.warning("steps for %s failed: %s", recipe_id, e)
         raise HTTPException(502, "Could not write the steps for this recipe. Please try again.") from e
+
+
+@app.get("/recipe/{recipe_id}/photo", response_class=FileResponse,
+         responses={200: {"content": {"image/jpeg": {}}}, 404: {"description": "No photo matches this dish"}})
+async def recipe_photo(recipe_id: str, store: StoreDep) -> FileResponse:
+    """A photo of the dish for its card and recipe window: searched (Pixabay, or Wikimedia Commons without
+    PIXABAY_API_KEY), checked by VISION_MODEL and downloaded the first time, then from data/photos.
+    404 = no photo shows this dish."""
+    recipe = store.load_recipe(recipe_id)
+    if recipe is None:
+        raise HTTPException(404, f"Unknown recipe id {recipe_id!r}.")
+    try:
+        path = await photos.recipe_photo(recipe)
+    except (httpx.HTTPError, ModelAPIError) as e:
+        log.warning("photo for %s failed: %s", recipe_id, e)
+        raise HTTPException(503, "The photo service did not answer.") from e
+    if path is None:
+        raise HTTPException(404, "No photo matches this dish.")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
 @app.get("/opening")

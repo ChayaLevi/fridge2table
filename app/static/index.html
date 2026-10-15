@@ -56,24 +56,36 @@
   .hero .go { display: block; width: 100%; border: 0; border-radius: 24px; height: 48px; background: var(--accent);
               color: #fff; font-weight: 700; font-size: 16px; }
   .hero .alt { margin-top: 8px; border: 0; background: none; color: var(--accent); font-weight: 600; padding: 8px; }
-  .cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-  .card { text-align: left; background: var(--surface); border: 0; border-radius: var(--radius); padding: 12px;
-          width: 100%; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: start;
-          box-shadow: 0 1px 2px rgba(31,36,33,.07), 0 2px 8px rgba(31,36,33,.05); }
-  .card:active { background: var(--accent-soft); }
-  .card .tile { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; font-size: 28px; }
-  .tile.t0 { background: #e4f1e8; } .tile.t1 { background: #fdf0e3; } .tile.t2 { background: #fdf6d8; }
-  .tile.t3 { background: #e8eefb; }
-  .card .title { font-weight: 650; font-size: 16px; line-height: 1.25; }
+  .cards { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+  .card { text-align: left; background: var(--surface); border: 0; border-radius: 16px; padding: 0; width: 100%;
+          overflow: hidden; display: block;
+          box-shadow: 0 1px 2px rgba(31,36,33,.07), 0 4px 14px rgba(31,36,33,.08); }
+  .card:active { transform: scale(.99); }
+  /* The dish photo (GET /recipe/{id}/photo). The colour shows while it loads; with no photo it stays a
+     thin coloured band. */
+  .card .pic { height: 140px; transition: height .2s; }
+  .card .pic img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .3s; }
+  .card .pic img.loaded { opacity: 1; }
+  .card .pic.none { height: 8px; }
+  .band0 { background: linear-gradient(135deg, #b8e994, #4caf7a); }
+  .band1 { background: linear-gradient(135deg, #ffd29a, #e8823b); }
+  .band2 { background: linear-gradient(135deg, #ffe08a, #f4b43c); }
+  .band3 { background: linear-gradient(135deg, #a9c8ff, #5b84e0); }
+  .card .txt { padding: 10px 14px 12px; }
+  .card .title { font-weight: 700; font-size: 17px; line-height: 1.25; }
   .card .meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
   .card .soonline { color: var(--warn); font-size: 13px; font-weight: 600; margin-top: 2px; }
   .card .buyline { font-size: 13px; margin-top: 2px; }
   .card .buyline .none { color: var(--accent); }
   .offer { margin-top: 8px; border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
            border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 600; }
-  .card .open { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 6px; }
+  .card .open { display: inline-block; margin-top: 10px; padding: 5px 14px; border-radius: 999px;
+                background: var(--accent); color: #fff; font-size: 13px; font-weight: 650; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .card .chip:nth-child(4n+2) { background: #e8eefb; color: #3b5fae; }
+  .card .chip:nth-child(4n+3) { background: #fdf6d8; color: #8a6a00; }
+  .card .chip:nth-child(4n+4) { background: #f6e8fb; color: #8a3fa8; }
   .chip.soon { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 
   .shop { margin-top: 8px; background: var(--surface); border-radius: var(--radius); padding: 10px 12px;
@@ -207,7 +219,7 @@
                background: var(--bg); color: var(--text); }
   .add button { border: 0; border-radius: 8px; background: var(--accent-soft); color: var(--accent); padding: 0 12px; }
   .empty-loc { padding: 8px 12px; color: var(--muted); font-size: 13px; }
-  .shop .amount { color: var(--muted); font-size: 13px; }
+  .shop .amount { color: var(--text); font-size: 13px; }
   .hbtn.icon { padding: 6px 10px; }
   .sheet .chats { list-style: none; margin: 0; padding: 0; }
   .hbtn { white-space: nowrap; }
@@ -256,6 +268,50 @@
                  background-repeat: no-repeat; background-size: 100% 40px, 100% 40px, 100% 12px, 100% 12px;
                  background-attachment: local, local, scroll, scroll; }
   .sheet .meta { color: var(--muted); margin-bottom: 8px; }
+  /* The recipe window: the photo with the title on it, coloured pills, ingredients and steps on tinted panels. */
+  #sheet { overflow: hidden; }
+  #sheet .float { position: absolute; right: 12px; top: 12px; z-index: 2; border: 0; background: rgba(255,255,255,.95);
+                  box-shadow: 0 1px 6px rgba(0,0,0,.25); font-weight: 600; }
+  #sheet .body { padding-top: 0; }
+  #sheet .cover { position: relative; height: 210px; margin: 0 -16px; }
+  #sheet .cover.nophoto { height: 110px; }
+  #sheet .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #sheet .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 35%, rgba(0,0,0,.65)); }
+  #sheet .cover h2 { position: absolute; left: 16px; right: 16px; bottom: 12px; margin: 0; z-index: 1; color: #fff;
+                    font-size: 22px; line-height: 1.2; text-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  #sheet .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  #sheet .pill { padding: 4px 11px; border-radius: 999px; font-size: 13px; font-weight: 650; }
+  #sheet .p-time { background: var(--warn-soft); color: var(--warn); }
+  #sheet .p-serve { background: #e8eefb; color: #3b5fae; }
+  #sheet .p-have { background: var(--accent-soft); color: var(--accent); }
+  #sheet .panel { margin-top: 14px; border-radius: 14px; padding: 12px 12px 8px; }
+  #sheet .panel h3 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: baseline; gap: 6px; }
+  #sheet .panel h3 .n { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--muted); }
+  #sheet .ingredients { background: #f3f8f4; }
+  #sheet .ingredients ul { list-style: none; margin: 0; padding: 0; }
+  #sheet .ingredients li { display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 0;
+                           border-top: 1px solid rgba(47,125,79,.12); }
+  #sheet .ingredients li:first-child { border-top: 0; }
+  #sheet .ingredients li.tobuy { background: #fff3e6; margin: 0 -12px; padding: 7px 12px; }
+  #sheet .ingredients .what { flex: 1; min-width: 0; }
+  #sheet .ingredients .nm { font-weight: 650; }
+  #sheet .ingredients .amt { color: var(--text); }
+  #sheet .ingredients .optnote { color: var(--muted); font-size: 12px; }
+  #sheet .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  #sheet .t-have { background: #d5ecdc; color: var(--accent); }
+  #sheet .t-sub { background: #d5ecdc; color: var(--accent); white-space: normal; text-align: right; }
+  #sheet .t-buy { background: #ffe2c7; color: var(--warn); }
+  #sheet .t-check { background: #fdf6d8; color: #8a6a00; }
+  #sheet .t-none { background: #ececec; color: var(--muted); }
+  #sheet .steps { background: #fffaf0; }
+  #sheet .steps ol { list-style: none; margin: 0; padding: 0; }
+  #sheet .steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; margin: 0; padding: 6px 0; }
+  #sheet .steps .num { width: 28px; height: 28px; border-radius: 50%; background: #f4b43c; color: #fff; font-weight: 800;
+                       display: grid; place-items: center; font-size: 14px; }
+  #sheet .steps li:nth-child(3n+2) .num { background: #e8823b; }
+  #sheet .steps li:nth-child(3n) .num { background: #4caf7a; }
+  #sheet .steps .txt { align-self: center; }
+  #sheet .steps b { color: #8a4b0b; }
   .sheet h3 { font-size: 14px; margin: 14px 0 6px; }
   .sheet ul, .sheet ol { margin: 0; padding-left: 20px; }
   .sheet li { margin: 3px 0; }
@@ -323,7 +379,7 @@
 
 <section class="sheet" id="sheet" hidden aria-label="Recipe">
   <div class="grip"></div>
-  <div class="head"><h2 id="sheetTitle"></h2><button class="hbtn" id="closeSheet" type="button">Close</button></div>
+  <button class="hbtn float" id="closeSheet" type="button">Close</button>
   <div class="body" id="sheetBody"></div>
 </section>
 
@@ -399,24 +455,11 @@ function itemEmoji(item) {
   return hit ? hit[1] : CATEGORY_EMOJI[item.category] || "🍽️";
 }
 
-// An emoji for a dish, from words of its name (the first rule that matches wins).
-const DISH_EMOJI = [
-  [/pancake|crepe|waffle/, "🥞"], [/pizza/, "🍕"], [/burger/, "🍔"],
-  [/lasagn|pasta|spaghetti|penne|fusilli|macaroni|noodle|carbonara|bolognese/, "🍝"], [/soup|stew|broth/, "🍲"],
-  [/curry/, "🍛"], [/salad/, "🥗"], [/omelet|frittata|scrambl|shakshuka|\beggs?\b/, "🍳"],
-  [/stir.?fry|skillet|saut/, "🥘"], [/rice|risotto|pilaf/, "🍚"], [/quesadilla|taco|burrito|wrap/, "🌮"],
-  [/sandwich|toast|panini/, "🥪"], [/bake|gratin|casserole/, "🥘"], [/chicken/, "🍗"], [/fish|salmon|tuna/, "🐟"],
-  [/cake|muffin|cookie/, "🧁"],
-];
-function dishEmoji(name) {
-  const low = String(name).toLowerCase();
-  const hit = DISH_EMOJI.find(([re]) => re.test(low));
-  return hit ? hit[1] : "🍽️";
-}
-function tileColor(name) {
+// One of four colours for a dish, the same every time for the same name.
+function dishColor(name) {
   let h = 0;
   for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return `t${h % 4}`;
+  return `band${h % 4}`;
 }
 
 function itemsByName() {
@@ -643,17 +686,25 @@ function renderCard(meal, data, perCard = false) {
     return el("span", { class: "chip" + (item && item.use_soon ? " soon" : "") }, item ? item.display_name : name);
   });
   if (uses.length > 4) shown.push(el("span", { class: "chip" }, `+${uses.length - 4}`));
-  const meta = [`⏱ ${meal.time_minutes} min`];
-  if (uses.length) meta.push(`uses ${uses.length} thing${uses.length === 1 ? "" : "s"} you have`);
+  const meta = uses.length ? `uses ${uses.length} thing${uses.length === 1 ? "" : "s"} you have` : "";
+  const pic = el("div", { class: `pic ${dishColor(meal.name)}` },
+    dishPhoto(meal, (ok) => pic.classList.toggle("none", !ok)));
   return el("button", { class: "card", type: "button", onclick: () => openRecipe(meal, data) },
-    el("div", { class: `tile ${tileColor(meal.name)}`, "aria-hidden": "true" }, dishEmoji(meal.name)),
-    el("div", {},
+    pic,
+    el("div", { class: "txt" },
       el("div", { class: "title" }, meal.name),
-      el("div", { class: "meta" }, meta.join(" · ")),
+      el("div", { class: "meta" }, `⏱ ${meal.time_minutes} min` + (meta ? ` · ${meta}` : "")),
       perCard ? buyLine(meal, data.reply) : null,
       soon.length ? el("div", { class: "soonline" }, `⏰ uses your ${soon.join(", ")}: needs using`) : null,
       shown.length ? el("div", { class: "chips" }, shown) : null,
       el("div", { class: "open" }, "Open recipe ›")));
+}
+
+// The dish photo; `done(true)` once it shows, `done(false)` if there is none (404) or it fails to load.
+function dishPhoto(meal, done) {
+  return el("img", { src: `/recipe/${encodeURIComponent(meal.id)}/photo`, alt: "", loading: "lazy",
+    onload: (e) => { e.target.classList.add("loaded"); done(true); },
+    onerror: (e) => { e.target.remove(); done(false); } });
 }
 
 // The amount the reply's recipe(s) need of an ingredient ("500 g"), or "" (names are canonical).
@@ -704,36 +755,74 @@ function renderTrace(trace, usage) {
 
 // --- recipe sheet --------------------------------------------------------------------------------
 
-// What an ingredient's line says: in the kitchen (staples too), the substitute to use, to buy, or check
-// the pantry. Names are canonical on both sides (the server normalizes them).
+// An ingredient's status as [kind, label]: in the kitchen (staples too), the substitute to use, to buy, or
+// check the pantry. Names are canonical on both sides (the server normalizes them).
 function ingredientStatus(ing, reply) {
   const low = (x) => String(x).toLowerCase();
   const sub = (reply.substitutions || []).find((s) => low(s.missing) === low(ing.name));
-  if (itemsByName().has(ing.name)) return el("span", { class: "have" }, "✓ you have it");
-  if (sub) return el("span", { class: "sub" }, `use your ${displayName(sub.use_instead)} instead`);
-  if ((reply.shopping_list || []).some((x) => low(x) === low(ing.name))) return el("span", { class: "buy" }, "to buy");
-  if ((reply.check_first || []).some((x) => low(x) === low(ing.name))) {
-    return el("span", { class: "opt" }, "check your pantry");
+  if (itemsByName().has(ing.name)) return ["have", "✓ have"];
+  if (sub) return ["sub", `use your ${displayName(sub.use_instead)}`];
+  if ((reply.shopping_list || []).some((x) => low(x) === low(ing.name))) return ["buy", "🛒 to buy"];
+  if ((reply.check_first || []).some((x) => low(x) === low(ing.name))) return ["check", "check pantry"];
+  return ["none", ing.essential ? "not at home" : "optional"];
+}
+
+function ingredientRow(ing, reply) {
+  const [kind, label] = ingredientStatus(ing, reply);
+  return el("li", { class: kind === "buy" ? "tobuy" : "" },
+    el("span", { class: "what" },
+      el("span", { class: "nm" }, cap(displayName(ing.name))),
+      ing.amount ? el("span", { class: "amt" }, ` · ${ing.amount}`) : null,
+      ing.essential || kind === "none" ? null : el("span", { class: "optnote" }, " (optional)")),
+    el("span", { class: `tag t-${kind}` }, label));
+}
+
+// A step's text with the recipe's ingredients in bold ("Wilt the **spinach** ..."); plurals match too.
+function stepText(text, ingredients) {
+  const names = [...new Set(ingredients.flatMap((i) => [i.name, displayName(i.name)]).map((n) => String(n).toLowerCase()))]
+    .filter(Boolean).sort((a, b) => b.length - a.length)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!names.length) return [text];
+  const re = new RegExp(`\\b(${names.join("|")})(?:e?s)?\\b`, "gi");
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    out.push(text.slice(last, m.index), el("b", {}, m[0]));
+    last = m.index + m[0].length;
   }
-  return el("span", { class: "opt" }, ing.essential ? "not in your kitchen" : "optional, not in your kitchen");
+  out.push(text.slice(last));
+  return out;
+}
+
+function stepList(steps, ingredients) {
+  return el("ol", {}, steps.map((s, i) => el("li", {},
+    el("span", { class: "num" }, String(i + 1)), el("span", { class: "txt" }, stepText(s, ingredients)))));
 }
 
 async function openRecipe(meal, data) {
   const reply = replyForMeal((data && data.reply) || {}, meal);
-  $("sheetTitle").textContent = meal.name;
   const body = $("sheetBody");
   const steps = el("div", {}, el("span", { class: "spinner" }), "Writing the steps…");
   // Mode B: the same shopping block as under the card, at the top of the recipe.
   const modeB = (reply.shopping_list || []).length || (reply.check_first || []).length
     || (reply.substitutions || []).length || isModeB(data || {});
+  const cover = el("div", { class: `cover ${dishColor(meal.name)}` },
+    el("img", { src: `/recipe/${encodeURIComponent(meal.id)}/photo`, alt: "",
+                onerror: (e) => { e.target.remove(); cover.classList.add("nophoto"); } }),
+    el("h2", {}, meal.name));
+  const ings = meal.ingredients;
+  const have = ings.filter((i) => ingredientStatus(i, reply)[0] === "have").length;
   body.replaceChildren(...[
-    el("div", { class: "meta" }, `${meal.time_minutes} min · serves ${meal.servings}`),
+    cover,
+    el("div", { class: "pills" },
+      el("span", { class: "pill p-time" }, `⏱ ${meal.time_minutes} min`),
+      el("span", { class: "pill p-serve" }, `👥 serves ${meal.servings}`),
+      el("span", { class: "pill p-have" }, `✓ ${have} of ${ings.length} at home`)),
     modeB ? renderShop(reply) : null,
-    el("h3", {}, "Ingredients"),
-    el("ul", {}, meal.ingredients.map((i) => el("li", {},
-      `${displayName(i.name)}: ${i.amount}` + (i.essential ? "" : " (optional)") + " · ", ingredientStatus(i, reply)))),
-    el("h3", {}, "Steps"),
-    steps,
+    el("div", { class: "panel ingredients" },
+      el("h3", {}, "🧺 Ingredients", el("span", { class: "n" }, `${ings.length} item${ings.length === 1 ? "" : "s"}`)),
+      el("ul", {}, ings.map((i) => ingredientRow(i, reply)))),
+    el("div", { class: "panel steps" }, el("h3", {}, "👩‍🍳 Steps"), steps),
   ].filter(Boolean));
   showOverlay("sheet");
   body.scrollTop = 0;  // after showing: a hidden element keeps its old scroll position
@@ -744,7 +833,7 @@ async function openRecipe(meal, data) {
     const query = subs.toString() ? `?${subs}` : "";
     const recipe = meal.steps && meal.steps.length ? meal : await api(`/recipe/${encodeURIComponent(meal.id)}/steps${query}`);
     meal.steps = recipe.steps;
-    steps.replaceChildren(el("ol", {}, recipe.steps.map((s) => el("li", {}, s))));
+    steps.replaceChildren(stepList(recipe.steps, ings));
   } catch (err) {
     steps.replaceChildren(el("div", { class: "opt" }, err.message));
   }
