@@ -58,7 +58,10 @@ def test_result_summaries():
     report = MissingReport(missing_essential=["ricotta"], check_first=["pasta"], missing_optional=[])
     assert result_summary("compute_missing", {}, report) == ("to buy: ricotta; check first: pasta", False)
     candidate = MealCandidate(id="x", name="Lasagna", time_minutes=60, ingredients=["pasta: 1", "egg: 2"])
-    assert result_summary("get_recipe", {}, candidate) == ("Lasagna, 2 ingredients, 60 min", False)
+    assert result_summary("get_recipe", {}, candidate) == ("Lasagna, 2 ingredients, 60 min; nothing missing", False)
+    lacking = candidate.model_copy(update={"to_buy": ["ricotta"], "check_first": ["pasta"]})
+    assert result_summary("get_recipe", {}, lacking) == (
+        "Lasagna, 2 ingredients, 60 min; to buy: ricotta; check first: pasta", False)
     assert result_summary("save_preference", {}, "Saved: no pork (avoid: pork)") == ("Saved: no pork (avoid: pork)", False)
     recognized = "Recognized 12 items in 2 photo(s) of: fridge.\nUncertain (2): a, b\nInventory now:\n..."
     assert result_summary("recognize_inventory", {}, recognized) == (
@@ -179,13 +182,13 @@ async def test_trace_of_a_mode_b_run(store):
 
     turn = await run_turn(store, "s1", "I want to make lasagna", model=FunctionModel(fn), recipe_model=LASAGNA_MODEL)
     assert [(t.tool, t.args_summary, t.result_summary) for t in turn.trace] == [
-        ("get_recipe", "lasagna", "Lasagna, 4 ingredients, 60 min"),
+        ("get_recipe", "lasagna", "Lasagna, 4 ingredients, 60 min; to buy: ricotta, ground beef; check first: pasta"),
         ("compute_missing", "Lasagna", "to buy: ricotta, ground beef; check first: pasta"),
         ("output check", "Lasagna; to buy 1", "ok"),
     ]
     assert not any(t.failed for t in turn.trace)
     assert trace_sentence(turn.trace) == (
-        "3 steps · recipe for Lasagna → 2 missing, 1 not confirmed → checked by code")
+        "3 steps · recipe for Lasagna, 2 missing, 1 not confirmed → 2 missing, 1 not confirmed → checked by code")
 
 
 async def test_trace_of_a_turn_without_tools(store):
@@ -241,6 +244,11 @@ def test_step_labels():
                       violated_preferences=[], reason="missing: cream"), True) == "failed check (no cream)"
     assert step_label("compute_missing", {}, MissingReport(missing_essential=[], check_first=[], missing_optional=[]),
                       False) == "nothing missing"
+    lasagna = MealCandidate(id="x", name="Lasagna", time_minutes=60, ingredients=[], to_buy=["ricotta", "beef"],
+                            check_first=["pasta"])
+    assert step_label("get_recipe", {}, lasagna, False) == "recipe for Lasagna, 2 missing, 1 not confirmed"
+    assert step_label("get_recipe", {}, lasagna.model_copy(update={"to_buy": [], "check_first": []}),
+                      False) == "recipe for Lasagna, nothing missing"
 
 
 def test_trace_sentence_of_no_steps_is_empty():

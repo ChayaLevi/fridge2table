@@ -613,7 +613,7 @@ function renderAgent(data, asked) {
 }
 
 function isModeB(data) {
-  return (data.trace || []).some((t) => t.tool === "compute_missing");
+  return (data.trace || []).some((t) => t.tool === "compute_missing" || t.tool === "get_recipe");
 }
 
 // The reply's lists cut down to one meal's ingredients (a reply with several meals has one combined list).

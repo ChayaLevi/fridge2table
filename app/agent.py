@@ -103,14 +103,14 @@ after the second call, say so in one sentence (the app then offers the user a "S
 In SHOPPING OK mode a passed candidate may list to_buy and check_first: shopping_list = the to_buy of \
 the meals you show, check_first = their check_first, and message names no ingredient ("These need a \
 couple of things from the shop; each card says what.").
-4. Mode B (the user names a dish they want, in either cooking mode): call get_recipe, then \
-compute_missing. Then, before writing the reply, go through each missing \
-essential ingredient and look in the inventory for a substitute that plays the same role in the dish \
+4. Mode B (the user names a dish they want, in either cooking mode): call get_recipe; it also returns \
+what is missing (to_buy, check_first), computed by code. Then, before writing the reply, go through each \
+to_buy ingredient and look in the inventory for a substitute that plays the same role in the dish \
 (cottage cheese for ricotta, greek yogurt for sour cream, butter for oil, one hard cheese for another). \
 Do not swap the ingredient that defines the dish (no chicken in a beef bolognese, no other noodles for \
 lasagna sheets). Every substitute you suggest goes in substitutions (use_instead must be an inventory \
-item), never only in message. shopping_list = the report's missing_essential minus the substituted \
-items; check_first = the report's check_first. Put the recipe's id in meal_ids (that one dish). The app \
+item), never only in message. shopping_list = to_buy minus the substituted items; check_first = the \
+recipe's check_first. Put the recipe's id in meal_ids (that one dish). The app \
 shows To buy and Check your pantry first under the recipe. So in Mode B, message is one sentence that \
 names no ingredient except the substitution pairs, and gives no counts: "You can make it with your \
 cottage cheese instead of ricotta; the shopping list is below." / "You have everything for it." / "You \
@@ -352,14 +352,20 @@ async def suggest_meals(
 
 @toolset.tool
 async def get_recipe(ctx: RunContext[Deps], dish: str) -> MealCandidate:
-    """The standard home recipe for a dish the user named (Mode B). Not checked: call compute_missing next.
+    """The standard home recipe for a dish the user named (Mode B), with what the household lacks for it.
 
     dish: the dish name as the user said it ("lasagna", "spaghetti bolognese"). Returns the recipe's id,
-    ingredients and time; put the id in meal_ids when you present the dish.
+    ingredients and time, and the missing report computed by code against the inventory: to_buy =
+    essential ingredients the household lacks; check_first = pantry-type ones not confirmed because the
+    pantry was not scanned. No need to call compute_missing after it. Put the id in meal_ids when you
+    present the dish.
     """
-    recipe = _remember(ctx, await recipes.get_recipe(ctx.deps.store, dish, model=_recipe_model(ctx)))
-    _log("get_recipe", dish, f"{recipe.id} {recipe.name}: {len(recipe.ingredients)} ingredients, {recipe.time_minutes} min")
-    return MealCandidate.from_recipe(recipe)
+    store = ctx.deps.store
+    recipe = _remember(ctx, await recipes.get_recipe(store, dish, model=_recipe_model(ctx)))
+    report = checks.compute_missing(recipe, inventory.get_inventory(store), store.load_scan_state())
+    _log("get_recipe", dish, f"{recipe.id} {recipe.name}: {len(recipe.ingredients)} ingredients, "
+                             f"{recipe.time_minutes} min; {report.summary()}")
+    return MealCandidate.from_recipe(recipe, report)
 
 
 @toolset.tool

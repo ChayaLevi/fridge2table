@@ -31,25 +31,25 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [~] T4.4 Trace UI polish (built; waiting for the human to confirm it reads well on a phone)
 - [x] T4.5 Cooking mode switch (added 2026-10-15 at the human's request)
 - [ ] T5.1 Vision model comparison
-- [ ] T5.2 Latency
+- [x] T5.2 Latency (numbers in `eval/RESULTS.md`)
 - [ ] T5.3 Real user run #1 + decision point 🧑
 - [ ] P6 Fixes (+ T6.1, T6.2 if the decision point passed)
 - [ ] P7 Freeze 🧑
 
 ## Next up
 
-- **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task after that: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing) and **T5.2 Latency** (no human needed). P4 is otherwise done.
+- **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing). T5.2 is done (2026-10-15). After T5.1: T5.3, the real user run (🧑).
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 420 tests pass. Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 425 tests pass. Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
 Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=https://api.deepseek.com`); IDs verified in T0.4 (2026-10-12) against `GET /models` and DeepSeek's pricing page.
 
 - VISION_MODEL: `deepseek-flash` (DeepSeek-V4.1-Flash, the only DeepSeek model that accepts images; temporary, swap to Qwen3.8 Max once that license is approved; decided on our photos in T1.4/T5.1)
-- AGENT_MODEL: `deepseek-v4-pro` (text only; try `deepseek-flash` only if turns are too slow, T5.2)
+- AGENT_MODEL: `deepseek-v4-pro` (text only; kept after T5.2: `deepseek-flash` is 2x faster but broke the "do not swap the defining ingredient" rule, see `eval/RESULTS.md`; it is the fallback if the demo-day API is slow)
 - RECIPE_MODEL: `deepseek-flash`
 - `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired aliases: still accepted, served by `deepseek-flash`.
 - VISION_TILES: 1 (best value chosen in T1.4)
@@ -69,6 +69,9 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - Repo was not a git repo; `git init` done in T0.1.
 
 ## Open issues
+
+- (T5.2, 2026-10-15) The DeepSeek API's speed changes over the day: one `deepseek-v4-pro` agent call took about 6 s at 12:05 and 2-2.5 s at 12:30. All targets hold in both, but check with `uv run python eval/run_latency.py --only mode_a,mode_b` before the demo.
+- (T4.5 / T5.2, 2026-10-15) PRODUCT §10 asks that "at least once in the demo, the trace shows the agent fixing a failed suggestion". Since T4.5, Only what I have no longer proposes the classic dish with missing items, so failed candidates are rarer (scenario 3 no longer shows one). They still happen (an unscanned pantry, a too-long Shopping OK list, an output-check retry), but plan a demo step that shows one (e.g. "creamy pasta" with the pantry not scanned), or ask the human whether to bring the classic-first candidate back as a trace-only failure.
 
 - ~~(2026-10-14) Recipe steps ignored the substitutions ("mix the ricotta" with cottage cheese as the substitute)~~ Fixed the same day: the page sends the reply's substitutions to `GET /recipe/{id}/steps?sub=...`.
 - ~~(T3.2) Network loss on 2026-10-14~~ Resolved the same day: the app's `ModelAPIError: Connection error` was a real outage, gone later. Note: `curl` on this machine still fails with `CRYPT_E_NO_REVOCATION_CHECK` (Windows schannel cannot reach the certificate revocation server); that is curl only, Python (httpx) connects fine. To test the API connection, use `uv run python -c "import httpx; print(httpx.get('https://api.deepseek.com/models').status_code)"` (401 without a key = reachable), not curl.
@@ -90,6 +93,29 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-15 — T5.2 Latency
+- Built:
+  - `eval/run_latency.py` (new): real models, sequential, a fresh in-memory store per run (demo seed). Cases: photo → inventory (1 and 4 photos, stand-in `tests/fixtures/coffee.jpg`), opening, Mode A (Only what I have, Shopping OK), Mode B (lasagna), recipe steps. It splits `TurnResult.steps` into agent model / recipe-vision model / other, counts agent calls and output-check retries, prints a markdown table with the PRODUCT §10 targets, and saves JSON in `eval/results/`. `--write` replaces only the block between `<!-- latency:begin -->` and `<!-- latency:end -->` in `eval/RESULTS.md`. `tests/test_latency.py` (4 tests, no network).
+  - `eval/RESULTS.md` (new): the table and the notes below.
+  - **Mode B in 2 agent calls:** the `get_recipe` tool (`app/agent.py`) now returns the missing report with the recipe (`MealCandidate.to_buy` / `check_first`, computed by `checks.compute_missing`), and rule 4 of the instructions uses it, so the agent no longer calls `compute_missing` (that tool stays for re-checks). Trace (`app/trace.py`): `get_recipe` reads "recipe for Lasagna, 2 missing, 1 not confirmed" (`_missing_words`, shared with compute_missing). The page's `isModeB` also accepts `get_recipe`. Scenarios 4, 5, 10 expect `[get_recipe]`; 4 also expects no `compute_missing`.
+- Numbers (5 runs each, 12:30): photo 1 / 4 photos 8.7 / 10.4 s (max 14.5), opening 8.5 s, Mode A 10.9 s (Shopping OK 10.5), Mode B 7.0 s, steps 2.8 s. All under the targets (30 s photos, 25 s turns). At 12:05 the API was twice as slow (agent call ~6 s): Mode A 19.6 s, Mode B 22.6 s with a max of 29.4 s over target (3 agent calls then + one retry). That Mode B case is what the 2-call change fixes.
+- Decisions:
+  - **AGENT_MODEL stays `deepseek-v4-pro`.** `deepseek-flash` (Mode A 11.0 s, Mode B 9.5 s in the slow hour; suite 28/28) suggested chicken for the beef in bolognese and lasagna, and said "Four creamy pasta options" with 3 shown. The code cannot catch either. Flash is the fallback for a slow demo day.
+  - **No streaming** of the message text: the final agent call's first token comes 1.2-2.3 s in and the call ends at 2-3.5 s, so streaming would gain about 1 s, and the cards still need the whole reply. Explained in `eval/RESULTS.md`, as the plan allows ("or the gap is explained").
+  - `suggest_meals` keeps n=5.
+- Checked: `uv run pytest -q` 425 passed; scenarios 14/14 (pro, after the change); 4, 5, 10 3/3 each, no defining-ingredient swaps.
+- Next task must know: `get_recipe` returns `to_buy` / `check_first`; `compute_missing` is still a tool but Mode B does not need it. Re-run `eval/run_latency.py --write` after model or prompt changes. The photo cases use one small stand-in photo; T5.1 should re-measure them with real photos.
+- Open issues: API speed swings; failed-suggestion moment in the demo (see Open issues).
+
+**How to verify**
+```
+uv run pytest -q
+uv run python eval/run_latency.py --repeat 2 --only mode_a,mode_b
+uv run python eval/run_scenarios.py --only 4
+```
+Expected: `425 passed`; then a table with Mode A and Mode B lines, each with 2 agent calls and a check mark in the Target column (medians around 7-11 s when the API is fast, up to about twice that when it is slow); then `1/1 passed` with `tools: get_recipe > output check` (no compute_missing).
+Manual check: open `eval/RESULTS.md`: the latency table, then the notes (slow vs fast hour, pro vs flash, no streaming). Then run the app (`uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000`), seed it in `/docs` with `POST /admin/seed`, ask "I want to make lasagna" and open the trace line under the reply: it reads "2 steps · recipe for Lasagna, N missing, ... → checked by code" (one step more if an output check failed and the agent fixed its reply).
 
 ### 2026-10-15 — T4.5 Cooking mode switch (the human's request)
 - Why: the human found "recipes from what we have or not" muddled. Before, Mode A could still end with a shopping list (the recipe model was told to make the first dish the classic version, and rule 3 let the agent show a failed candidate as a Mode B answer), so the user never knew what kind of answer to expect. The human chose a switch in the page over the bot asking every time or two bots.

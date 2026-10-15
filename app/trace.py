@@ -89,7 +89,9 @@ def result_summary(tool: str, args: dict[str, Any], content: Any) -> tuple[str, 
     if tool == "get_recipe":
         res = _as(MealCandidate, content)
         if isinstance(res, MealCandidate):
-            return short(f"{res.name}, {len(res.ingredients)} ingredients, {res.time_minutes} min"), False
+            text = f"{res.name}, {len(res.ingredients)} ingredients, {res.time_minutes} min"
+            missing = MissingReport(missing_essential=res.to_buy, check_first=res.check_first, missing_optional=[])
+            return short(f"{text}; {missing.summary()}"), False
     if tool == "compute_missing":
         res = _as(MissingReport, content)
         if isinstance(res, MissingReport):
@@ -155,6 +157,17 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
+def _missing_words(report: MissingReport) -> str:
+    """"2 missing, 1 not confirmed" / "nothing missing". Counts before substitutes: "to buy" would
+    contradict the shorter To buy list under the recipe."""
+    parts = []
+    if report.missing_essential:
+        parts.append(f"{len(report.missing_essential)} missing")
+    if report.check_first:
+        parts.append(f"{len(report.check_first)} not confirmed")
+    return ", ".join(parts) if parts else "nothing missing"
+
+
 def step_label(tool: str, args: dict[str, Any], content: Any, failed: bool, detail: str = "") -> str:
     """One plain phrase per step: "updated the inventory (removed egg)", "5 ideas, 1 failed check (no cream)".
 
@@ -183,18 +196,14 @@ def step_label(tool: str, args: dict[str, Any], content: Any, failed: bool, deta
         return "ideas"
     if tool == "get_recipe":
         res = _as(MealCandidate, content)
-        return f"recipe for {res.name}" if isinstance(res, MealCandidate) else "recipe"
+        if not isinstance(res, MealCandidate):
+            return "recipe"
+        # get_recipe also reports what is missing (T5.2: one agent call less than with compute_missing)
+        missing = MissingReport(missing_essential=res.to_buy, check_first=res.check_first, missing_optional=[])
+        return f"recipe for {res.name}, {_missing_words(missing)}"
     if tool == "compute_missing":
         res = _as(MissingReport, content)
-        if isinstance(res, MissingReport):
-            # Counts before substitutes: "to buy" would contradict the shorter To buy list under the recipe.
-            parts = []
-            if res.missing_essential:
-                parts.append(f"{len(res.missing_essential)} missing")
-            if res.check_first:
-                parts.append(f"{len(res.check_first)} not confirmed")
-            return ", ".join(parts) if parts else "nothing missing"
-        return "checked what is missing"
+        return _missing_words(res) if isinstance(res, MissingReport) else "checked what is missing"
     if tool == "validate_suggestion":
         res = _as(ValidationResult, content)
         if isinstance(res, ValidationResult):

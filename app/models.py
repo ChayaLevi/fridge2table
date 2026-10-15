@@ -91,7 +91,7 @@ class MealCandidate(BaseModel):
     time_minutes: int
     ingredients: list[str]  # "tomato: 2", "parsley: a handful (optional)"
     uses_from_inventory: list[str] = []
-    # shop mode: what the household would buy for it / check in the unscanned pantry (code builds the lists)
+    # what the household lacks for it (code): shop-mode suggestions and get_recipe; the lists are built by code
     to_buy: list[str] = []
     check_first: list[str] = []
 

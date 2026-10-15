@@ -663,3 +663,27 @@ async def test_no_shopping_offer_without_suggest_meals_or_with_two_meals(store):
     model, _ = suggest_then_show("Spinach omelette", "Carbonara")
     turn = await run_turn(store, "s2", "dinner?", model=model, recipe_model=RECIPE_MODEL)
     assert len(turn.reply.meals) == 2 and not turn.reply.offer_shop
+
+
+# --- latency (T5.2): Mode B in two agent calls ------------------------------------------------------
+
+async def test_mode_b_get_recipe_reports_what_is_missing_so_two_agent_calls_do(store):
+    calls = []
+
+    def fn(messages, info):
+        calls.append(1)
+        if len(calls) == 1:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        [candidate] = [p.content for p in messages[-1].parts if isinstance(p, ToolReturnPart)]
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(
+            meal_ids=[candidate.id], substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}],
+            shopping_list=[x for x in candidate.to_buy if x != "ricotta"], check_first=candidate.check_first))])
+
+    turn = await run_turn(store, "s1", "I want to make lasagna", model=FunctionModel(fn), recipe_model=LASAGNA_MODEL)
+    assert len(calls) == 2
+    candidate = next(p.content for m in turn.result.new_messages() if isinstance(m, ModelRequest)
+                     for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "get_recipe")
+    assert candidate.to_buy == ["ricotta", "ground beef"] and candidate.check_first == ["pasta"]
+    assert turn.reply.shopping_list == ["ground beef"] and turn.reply.check_first == ["pasta"]
+    assert [t.tool for t in turn.trace] == ["get_recipe", "output check"]
+    assert turn.trace[0].label == "recipe for Lasagna, 2 missing, 1 not confirmed"

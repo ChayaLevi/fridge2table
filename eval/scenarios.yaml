@@ -116,7 +116,8 @@ scenarios:
     turns:
       - message: I want to make lasagna
         expect:
-          tools_called: [get_recipe, compute_missing]
+          tools_called: [get_recipe]
+          tools_not_called: [compute_missing]
           substitution_for: [ricotta]
           shopping_list_must_not_contain: [ricotta, cottage cheese]
 
@@ -126,7 +127,7 @@ scenarios:
     turns:
       - message: I want to make pancakes
         expect:
-          tools_called: [get_recipe, compute_missing]
+          tools_called: [get_recipe]
           max_meals: 1
           shopping_list_empty: true
           check_first_empty: true
@@ -189,14 +190,14 @@ scenarios:
     turns:
       - message: I want to make spaghetti bolognese
         expect:
-          tools_called: [get_recipe, compute_missing]
+          tools_called: [get_recipe]
           check_first_contains: [pasta]
           shopping_list_must_not_contain: [pasta]
       - message: I want to make spaghetti bolognese
         new_session: true
         scan: [pantry]
         expect:
-          tools_called: [get_recipe, compute_missing]
+          tools_called: [get_recipe]
           shopping_list_contains: [pasta]
           check_first_must_not_contain: [pasta]
 
