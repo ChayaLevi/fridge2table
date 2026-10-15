@@ -61,8 +61,9 @@ class FakeRunner:
         self.calls: list[tuple] = []
         self.error = error
 
-    async def __call__(self, store, session_id, message="hi", images=()):
+    async def __call__(self, store, session_id, message="hi", images=(), cook_mode="home"):
         self.calls.append((session_id, message, images))
+        self.cook_mode = cook_mode
         if self.error:
             raise self.error
         return await run_turn(store, session_id, message, images, model=FunctionModel(
@@ -112,6 +113,17 @@ def test_chat_accepts_comma_separated_locations(client):
                     files=[photo(), photo()])
     assert r.status_code == 200, r.text
     assert [loc for _, loc in runner.calls[0][2]] == ["fridge", "freezer"]
+
+
+def test_chat_passes_the_cooking_mode_home_by_default(client):
+    runner = FakeRunner()
+    use_runner(runner)
+    assert client.post("/chat", data={"session_id": "s1", "message": "hi"}).status_code == 200
+    assert runner.cook_mode == "home"
+    r = client.post("/chat", data={"session_id": "s1", "message": "hi", "cook_mode": "shop"})
+    assert r.status_code == 200 and runner.cook_mode == "shop"
+    assert r.json()["reply"]["offer_shop"] is False
+    assert client.post("/chat", data={"session_id": "s1", "message": "hi", "cook_mode": "buy"}).status_code == 422
 
 
 @pytest.mark.parametrize("data, n_files, error", [

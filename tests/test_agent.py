@@ -142,6 +142,9 @@ def test_user_prompt_mentions_photos():
     imgs = [(FIXTURE_IMAGE, "fridge"), (FIXTURE_IMAGE, "fridge"), (FIXTURE_IMAGE, "pantry")]
     assert user_prompt("", imgs) == "[user attached 3 photos (fridge, pantry)]"
     assert user_prompt("here", [(FIXTURE_IMAGE, "fridge")]) == "[user attached 1 photo (fridge)]\nhere"
+    assert user_prompt("dinner?", [], "shop") == "[cooking mode: Shopping OK]\ndinner?"
+    assert user_prompt("here", [(FIXTURE_IMAGE, "fridge")], "shop") == (
+        "[user attached 1 photo (fridge)]\n[cooking mode: Shopping OK]\nhere")
 
 
 async def test_turn_needs_message_or_photos(store):
@@ -321,11 +324,11 @@ async def test_validator_rechecks_a_cached_meal_after_the_inventory_changed(stor
     turn = await run_turn(store, "s1", "dinner? also we're out of eggs", model=FunctionModel(fn),
                           recipe_model=RECIPE_MODEL)
     [retry] = retries(turn)
-    assert "Spinach omelette needs egg, not in inventory. Replace it or move it to a Mode B answer" in retry
+    assert 'Spinach omelette needs egg, not in inventory. The user chose "Only what I have"' in retry
     assert turn.reply.meals == [] and turn.reply.message == "Nothing fits without eggs."
     assert checks_in(turn) == [
-        "output check failed: Spinach omelette needs egg, not in inventory. Replace it or move it to a Mode B "
-        "answer with a shopping list", "ok",
+        'output check failed: Spinach omelette needs egg, not in inventory. The user chose "Only what I have": '
+        "show only meals that need nothing to buy (passed candidates), or none", "ok",
     ]
 
 
@@ -599,3 +602,64 @@ async def test_mode_b_message_that_lists_the_shopping_list_is_sent_back(store):
     [retry] = retries(turn)
     assert "message names items of the shopping lists (ground beef)" in retry
     assert turn.reply.message.startswith("You can make it") and turn.reply.shopping_list == ["ground beef"]
+
+
+# --- cooking mode (T4.5) ----------------------------------------------------------------------------
+
+def suggest_then_show(*names, **extra):
+    """suggest_meals, then a reply showing the named candidates; `seen` holds the agent's instructions."""
+    seen: list[str | None] = []
+
+    def fn(messages, info):
+        seen.append(info.instructions)
+        if len(seen) == 1:
+            return ModelResponse(parts=[ToolCallPart("suggest_meals", {})])
+        ids = ids_by_name(messages[-1].parts)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name,
+                                                 reply(meal_ids=[ids[n] for n in names], **extra))])
+
+    return FunctionModel(fn), seen
+
+
+def recording_recipe_model():
+    """RECIPE_MODEL's output, recording the instructions of each recipe call."""
+    seen: list[str | None] = []
+
+    def fn(messages, info):
+        seen.append(info.instructions)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {"recipes": [OMELETTE, CARBONARA]})])
+
+    return FunctionModel(fn), seen
+
+
+async def test_home_mode_is_the_default_and_offers_shopping_when_few_meals_pass(store):
+    model, seen = suggest_then_show("Spinach omelette")
+    recipe_model, recipe_seen = recording_recipe_model()
+    turn = await run_turn(store, "s1", "dinner?", model=model, recipe_model=recipe_model)
+    assert "ONLY WHAT I HAVE" in seen[0] and "only with what is at home" in recipe_seen[0]
+    assert [m.name for m in turn.reply.meals] == ["Spinach omelette"]
+    assert turn.reply.offer_shop and turn.reply.shopping_list == []
+    returns = [p.content for m in turn.result.new_messages() if isinstance(m, ModelRequest)
+               for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "suggest_meals"]
+    assert [c.name for c in returns[0].failed] == ["Carbonara"]  # needs cream: not shown at home
+
+
+async def test_shop_mode_lets_a_meal_need_a_few_things_and_builds_the_lists(store):
+    model, seen = suggest_then_show("Spinach omelette", "Carbonara")
+    recipe_model, recipe_seen = recording_recipe_model()
+    turn = await run_turn(store, "s1", "dinner?", model=model, recipe_model=recipe_model, cook_mode="shop")
+    assert "SHOPPING OK" in seen[0] and "happy to buy" in recipe_seen[0]
+    assert [m.name for m in turn.reply.meals] == ["Spinach omelette", "Carbonara"]
+    assert turn.reply.shopping_list == ["cream"] and turn.reply.check_first == ["pasta"]  # pantry not scanned
+    assert not turn.reply.offer_shop
+
+
+async def test_no_shopping_offer_without_suggest_meals_or_with_two_meals(store):
+    model, _ = scripted(reply())
+    assert not (await run_turn(store, "s1", "hi", model=model)).reply.offer_shop
+    update_inventory(store, [InventoryChange(op="add", name="cream", category="dairy")])
+    store.mark_scanned("pantry")
+    update_inventory(store, [InventoryChange(op="add", name="pasta", category="pasta", location="pantry")])
+    model, _ = suggest_then_show("Spinach omelette", "Carbonara")
+    turn = await run_turn(store, "s2", "dinner?", model=model, recipe_model=RECIPE_MODEL)
+    assert len(turn.reply.meals) == 2 and not turn.reply.offer_shop

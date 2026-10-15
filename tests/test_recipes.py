@@ -152,6 +152,22 @@ async def test_get_recipe_parses_normalizes_and_fills(store):
     assert prompt.endswith("Dish: lasagna")
     assert "spinach (some, USE SOON)" in prompt and "kids dislike eggplant" in prompt
     assert "standard home recipe" in instructions
+    assert r.requested and store.load_recipe(r.id).requested
+
+
+async def test_suggest_meals_prompt_follows_the_cooking_mode(store):
+    model, calls = fake_model({"recipes": []})
+    await suggest_meals(store, model=model)
+    await suggest_meals(store, cook_mode="shop", model=model)
+    home, shop = calls[0][0], calls[1][0]
+    assert "only with what is at home" in home and "happy to buy" not in home and "return fewer dishes" in home
+    assert "up to 3 essential ingredients the household lacks" in shop and "only with what is at home" not in shop
+
+
+async def test_suggested_meals_are_not_requested(store):
+    model, _ = fake_model({"recipes": [dish("Omelette", ing("egg", "egg"))]})
+    [r] = await suggest_meals(store, model=model)
+    assert not r.requested
 
 
 def test_prompts_have_the_rules():
@@ -159,7 +175,7 @@ def test_prompts_have_the_rules():
         assert rule in SUGGEST_PROMPT
     for rule in ("usual version", "Do not drop or replace", "essential", "Staples"):
         assert rule in RECIPE_PROMPT
-    assert "{categories}" in SUGGEST_PROMPT and "{categories}" in RECIPE_PROMPT
+    assert "{categories}" in SUGGEST_PROMPT and "{categories}" in RECIPE_PROMPT and "{mode_rules}" in SUGGEST_PROMPT
 
 
 # --- category lookup ------------------------------------------------------------------------------

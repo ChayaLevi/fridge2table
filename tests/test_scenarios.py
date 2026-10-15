@@ -30,9 +30,9 @@ def _store(*items: str, scanned=("fridge",)) -> Store:
     return store
 
 
-def test_suite_file_loads_with_twelve_scenarios():
+def test_suite_file_loads_with_fourteen_scenarios():
     inventories, scenarios = sc.load_suite()
-    assert [s["id"] for s in scenarios] == list(range(1, 13))
+    assert [s["id"] for s in scenarios] == list(range(1, 15))
     for s in scenarios:  # every seed is valid
         sc.seed_store(Store(":memory:"), s.get("seed") or {}, inventories)
     for s in scenarios:
@@ -133,8 +133,8 @@ async def test_run_suite_with_a_fake_agent(monkeypatch):
     """The runner without a model: run_turn is replaced; the store of `after` is shared."""
     seen = []
 
-    async def fake_run_turn(store, session_id, message="", images=None):
-        seen.append((session_id, message, len(get_inventory(store))))
+    async def fake_run_turn(store, session_id, message="", images=None, cook_mode="home"):
+        seen.append((session_id, message, len(get_inventory(store)), cook_mode))
         meals = [_recipe("Omelette", "egg")] if "cook" in message else []
         return SimpleNamespace(
             reply=AgentReply(message="ok", meals=meals),
@@ -148,12 +148,13 @@ async def test_run_suite_with_a_fake_agent(monkeypatch):
          "turns": [{"message": "what can I cook", "expect": {"min_meals": 1}}]},
         {"id": 2, "name": "b", "after": 1, "seed": {"add": ["milk, dairy, some"]},
          "turns": [{"message": "hi", "expect": {"min_meals": 1}},
-                   {"message": "hi again", "new_session": True, "scan": ["pantry"]}]},
+                   {"message": "hi again", "new_session": True, "scan": ["pantry"], "cook_mode": "shop"}]},
     ]
     results = await sc.run_suite(scenarios, {}, jobs=2, run_tag="t", report_ids={1, 2})
     assert [r["passed"] for r in results] == [True, False]
     assert results[1]["turns"][0]["failures"] == ["0 meals < 1"]
     assert seen[1][2] == seen[0][2] + 1  # scenario 2 reused scenario 1's store and added milk
     assert seen[1][0] != seen[2][0]  # new_session
+    assert [x[3] for x in seen] == ["home", "home", "shop"]  # cook_mode per turn, home by default
     table = sc.summary_table([results])
     assert "| 1 | a | 1/1 | 1.5 s |" in table and "**1/2**" in table

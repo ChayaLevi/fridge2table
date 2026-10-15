@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT))
 from app import config  # noqa: E402
 from app.agent import run_opening, run_turn  # noqa: E402
 from app.llm import setup_observability  # noqa: E402
-from app.models import AgentReply, InventoryChange, ToolTraceItem  # noqa: E402
+from app.models import MAX_TO_BUY, AgentReply, InventoryChange, ToolTraceItem  # noqa: E402
 from app.store import Store  # noqa: E402
 from app.tools.checks import validate_suggestion  # noqa: E402
 from app.tools.inventory import get_inventory, update_inventory  # noqa: E402
@@ -45,7 +45,7 @@ EXPECT_KEYS = {
     "meals_valid", "meals_must_not_contain", "shopping_list_contains", "shopping_list_must_not_contain",
     "shopping_list_empty", "check_first_contains", "check_first_must_not_contain", "check_first_empty",
     "substitution_for", "preference_saved", "inventory_lacks", "max_questions", "message_matches", "asks_for_photo",
-    "message_must_not_match", "off_topic",
+    "message_must_not_match", "off_topic", "shopping_list_not_empty", "meals_fit_shop", "offer_shop",
 }
 
 
@@ -157,6 +157,19 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
             if not res.ok:
                 fail(f"{m.name} invalid: {res.reason}")
 
+    if expect.get("meals_fit_shop"):  # Shopping OK mode: no avoided ingredient, at most MAX_TO_BUY to buy
+        inv, prefs, scan = get_inventory(store), store.load_preferences(), store.load_scan_state()
+        substituted = {s.missing for s in reply.substitutions}
+        for m in meals:
+            res = validate_suggestion(m, inv, prefs, scan)
+            need = [n for n in res.missing_essential + res.check_first if n not in substituted]
+            if res.violated_preferences or len(need) > MAX_TO_BUY:
+                fail(f"{m.name} does not fit Shopping OK: {res.reason}")
+    if expect.get("shopping_list_not_empty") and not reply.shopping_list:
+        fail("shopping_list is empty")
+    if (want := expect.get("offer_shop")) is not None and reply.offer_shop != want:
+        fail(f"offer_shop is {reply.offer_shop}, expected {want}")
+
     for key, items in (("shopping_list", reply.shopping_list), ("check_first", reply.check_first)):
         for w in expect.get(f"{key}_contains") or []:
             if not _has(items, w):
@@ -240,7 +253,7 @@ async def run_scenario(scenario: dict, inventories: dict, stores: dict[int, Stor
             if turn.get("opening"):
                 res = await run_opening(store, session)
             else:
-                res = await run_turn(store, session, message, photos)
+                res = await run_turn(store, session, message, photos, cook_mode=turn.get("cook_mode", "home"))
             out["latency_s"] = round(res.usage.latency_s, 1)
             out["tools"] = [t.tool for t in res.trace]
             out["trace"] = format_trace(res.trace)

@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.models import (
-    PANTRY_CATEGORIES, AgentReply, FailedCandidate, InventoryItem, MealCandidate, MissingReport, Preference, Recipe,
+    MAX_TO_BUY, PANTRY_CATEGORIES, AgentReply, CookMode, FailedCandidate, InventoryItem, MealCandidate, MissingReport, Preference, Recipe,
     ScanState, SuggestResult, ValidationResult,
 )
 from app.tools.normalize import normalize
@@ -86,16 +86,39 @@ def fill_uses_from_inventory(recipe: Recipe, inventory: list[InventoryItem]) -> 
 
 def check_candidates(
     recipes: list[Recipe], inventory: list[InventoryItem], preferences: list[Preference], scan_state: ScanState,
+    cook_mode: CookMode = "home",
 ) -> SuggestResult:
-    """Run validate_suggestion on every candidate: passed ones as MealCandidates, failed ones with the reason."""
+    """Check every suggest_meals candidate for the cooking mode: passed ones as MealCandidates, failed ones with the reason.
+
+    home: a candidate passes only if validate_suggestion is ok (nothing to buy or confirm).
+    shop: a candidate passes if it violates no preference and needs at most MAX_TO_BUY items to buy or
+    confirm in the pantry; its to_buy / check_first say which.
+    """
     passed, failed = [], []
     for recipe in recipes:
         result = validate_suggestion(recipe, inventory, preferences, scan_state)
-        if result.ok:
-            passed.append(MealCandidate.from_recipe(recipe))
+        if cook_mode == "home":
+            if result.ok:
+                passed.append(MealCandidate.from_recipe(recipe))
+            else:
+                failed.append(FailedCandidate(id=recipe.id, name=recipe.name, reason=result.reason))
+            continue
+        reason = _shop_problem(result)
+        if reason:
+            failed.append(FailedCandidate(id=recipe.id, name=recipe.name, reason=reason))
         else:
-            failed.append(FailedCandidate(id=recipe.id, name=recipe.name, reason=result.reason))
+            passed.append(MealCandidate.from_recipe(recipe, compute_missing(recipe, inventory, scan_state)))
     return SuggestResult(passed=passed, failed=failed)
+
+
+def _shop_problem(res: ValidationResult, substituted: frozenset[str] = frozenset()) -> str:
+    """Why a suggested meal fails in shop mode ("" if it passes): a violated preference, or too much to buy."""
+    if res.violated_preferences:
+        return f"violates preferences: {', '.join(res.violated_preferences)}"
+    need = [n for n in res.missing_essential + res.check_first if n not in substituted]
+    if len(need) > MAX_TO_BUY:
+        return f"needs {len(need)} items to buy ({', '.join(need)}); at most {MAX_TO_BUY}"
+    return ""
 
 
 MAX_MEALS = 3
@@ -121,15 +144,18 @@ def check_reply(
     inventory: list[InventoryItem],
     preferences: list[Preference],
     scan_state: ScanState,
+    cook_mode: CookMode = "home",
 ) -> ReplyCheck:
     """Re-check the agent's final reply against the run's recipe cache and the current inventory (no LLM).
 
     - Every id in meal_ids must be in `recipes` (the run's cache); at most 3 meals, at most 3 questions.
     - Every substitution's use_instead must be in the inventory.
-    - Mode A (no shopping_list, check_first or substitutions): every meal must pass validate_suggestion.
-    - Mode B (any of them present): shopping_list and check_first are recomputed from compute_missing of
-      the meals, minus the substituted items; the model's lists are replaced (code wins). The message
-      must not name the items of those lists (the app shows them; prose could contradict them).
+    - A suggested meal (not `requested`): never violates a preference. In home mode it needs nothing to
+      buy or confirm (substituted items aside); in shop mode at most MAX_TO_BUY items.
+    - A dish the user named (`requested`): gets its lists in either mode.
+    - shopping_list and check_first are always recomputed from compute_missing of the meals, minus the
+      substituted items; the model's lists are replaced (code wins). When they are not empty, the message
+      must not name their items (the app shows them; prose could contradict them).
     """
     problems: list[str] = []
     fixes: list[str] = []
@@ -149,33 +175,43 @@ def check_reply(
         if normalize(sub.use_instead) not in have:
             problems.append(f"substitute {sub.use_instead!r} (for {sub.missing}) is not in the inventory; "
                             "use an inventory item or put the missing item on the shopping list")
+    substituted = frozenset(normalize(s.missing) for s in reply.substitutions)
 
-    mode_b = bool(reply.shopping_list or reply.check_first or reply.substitutions)
-    if not mode_b:
-        for meal in meals:
-            res = validate_suggestion(meal, inventory, preferences, scan_state)
-            if not res.ok:
-                problems.append(f"{meal.name} {_why(res)}. Replace it or move it to a Mode B answer with a shopping list")
-    else:
-        substituted = {normalize(s.missing) for s in reply.substitutions}
-        to_buy, check_first = [], []
-        for meal in meals:
-            report = compute_missing(meal, inventory, scan_state)
-            to_buy += [n for n in report.missing_essential if n not in substituted]
-            check_first += [n for n in report.check_first if n not in substituted]
-        to_buy, check_first = _dedupe(to_buy), _dedupe(check_first)
-        if [normalize(n) for n in reply.shopping_list] != to_buy:
-            fixes.append(f"shopping_list {reply.shopping_list} -> {to_buy}")
-        if [normalize(n) for n in reply.check_first] != check_first:
-            fixes.append(f"check_first {reply.check_first} -> {check_first}")
-        reply = reply.model_copy(update={"shopping_list": to_buy, "check_first": check_first})
-        named = items_named_in(reply.message, to_buy + check_first, [m.name for m in meals])
-        if named:
-            problems.append(
-                f"message names items of the shopping lists ({', '.join(named)}): the app shows To buy and "
-                "Check your pantry first under the recipe, and your words can contradict them. Write one "
-                "sentence that names no ingredient except the substitution pairs, and no counts (\"You can "
-                "make it with your cottage cheese instead of ricotta; the shopping list is below.\")")
+    for meal in meals:
+        if meal.requested:
+            continue
+        res = validate_suggestion(meal, inventory, preferences, scan_state)
+        if cook_mode == "shop":
+            why = _shop_problem(res, substituted)
+            if why:
+                problems.append(f"{meal.name} {why}. Replace it with a passed candidate")
+            continue
+        res = res.model_copy(update={
+            "missing_essential": [n for n in res.missing_essential if n not in substituted],
+            "check_first": [n for n in res.check_first if n not in substituted],
+        })
+        if res.missing_essential or res.check_first or res.violated_preferences:
+            problems.append(f"{meal.name} {_why(res)}. The user chose \"Only what I have\": show only meals that "
+                            "need nothing to buy (passed candidates), or none")
+
+    to_buy, check_first = [], []
+    for meal in meals:
+        report = compute_missing(meal, inventory, scan_state)
+        to_buy += [n for n in report.missing_essential if n not in substituted]
+        check_first += [n for n in report.check_first if n not in substituted]
+    to_buy, check_first = _dedupe(to_buy), _dedupe(check_first)
+    if [normalize(n) for n in reply.shopping_list] != to_buy:
+        fixes.append(f"shopping_list {reply.shopping_list} -> {to_buy}")
+    if [normalize(n) for n in reply.check_first] != check_first:
+        fixes.append(f"check_first {reply.check_first} -> {check_first}")
+    reply = reply.model_copy(update={"shopping_list": to_buy, "check_first": check_first})
+    named = items_named_in(reply.message, to_buy + check_first, [m.name for m in meals])
+    if named:
+        problems.append(
+            f"message names items of the shopping lists ({', '.join(named)}): the app shows To buy and "
+            "Check your pantry first under the recipe, and your words can contradict them. Write one "
+            "sentence that names no ingredient except the substitution pairs, and no counts (\"You can "
+            "make it with your cottage cheese instead of ricotta; the shopping list is below.\")")
 
     reply = reply.model_copy(update={"meal_ids": [m.id for m in meals]})
     return ReplyCheck(reply=reply, problems=problems, fixes=fixes)

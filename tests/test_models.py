@@ -64,7 +64,8 @@ def test_recipe_gets_a_short_id_and_no_steps_by_default():
 def test_meal_candidate_view():
     c = MealCandidate.from_recipe(RECIPE)
     assert c.model_dump() == {"id": "a1b2c3", "name": "Spinach omelette", "time_minutes": 10,
-                              "ingredients": ["egg: 3"], "uses_from_inventory": ["egg"]}
+                              "ingredients": ["egg: 3"], "uses_from_inventory": ["egg"],
+                              "to_buy": [], "check_first": []}
 
 
 def test_agent_reply_schema_hides_meals_from_the_model():

@@ -29,6 +29,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T4.2 Substitutions in Mode B
 - [x] T4.3 Preferences end to end
 - [~] T4.4 Trace UI polish (built; waiting for the human to confirm it reads well on a phone)
+- [x] T4.5 Cooking mode switch (added 2026-10-15 at the human's request)
 - [ ] T5.1 Vision model comparison
 - [ ] T5.2 Latency
 - [ ] T5.3 Real user run #1 + decision point 🧑
@@ -41,7 +42,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 404 tests pass. Scenario suite: 12 scenarios (11 = scope, 12 = opening, added 2026-10-14), 12/12 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 420 tests pass. Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -89,6 +90,34 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-15 — T4.5 Cooking mode switch (the human's request)
+- Why: the human found "recipes from what we have or not" muddled. Before, Mode A could still end with a shopping list (the recipe model was told to make the first dish the classic version, and rule 3 let the agent show a failed candidate as a Mode B answer), so the user never knew what kind of answer to expect. The human chose a switch in the page over the bot asking every time or two bots.
+- Built:
+  - `app/models.py`: `CookMode = Literal["home", "shop"]`, `MAX_TO_BUY = 3`; `Recipe.requested` (True for a get_recipe dish the user named); `MealCandidate.to_buy` / `check_first` (shop mode); `AgentReply.offer_shop` (set by code, hidden from the model's schema).
+  - `app/tools/checks.py`: `check_candidates(..., cook_mode)`: home = `validate_suggestion` as before; shop = no avoided ingredient and at most 3 items to buy or confirm. `check_reply(..., cook_mode)`: a **suggested** meal (not `requested`) in home mode must need nothing to buy (substituted items aside), in shop mode at most 3; a **named** dish gets its lists in either mode; `shopping_list` / `check_first` are now **always** recomputed by code (before: only when the model gave a list), so a forgotten list is filled in instead of a retry.
+  - `app/tools/recipes.py`: `SUGGEST_PROMPT` has `{mode_rules}` from `SUGGEST_MODE_RULES`: home = essentials only from the inventory and staples, the closest makeable dishes for a named style, and "return fewer dishes, or none" rather than invent one; shop = up to 3 missing essentials, marked honestly. `get_recipe` sets `requested=True`.
+  - `app/agent.py`: `Deps.cook_mode`, a cooking mode line in the instructions (`COOK_MODE_TEXT`), rule 3 rewritten (failed candidates are never shown; in Shopping OK the lists come from the candidates' `to_buy`), rule 4 says Mode B holds in both modes. `run_turn(..., cook_mode="home")`. Messages sent in shop mode start with `[cooking mode: Shopping OK]` (`SHOP_NOTE`, in `user_prompt`), so the model sees the switch change in the history. `offer_shop` = home mode, suggest_meals was called, fewer than 2 suggested meals shown (not for the opening or an off-topic reply).
+  - `app/api.py`: `POST /chat` takes the form field `cook_mode` (`home` default, `shop`; anything else is 422).
+  - `app/static/index.html`: a two-way switch above the quick replies, "🏠 Only what I have" / "🛒 Shopping OK" (shown once there is an inventory; remembered per browser in `localStorage` `ftt.cookMode`; sent with every message). A reply with several meals and a shopping list shows "🛒 To buy: ... · check pantry: ..." or "✓ Nothing to buy" on each card instead of one combined block; the recipe window shows only that meal's lists (`replyForMeal`). When the reply has `offer_shop`, a "🛒 Show ideas with a short shopping list" button under it flips the switch and sends the same question again.
+  - Tests: `tests/test_checks.py` (11 new: both modes, substitutes, named dish, candidate split), `tests/test_agent.py` (3 new + user_prompt), `tests/test_recipes.py` (2 new), `tests/test_api.py` (1 new), `tests/test_models.py`, `tests/test_scenarios.py` updated. `eval/run_scenarios.py`: per-turn `cook_mode`; expect keys `meals_fit_shop`, `shopping_list_not_empty`, `offer_shop`.
+- Decisions / deviations:
+  - **Scenario 3 changed:** it expected a failed check in the trace, which came from the old "classic version first" rule. In Only what I have that dish is no longer proposed, so it now expects valid meals and an empty shopping list. Scenario 13 is the same request in Shopping OK (cream on the list).
+  - Preferences are checked for suggested meals in both modes; a dish the user named is not checked against preferences (as before: the user asked for it).
+  - The opening always runs in home mode.
+  - Found on real models and fixed: (1) a bare kitchen in home mode got invented "dinners" ("Lemon Vinegar Pan Dressing Tossed with Oregano") → the "fewer dishes, or none" rule; (2) after the switch to Shopping OK in the same chat, the agent repeated its last answer without calling suggest_meals → the `[cooking mode: Shopping OK]` note.
+- Checked: `uv run pytest -q` 420 passed; `uv run python eval/run_scenarios.py` 14/14; scenarios 13 and 14 again 2/2 each. Headless Edge 390x844 with real models on a separate DB: the switch shows "Only what I have" checked; Shopping OK with pasta/bacon/mushroom/no cream → 3 cards "✓ Nothing to buy", "🛒 To buy: cream", "🛒 To buy: cream", no combined block; the recipe window shows "To buy: cream · 250 ml" and "cream: 250 ml · to buy"; after a reload the switch is still on Shopping OK; lemon + ketchup only, Only what I have → no meals and the "🛒 Show ideas with a short shopping list" button; tapping it flips the switch, resends "What can I cook tonight?" and returns 3 cards with their to-buy lines. No page errors.
+- Next task must know: `checks.check_reply` and `check_candidates` take `cook_mode` (default home). A recipe from `get_recipe` is `requested`; anything else is a suggestion and must fit the mode. `scripts/chat.py` has no mode flag (always home).
+- Open issues: in shop mode the agent often leaves `shopping_list` empty and code fills it ("lists fixed by code" in the trace), and once named "cream" in the message (one retry). Harmless; tune rule 3 if it costs time in T5.2.
+
+**How to verify**
+```
+uv run pytest -q
+uv run python eval/run_scenarios.py --only 3,13,14
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `420 passed`; then `3/3 passed`; then `Uvicorn running on http://0.0.0.0:8000`.
+Manual check (F12 then Ctrl+Shift+M for a phone view): in http://localhost:8000/docs run `POST /admin/seed`, open http://localhost:8000/: above the quick replies a switch "🏠 Only what I have" / "🛒 Shopping OK". Tap Shopping OK and ask "We love creamy pasta, like fettuccine alfredo. What can I make tonight?": each card says what to buy (or "✓ Nothing to buy"). Then Inventory → Start over, add only "lemon" in the panel, switch back to Only what I have, ask "What can I cook tonight?": no cards and a "🛒 Show ideas with a short shopping list" button; tap it: the switch moves to Shopping OK and ideas with what to buy appear.
 
 ### 2026-10-14 — Page: design round (the human chose items 1-5 of the proposal)
 - The human asked what would make the page nicer to look at; of the proposal they picked: (1) a calmer inventory panel, (2) livelier meal cards, (3) quick replies above the text box, (4) a welcome screen for an empty inventory, (5) a softer chat. Place headers keep their words with the icon ("🧊 Fridge", "❄️ Freezer", "🥫 Pantry"). Page only (`app/static/index.html`); no server or agent change.

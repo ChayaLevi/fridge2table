@@ -17,7 +17,7 @@ from pydantic_ai.models import Model
 
 from app import config
 from app.llm import thinking_settings
-from app.models import CATEGORIES, Constraints, Ingredient, Recipe, Substitution
+from app.models import CATEGORIES, MAX_TO_BUY, Constraints, CookMode, Ingredient, Recipe, Substitution
 from app.store import Store
 from app.tools.checks import fill_uses_from_inventory
 from app.tools.inventory import get_inventory, inventory_summary
@@ -48,21 +48,31 @@ SUGGEST_PROMPT = """\
 You suggest home-cooking dinner ideas built from what this household has.
 Rules:
 - Build each dish around the inventory items. Prefer items marked USE SOON.
-- Every essential ingredient should be in the inventory or the staples. Avoid needing anything else; \
-if a dish truly needs one extra ingredient, mark it essential honestly.
+{mode_rules}
 - Never use an ingredient the household avoids (see preferences).
 - Places marked NOT SCANNED may hold things you cannot see; do not count on them.
 - Simple home cooking, the kind a parent makes on a weekday. Realistic time_minutes (prep + cooking).
 - Distinct dishes: do not repeat a dish or a near-variant of it.
 - The dish name must be honest: never name an ingredient in it ("cream pasta", "chicken soup") unless \
 that ingredient is in the dish's ingredients.
-- If the request names a dish or a style the inventory cannot make (e.g. "alfredo" with no cream), make \
-the first dish the classic version, with its missing ingredients listed and marked essential (code will \
-check it and the user will be told what is missing). Only that first dish may need missing \
-ingredients: every other dish must be makeable from the inventory and staples alone (the closest \
-alternatives, e.g. a pasta with butter, parmesan and garlic).
 - Do not write cooking steps: only name, ingredients, time and servings.
 """ + INGREDIENT_RULES
+
+# The cooking mode's rules for SUGGEST_PROMPT (T4.5); code checks the result either way.
+SUGGEST_MODE_RULES = {
+    "home": """\
+- The user wants to cook only with what is at home: every essential ingredient must be in the inventory \
+or the staples. If a dish would need anything else, choose another dish.
+- If the request names a dish or a style the inventory cannot make (e.g. "alfredo" with no cream), \
+suggest the closest dishes that can be made (e.g. a pasta with butter, parmesan and garlic).
+- Only real dinners a family would eat. If the kitchen has too little for that, return fewer dishes, \
+or none: never invent a dish (a dressing, a plain bread, a sauce on its own) just to fill the count.""",
+    "shop": f"""\
+- The user is happy to buy a few things: a dish may need up to {MAX_TO_BUY} essential ingredients the \
+household lacks. List them and mark them essential honestly (code puts them on the shopping list). \
+Prefer dishes that need fewer purchases; a dish that needs nothing is best.
+- If the request names a dish or a style, make the first dish the classic version.""",
+}
 
 RECIPE_PROMPT = """\
 You write the standard home recipe for the dish the user names.
@@ -189,9 +199,12 @@ async def suggest_meals(
     n: int = 5,
     exclude: list[str] | None = None,
     *,
+    cook_mode: CookMode = "home",
     model: Model | None = None,
 ) -> list[Recipe]:
-    """Up to `n` meal candidates (no steps) built around the inventory. Not validated: run validate_suggestion on each.
+    """Up to `n` meal candidates (no steps) built around the inventory, for the cooking mode.
+
+    Not validated: run checks.check_candidates on them with the same cooking mode.
 
     Code drops dishes named in `exclude`, duplicate names and dishes over `constraints.max_minutes`.
     Each recipe is saved in the store by id.
@@ -206,7 +219,8 @@ async def suggest_meals(
     if exclude:
         lines.append(f"Do not suggest these dishes (already proposed or rejected): {', '.join(exclude)}")
     agent = Agent(_model(model), output_type=MealIdeas,
-                  instructions=SUGGEST_PROMPT.format(categories=", ".join(CATEGORIES)))
+                  instructions=SUGGEST_PROMPT.format(mode_rules=SUGGEST_MODE_RULES[cook_mode],
+                                                     categories=", ".join(CATEGORIES)))
     ideas: MealIdeas = await _run(agent, "\n".join(lines), "suggest_meals")
 
     seen = {_dish_key(e) for e in exclude}
@@ -228,7 +242,7 @@ async def get_recipe(store: Store, dish: str, *, model: Model | None = None) -> 
     agent = Agent(_model(model), output_type=RecipeDraft,
                   instructions=RECIPE_PROMPT.format(categories=", ".join(CATEGORIES)))
     draft: RecipeDraft = await _run(agent, f"{_context(store)}\n\nDish: {dish.strip()}", "get_recipe")
-    return _finish(store, _clean(draft, dish))
+    return _finish(store, _clean(draft, dish).model_copy(update={"requested": True}))
 
 
 def _recipe_text(recipe: Recipe, subs: dict[str, str] | None = None) -> str:

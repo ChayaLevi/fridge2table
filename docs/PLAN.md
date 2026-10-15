@@ -209,6 +209,12 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - The collapsed line reads as one sentence ("4 steps · updated inventory → 5 ideas → 1 failed check (no cream) → replaced"). Expanded: one line per step. Failed checks in a warning colour.
 - **Done when:** the human confirms it reads well on a phone.
 
+### T4.5 Cooking mode switch (added 2026-10-15 at the human's request)
+- A switch in the page, above the quick replies: **🏠 Only what I have** (default) / **🛒 Shopping OK**. Remembered per browser; sent with every chat message as `cook_mode` (`home` | `shop`).
+- `home`: every meal `suggest_meals` offers uses only the inventory and staples (or substitutes from the inventory). `shop`: each suggested meal may need up to 3 items to buy; the cards say what. A dish the user names (Mode B) gets its shopping list in both modes.
+- Code enforces it (`check_candidates`, `check_reply`, by the cooking mode and the recipe's `requested` flag); the agent only follows. In `home` mode, when a turn shows fewer than 2 suggested meals, the reply carries `offer_shop` and the page shows a "🛒 Show ideas with a short shopping list" button that flips the switch and asks again.
+- **Done when:** unit tests cover both modes; two new scenarios (home: no meal needs buying; shop: shopping list built by code) pass on real models.
+
 ---
 
 ## P5 — Evaluation and the real user (Tue Oct 20)

@@ -7,7 +7,8 @@
 #   after: <id>   reuse that scenario's store (inventory, preferences) in a new session; seed is applied on top
 #   seed: inventory (a name from inventories, or a list of items), add (a list of items), remove (names),
 #         scanned (places marked scanned), preferences ([{text, avoid}])
-#   turns: [{message, photos: [[path, place]], scan: [places], new_session: bool, expect: {...}}]
+#   turns: [{message, photos: [[path, place]], scan: [places], new_session: bool, cook_mode: home|shop
+#            (the page's switch, default home), expect: {...}}]
 #          or {opening: true, expect: {...}}: the proactive greeting (run_opening) instead of a message
 # expect keys (all optional):
 #   tools_called: tool names in this order (others may come between); "output check" = the validator
@@ -21,6 +22,8 @@
 #   inventory_lacks: ingredients that must not be in the inventory after the turn
 #   max_questions, message_matches (regex on message + questions), asks_for_photo (a place)
 #   message_must_not_match (regex), off_topic (true/false: the reply's off_topic flag)
+#   shopping_list_not_empty, meals_fit_shop (Shopping OK: no avoided ingredient, at most 3 to buy per meal),
+#   offer_shop (true/false: the reply offers the "Shopping OK" button)
 
 inventories:
   demo:
@@ -56,6 +59,10 @@ inventories:
     - spinach, vegetable, low
     - butter, dairy, low
     - canned tomato, canned, some, pantry
+  # almost nothing: at home there is hardly a dinner
+  bare:
+    - lemon, fruit, some
+    - ketchup, condiment, some
   pancakes:
     - egg, egg, plenty
     - milk, dairy, plenty
@@ -92,16 +99,16 @@ scenarios:
           max_minutes: 30
 
   - id: 3
-    name: The obvious dish fails a check, final meals valid
+    name: The obvious dish cannot be made (Only what I have), final meals valid, nothing to buy
     seed: {inventory: pasta_no_cream, scanned: [fridge, pantry]}
     turns:
       - message: We love creamy pasta, like fettuccine alfredo or carbonara with cream. What can I make tonight?
         expect:
           tools_called: [suggest_meals]
-          failed_check: true
           min_meals: 1
           max_meals: 3
           meals_valid: true
+          shopping_list_empty: true
 
   - id: 4
     name: Mode B with a substitution (lasagna, cottage cheese for ricotta)
@@ -243,3 +250,37 @@ scenarios:
           off_topic: false
           tools_not_called: [get_recipe]
           message_matches: '\d+ ?(min|minute)'
+
+  - id: 13
+    name: Shopping OK (creamy pasta without cream, as scenario 3 but with shopping allowed)
+    seed: {inventory: pasta_no_cream, scanned: [fridge, pantry]}
+    turns:
+      - message: We love creamy pasta, like fettuccine alfredo or carbonara with cream. What can I make tonight?
+        cook_mode: shop
+        expect:
+          tools_called: [suggest_meals, output check]
+          min_meals: 1
+          max_meals: 3
+          meals_fit_shop: true
+          shopping_list_not_empty: true
+          offer_shop: false
+
+  - id: 14
+    name: Bare kitchen (Only what I have offers Shopping OK; the button's resend gets ideas)
+    seed: {inventory: bare, scanned: [fridge, pantry]}
+    turns:
+      - message: What can I cook tonight?
+        expect:
+          tools_called: [suggest_meals]
+          max_meals: 1
+          meals_valid: true
+          shopping_list_empty: true
+          offer_shop: true
+      - message: What can I cook tonight?
+        cook_mode: shop
+        expect:
+          tools_called: [suggest_meals, output check]
+          min_meals: 1
+          meals_fit_shop: true
+          shopping_list_not_empty: true
+          offer_shop: false

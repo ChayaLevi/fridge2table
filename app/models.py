@@ -7,6 +7,10 @@ from pydantic.json_schema import SkipJsonSchema
 
 QtyLevel = Literal["plenty", "some", "low"]
 Location = Literal["fridge", "freezer", "pantry"]
+# The user's switch in the page (T4.5): "home" = suggested meals use only what is there; "shop" = each
+# suggested meal may need up to MAX_TO_BUY items to buy. A dish the user names gets its list either way.
+CookMode = Literal["home", "shop"]
+MAX_TO_BUY = 3
 
 CATEGORIES = (
     "vegetable", "fruit", "meat", "fish", "dairy", "egg", "grain", "pasta", "canned", "baking",
@@ -76,6 +80,7 @@ class Recipe(BaseModel):
     time_minutes: int
     servings: int = 4
     uses_from_inventory: list[str] = []  # canonical names, filled by code, not by the model
+    requested: bool = False  # True for a dish the user named (get_recipe), False for a suggest_meals idea
 
 
 class MealCandidate(BaseModel):
@@ -86,13 +91,17 @@ class MealCandidate(BaseModel):
     time_minutes: int
     ingredients: list[str]  # "tomato: 2", "parsley: a handful (optional)"
     uses_from_inventory: list[str] = []
+    # shop mode: what the household would buy for it / check in the unscanned pantry (code builds the lists)
+    to_buy: list[str] = []
+    check_first: list[str] = []
 
     @classmethod
-    def from_recipe(cls, recipe: Recipe) -> "MealCandidate":
+    def from_recipe(cls, recipe: Recipe, report: "MissingReport | None" = None) -> "MealCandidate":
         return cls(
             id=recipe.id, name=recipe.name, time_minutes=recipe.time_minutes,
             ingredients=[f"{i.name}: {i.amount}" + ("" if i.essential else " (optional)") for i in recipe.ingredients],
             uses_from_inventory=recipe.uses_from_inventory,
+            to_buy=report.missing_essential if report else [], check_first=report.check_first if report else [],
         )
 
 
@@ -195,4 +204,7 @@ class AgentReply(BaseModel):
     questions: list[str] = []  # clarifying questions about uncertain items (max 3)
     # True when the message is not about food or the kitchen; code then replaces message with a fixed reply
     off_topic: bool = False
+    # Set by code in home mode when the turn showed fewer than 2 suggested meals: the page offers a
+    # "Shopping OK" button (T4.5). Never set by the model.
+    offer_shop: SkipJsonSchema[bool] = False
     # trace is attached by the server from the run's messages, not produced by the model

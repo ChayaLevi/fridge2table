@@ -26,8 +26,8 @@ def ing(name, category="other", essential=True):
     return Ingredient(name=name, amount="1", essential=essential, category=category)
 
 
-def recipe(*ingredients, name="dish"):
-    return Recipe(name=name, ingredients=list(ingredients), time_minutes=20)
+def recipe(*ingredients, name="dish", requested=False):
+    return Recipe(name=name, ingredients=list(ingredients), time_minutes=20, requested=requested)
 
 
 def pref(text, *avoid):
@@ -241,7 +241,7 @@ OMELETTE = recipe(ing("egg", "egg"), ing("spinach", "vegetable"), name="Spinach 
 PEANUT = recipe(ing("chicken", "meat"), ing("peanut", "snack"), name="Kung pao chicken")
 EGGPLANT = recipe(ing("aubergine", "vegetable"), name="Baba ganoush")
 LASAGNA = recipe(ing("pasta", "pasta"), ing("ricotta", "dairy"), ing("ground beef", "meat"),
-                 ing("basil", "vegetable", essential=False), name="Lasagna")
+                 ing("basil", "vegetable", essential=False), name="Lasagna", requested=True)
 CACHE = {r.id: r for r in (OMELETTE, PEANUT, EGGPLANT, LASAGNA)}
 INV = [item("egg"), item("spinach"), item("chicken"), item("cottage cheese"), item("aubergine")]
 KIDS = [pref("kids dislike eggplant", "eggplant")]
@@ -271,7 +271,8 @@ def test_check_reply_unknown_id_with_empty_cache():
 def test_check_reply_mode_a_meal_missing_an_ingredient():
     res = check(meal_ids=[OMELETTE.id, PEANUT.id])
     assert res.problems == [
-        "Kung pao chicken needs peanut, not in inventory. Replace it or move it to a Mode B answer with a shopping list"
+        'Kung pao chicken needs peanut, not in inventory. The user chose "Only what I have": show only meals '
+        "that need nothing to buy (passed candidates), or none"
     ]
 
 
@@ -320,10 +321,98 @@ def test_check_reply_mode_b_correct_lists_need_no_fix():
     assert res.reply.shopping_list == ["pasta", "ricotta", "ground beef"]
 
 
-def test_check_reply_mode_b_with_empty_lists_is_checked_as_mode_a():
-    # the model forgot the shopping list: the dish fails like a Mode A meal, so the model must add it
+def test_check_reply_named_dish_with_empty_lists_gets_them_from_code():
+    # the model forgot the shopping list of a dish the user named: code fills it in, no retry
     res = check(meal_ids=[LASAGNA.id])
-    assert "Lasagna needs pasta, ricotta, ground beef, not in inventory" in res.problems[0]
+    assert res.ok, res.problems
+    assert res.reply.shopping_list == ["pasta", "ricotta", "ground beef"]
+    assert res.fixes == ["shopping_list [] -> ['pasta', 'ricotta', 'ground beef']"]
+
+
+# --- cooking mode (T4.5) ----------------------------------------------------------------------------
+
+CARBONARA = recipe(ing("egg", "egg"), ing("bacon", "meat"), ing("cream", "dairy"), ing("pasta", "pasta"),
+                   name="Carbonara")
+FEAST = recipe(ing("egg", "egg"), ing("bacon", "meat"), ing("cream", "dairy"), ing("pasta", "pasta"),
+               ing("leek"), name="Feast")
+MODE_CACHE = {r.id: r for r in (OMELETTE, CARBONARA, FEAST, EGGPLANT, LASAGNA)}
+
+
+def check_mode(mode, **kw):
+    return check_reply(AgentReply(**{"message": "m", **kw}), MODE_CACHE, INV, KIDS, ALL_SCANNED, mode)
+
+
+def test_home_mode_suggested_meal_with_every_missing_item_substituted_passes():
+    r = recipe(ing("egg", "egg"), ing("ricotta", "dairy"), name="Ricotta omelette")
+    res = check_reply(AgentReply(message="m", meal_ids=[r.id],
+                                 substitutions=[Substitution(missing="ricotta", use_instead="cottage cheese")]),
+                      {r.id: r}, INV, [], ALL_SCANNED, "home")
+    assert res.ok, res.problems
+    assert res.reply.shopping_list == []
+
+
+def test_home_mode_suggested_meal_cannot_hide_behind_a_shopping_list():
+    # before T4.5 a failed candidate could be shown with a shopping list; in home mode it is a retry
+    res = check_mode("home", meal_ids=[CARBONARA.id], shopping_list=["bacon", "cream"])
+    assert res.problems and res.problems[0].startswith("Carbonara needs bacon, cream, pasta, not in inventory")
+    assert '"Only what I have"' in res.problems[0]
+
+
+def test_home_mode_named_dish_still_gets_its_shopping_list():
+    res = check_mode("home", meal_ids=[LASAGNA.id])
+    assert res.ok and res.reply.shopping_list == ["pasta", "ricotta", "ground beef"]
+
+
+def test_shop_mode_suggested_meals_get_one_list_built_by_code():
+    res = check_mode("shop", meal_ids=[OMELETTE.id, CARBONARA.id], shopping_list=["cream"])
+    assert res.ok, res.problems
+    assert res.reply.shopping_list == ["bacon", "cream", "pasta"]
+    assert res.fixes == ["shopping_list ['cream'] -> ['bacon', 'cream', 'pasta']"]
+
+
+def test_shop_mode_too_much_to_buy_is_a_retry():
+    res = check_mode("shop", meal_ids=[FEAST.id])
+    assert res.problems == ["Feast needs 4 items to buy (bacon, cream, pasta, leek); at most 3. "
+                            "Replace it with a passed candidate"]
+
+
+def test_shop_mode_substituted_items_do_not_count():
+    res = check_mode("shop", meal_ids=[FEAST.id], substitutions=[Substitution(missing="cream", use_instead="cottage cheese")])
+    assert res.ok, res.problems
+    assert res.reply.shopping_list == ["bacon", "pasta", "leek"]
+
+
+def test_shop_mode_preferences_still_hold():
+    res = check_mode("shop", meal_ids=[EGGPLANT.id])
+    assert res.problems == ["Baba ganoush violates preferences: eggplant (kids dislike eggplant). "
+                            "Replace it with a passed candidate"]
+
+
+def test_shop_mode_message_must_not_name_the_items_to_buy():
+    res = check_mode("shop", meal_ids=[CARBONARA.id], message="Carbonara: just pick up some cream.")
+    assert any("message names items of the shopping lists (cream)" in p for p in res.problems)
+
+
+def test_check_candidates_shop_mode_allows_a_few_items_to_buy():
+    inv = [item("egg", category="egg"), item("spinach")]
+    ok = recipe(ing("egg", "egg"), ing("spinach"), name="Omelette")
+    buy = recipe(ing("egg", "egg"), ing("cream", "dairy"), ing("pasta", "pasta"), name="Carbonara")
+    many = recipe(ing("cream"), ing("leek"), ing("bacon"), ing("pasta", "pasta"), name="Feast")
+    nope = recipe(ing("eggplant"), name="Moussaka")
+    res = check_candidates([ok, buy, many, nope], inv, [pref("no eggplant", "eggplant")], FRIDGE_ONLY, "shop")
+    assert [(c.name, c.to_buy, c.check_first) for c in res.passed] == [
+        ("Omelette", [], []), ("Carbonara", ["cream"], ["pasta"])]
+    assert [(f.name, f.reason) for f in res.failed] == [
+        ("Feast", "needs 4 items to buy (cream, leek, bacon, pasta); at most 3"),
+        ("Moussaka", "violates preferences: eggplant (no eggplant)"),
+    ]
+
+
+def test_check_candidates_home_mode_is_the_default():
+    inv = [item("egg", category="egg")]
+    buy = recipe(ing("egg", "egg"), ing("cream", "dairy"), name="Custard")
+    assert check_candidates([buy], inv, [], ALL_SCANNED).passed == []
+    assert [c.to_buy for c in check_candidates([buy], inv, [], ALL_SCANNED, "shop").passed] == [["cream"]]
 
 
 def test_check_reply_substitute_must_be_in_inventory():

@@ -67,6 +67,10 @@
   .card .title { font-weight: 650; font-size: 16px; line-height: 1.25; }
   .card .meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
   .card .soonline { color: var(--warn); font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .card .buyline { font-size: 13px; margin-top: 2px; }
+  .card .buyline .none { color: var(--accent); }
+  .offer { margin-top: 8px; border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
+           border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 600; }
   .card .open { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
@@ -109,6 +113,13 @@
   .qchip { flex: none; white-space: nowrap; border: 1px solid #cfe3d6; background: var(--accent-soft);
            color: var(--accent); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
   .qchip:disabled { opacity: .5; }
+  /* the cooking mode switch (T4.5): two halves, the chosen one filled */
+  .cookmode { display: flex; background: var(--accent-soft); border-radius: 999px; padding: 3px; margin: 0 0 8px; }
+  .cookmode button { flex: 1; border: 0; background: none; border-radius: 999px; padding: 6px 8px;
+                     font-size: 13px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+  .cookmode button[aria-checked="true"] { background: var(--surface); color: var(--text);
+                                          box-shadow: 0 1px 3px rgba(31,36,33,.15); }
+  .cookmode button:disabled { opacity: .5; }
   .thumb { position: relative; flex: none; }
   .thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
   .thumb .tag { position: absolute; left: 3px; right: 3px; bottom: 3px; border: 0; border-radius: 6px; padding: 2px 0;
@@ -270,6 +281,7 @@
   <main id="messages" aria-live="polite"></main>
 
   <form class="composer" id="composer">
+    <div class="cookmode" id="cookMode" role="radiogroup" aria-label="Cooking mode" hidden></div>
     <div class="quick" id="quick" aria-label="Quick replies"></div>
     <div class="pending" id="pending" hidden></div>
     <div class="row">
@@ -333,6 +345,8 @@ const state = {
   openItem: null,       // the inventory item whose actions are shown (one at a time)
   busy: false,
   transcript: [],       // what is shown, so a reload of the same session shows it again
+  // the cooking mode switch (T4.5): "home" = only what is there, "shop" = a few things to buy are OK
+  cookMode: null,
 };
 
 // --- small helpers -------------------------------------------------------------------------------
@@ -543,7 +557,7 @@ function addEntry(entry) {
 function renderEntry(entry) {
   const box = $("messages");
   if (entry.role === "user") box.append(renderUser(entry));
-  else if (entry.role === "agent") box.append(renderAgent(entry.data));
+  else if (entry.role === "agent") box.append(renderAgent(entry.data, entry.asked));
   else box.append(el("div", { class: "msg system" }, el("div", { class: "bubble" }, entry.text)));
 }
 
@@ -563,7 +577,8 @@ function agentShell(...children) {
     el("div", { class: "content" }, ...children));
 }
 
-function renderAgent(data) {
+// `asked` is the user's message this reply answers (for the "Shopping OK" button).
+function renderAgent(data, asked) {
   const reply = data.reply;
   const shell = agentShell(el("div", { class: "bubble" }, reply.message));
   const node = shell.querySelector(".content");
@@ -573,12 +588,25 @@ function renderAgent(data) {
   }
 
   const meals = reply.meals || [];
-  if (meals.length) node.append(el("div", { class: "cards" }, meals.map((m) => renderCard(m, data))));
-
   const hasShop = (reply.shopping_list || []).length || (reply.check_first || []).length
     || (reply.substitutions || []).length;
+  // Several meals with a shopping list (Shopping OK mode): each card says what it needs.
+  const perCard = hasShop && meals.length > 1;
+  if (meals.length) node.append(el("div", { class: "cards" }, meals.map((m) => renderCard(m, data, perCard))));
+
   // Mode B: a single recipe with nothing missing still gets the block, saying so.
-  if (hasShop || (meals.length === 1 && isModeB(data))) node.append(renderShop(reply));
+  if (!perCard && (hasShop || (meals.length === 1 && isModeB(data)))) node.append(renderShop(reply));
+
+  // Only what I have, and few ideas came back: one tap asks again with shopping allowed.
+  if (reply.offer_shop && asked) {
+    node.append(el("button", { class: "offer", type: "button", onclick: () => {
+      if (state.busy) return;
+      setCookMode("shop");
+      $("input").value = asked;
+      updateSend();
+      $("composer").requestSubmit();
+    } }, "🛒 Show ideas with a short shopping list"));
+  }
 
   if (data.trace && data.trace.length) node.append(renderTrace(data.trace, data.usage));
   return shell;
@@ -588,7 +616,25 @@ function isModeB(data) {
   return (data.trace || []).some((t) => t.tool === "compute_missing");
 }
 
-function renderCard(meal, data) {
+// The reply's lists cut down to one meal's ingredients (a reply with several meals has one combined list).
+function replyForMeal(reply, meal) {
+  const names = new Set(meal.ingredients.map((i) => i.name.toLowerCase()));
+  const mine = (xs) => (xs || []).filter((x) => names.has(String(x).toLowerCase()));
+  return { ...reply, meals: [meal], shopping_list: mine(reply.shopping_list), check_first: mine(reply.check_first),
+           substitutions: (reply.substitutions || []).filter((s) => names.has(String(s.missing).toLowerCase())) };
+}
+
+// "🛒 To buy: cream · check pantry: pasta" under a card, or that it needs nothing.
+function buyLine(meal, reply) {
+  const own = replyForMeal(reply, meal);
+  const parts = [];
+  if (own.shopping_list.length) parts.push(`🛒 To buy: ${own.shopping_list.join(", ")}`);
+  if (own.check_first.length) parts.push(`check pantry: ${own.check_first.join(", ")}`);
+  return el("div", { class: "buyline" },
+    parts.length ? parts.join(" · ") : el("span", { class: "none" }, "✓ Nothing to buy"));
+}
+
+function renderCard(meal, data, perCard = false) {
   const inv = itemsByName();
   const uses = meal.uses_from_inventory || [];
   const soon = uses.map((n) => inv.get(n)).filter((i) => i && i.use_soon).map((i) => i.display_name);
@@ -604,6 +650,7 @@ function renderCard(meal, data) {
     el("div", {},
       el("div", { class: "title" }, meal.name),
       el("div", { class: "meta" }, meta.join(" · ")),
+      perCard ? buyLine(meal, data.reply) : null,
       soon.length ? el("div", { class: "soonline" }, `⏰ uses your ${soon.join(", ")}: needs using`) : null,
       shown.length ? el("div", { class: "chips" }, shown) : null,
       el("div", { class: "open" }, "Open recipe ›")));
@@ -672,7 +719,7 @@ function ingredientStatus(ing, reply) {
 }
 
 async function openRecipe(meal, data) {
-  const reply = (data && data.reply) || {};
+  const reply = replyForMeal((data && data.reply) || {}, meal);
   $("sheetTitle").textContent = meal.name;
   const body = $("sheetBody");
   const steps = el("div", {}, el("span", { class: "spinner" }), "Writing the steps…");
@@ -974,8 +1021,27 @@ function ownItems() {
   return state.inventory.filter((i) => i.source !== "staple");
 }
 
+function setCookMode(mode) {
+  state.cookMode = mode === "shop" ? "shop" : "home";
+  storageSet("ftt.cookMode", state.cookMode);
+  renderCookMode();
+}
+
+// The switch above the quick replies; shown once there is an inventory to cook from.
+function renderCookMode() {
+  const box = $("cookMode");
+  const opt = (mode, label, title) => el("button", {
+    type: "button", role: "radio", "aria-checked": String(state.cookMode === mode), title,
+    disabled: state.busy, onclick: () => setCookMode(mode) }, label);
+  box.replaceChildren(
+    opt("home", "🏠 Only what I have", "Ideas use only what is in your kitchen"),
+    opt("shop", "🛒 Shopping OK", "Ideas may need up to 3 things from the shop"));
+  box.hidden = !ownItems().length;
+}
+
 // Shortcuts above the text box, depending on what the app knows. Hidden while typing or with photos waiting.
 function renderQuick() {
+  renderCookMode();
   const box = $("quick");
   const say = (text) => () => { $("input").value = text; updateSend(); $("composer").requestSubmit(); };
   const chips = [];
@@ -1031,6 +1097,7 @@ async function send(event) {
   const form = new FormData();
   form.append("session_id", state.sessionId);
   form.append("message", text);
+  form.append("cook_mode", state.cookMode);
   for (const p of photos) { form.append("images", p.file); form.append("locations", p.place); }
 
   // Object URLs do not survive a reload; the transcript keeps the tags only.
@@ -1048,7 +1115,7 @@ async function send(event) {
     const data = await api("/chat", { method: "POST", body: form });
     setInventory(data);
     typing.remove();
-    addEntry({ role: "agent", data });
+    addEntry({ role: "agent", data, asked: text });
     const scanned = (data.trace || []).some((s) => s.tool === "recognize_inventory" && !s.failed);
     if (scanned && photos.length) openReview([...new Set(photos.map((p) => p.place))]);
   } catch (err) {
@@ -1128,6 +1195,8 @@ $("newChat").addEventListener("click", () => {
   startSession(newSessionId());
   opening();
 });
+
+state.cookMode = storageGet("ftt.cookMode") === "shop" ? "shop" : "home";
 
 (async function init() {
   // The inventory first, so the saved transcript's meal cards show display names and "use soon".

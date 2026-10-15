@@ -26,8 +26,8 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from app import config, llm
 from app.models import (
-    AgentReply, Constraints, InventoryChange, Location, MealCandidate, MissingReport, Recipe, StepTiming,
-    SuggestResult, ToolTraceItem, TurnUsage, ValidationResult,
+    MAX_TO_BUY, AgentReply, Constraints, CookMode, InventoryChange, Location, MealCandidate, MissingReport, Recipe,
+    StepTiming, SuggestResult, ToolTraceItem, TurnUsage, ValidationResult,
 )
 from app.store import Store
 from app.timing import TimedModel, TimedToolset
@@ -56,6 +56,21 @@ passed candidate in meal_ids (one id only). Say which USE SOON item it uses ("Yo
 how about ...?"). If no item is marked USE SOON, offer one quick idea instead. No questions about \
 uncertain items in this message."""
 
+# The cooking mode line of the instructions (T4.5); code enforces it in suggest_meals and the output check.
+# SHOP_NOTE starts every user message sent in Shopping OK mode (see user_prompt).
+SHOP_NOTE = "[cooking mode: Shopping OK]"
+COOK_MODE_TEXT = {
+    "home": "Cooking mode (the user's switch in the app): ONLY WHAT I HAVE. Mode A meals use only the "
+            "inventory and staples; never show a suggested meal that needs buying. A dish the user names "
+            "(Mode B) still gets its shopping list. If the user says they can go shopping, tell them to "
+            f"switch to Shopping OK. When your last reply answered a message that started with {SHOP_NOTE}, "
+            "the user has switched back: call suggest_meals again instead of repeating that reply.",
+    "shop": f"Cooking mode (the user's switch in the app): SHOPPING OK. The user is happy to buy up to "
+            f"{MAX_TO_BUY} items per meal, so Mode A meals may need a few things from the shop. The user's "
+            f"messages sent in this mode start with {SHOP_NOTE}; when your last reply was given without "
+            "it, call suggest_meals again instead of repeating that reply.",
+}
+
 # About 8 tool calls per turn (PRODUCT §5); the limit is a hard stop a little above that.
 USAGE_LIMITS = UsageLimits(tool_calls_limit=10, request_limit=16)
 
@@ -81,10 +96,15 @@ tool returned.
 2. If the message says the inventory changed ("we're out of eggs", "I bought chicken"), call \
 update_inventory first, then continue with the request.
 3. Mode A: call suggest_meals with the user's constraints. It returns candidates already checked by \
-code: "passed" ones may be shown as they are (put 1 to 3 of their ids in meal_ids); "failed" ones must \
-not be shown as Mode A meals: drop them, or call suggest_meals again with exclude if fewer than 1 passed, \
-or present one as a Mode B answer with a shopping list. Prefer meals that use items marked USE SOON.
-4. Mode B: call get_recipe, then compute_missing. Then, before writing the reply, go through each missing \
+code for the cooking mode (below): "passed" ones may be shown as they are (put 1 to 3 of their ids in \
+meal_ids); "failed" ones must never be shown: drop them, or call suggest_meals again with exclude if \
+none passed. Prefer meals that use items marked USE SOON. In ONLY WHAT I HAVE mode, if nothing passed \
+after the second call, say so in one sentence (the app then offers the user a "Shopping OK" button). \
+In SHOPPING OK mode a passed candidate may list to_buy and check_first: shopping_list = the to_buy of \
+the meals you show, check_first = their check_first, and message names no ingredient ("These need a \
+couple of things from the shop; each card says what.").
+4. Mode B (the user names a dish they want, in either cooking mode): call get_recipe, then \
+compute_missing. Then, before writing the reply, go through each missing \
 essential ingredient and look in the inventory for a substitute that plays the same role in the dish \
 (cottage cheese for ricotta, greek yogurt for sour cream, butter for oil, one hard cheese for another). \
 Do not swap the ingredient that defines the dish (no chicken in a beef bolognese, no other noodles for \
@@ -134,6 +154,9 @@ class Deps:
     vision_model: Model | None = None
     # Timing of every model call and tool call in this run, in order (filled by app/timing.py).
     steps: list[StepTiming] = field(default_factory=list)
+    # The user's switch in the page (T4.5): what suggested meals may need. Checked in code.
+    cook_mode: CookMode = "home"
+    suggested: bool = False  # suggest_meals was called in this run (for AgentReply.offer_shop)
 
 
 # Explicit tool output. With the default "auto" mode pydantic-ai also tries to parse a plain-text
@@ -164,6 +187,7 @@ async def instructions(ctx: RunContext[Deps]) -> str:
         INSTRUCTIONS.format(today=date.today().isoformat()),
         f"Inventory (what the household has now; places marked NOT SCANNED are unknown):\n{summary}",
         f"Preferences:\n{preferences.preferences_summary(store)}",
+        COOK_MODE_TEXT[ctx.deps.cook_mode],
     ]
     if ctx.deps.images:
         lines.append(f"The user attached {_photos_text(ctx.deps.images)} to this message.")
@@ -176,13 +200,16 @@ def _photos_text(images: list[tuple[Path, Location]]) -> str:
     return f"{n} photo{'s' if n != 1 else ''} ({places})"
 
 
-def user_prompt(message: str, images: list[tuple[Path, Location]]) -> str:
-    """The user turn as the model sees it: an attachment note, then the text."""
-    message = message.strip()
-    if not images:
-        return message
-    note = f"[user attached {_photos_text(images)}]"
-    return f"{note}\n{message}" if message else note
+def user_prompt(message: str, images: list[tuple[Path, Location]], cook_mode: CookMode = "home") -> str:
+    """The user turn as the model sees it: an attachment note, a Shopping OK note, then the text.
+
+    The Shopping OK note stays in the history, so the model sees that the switch changed since its last
+    reply (without it, the same question after the switch got the same answer).
+    """
+    notes = [f"[user attached {_photos_text(images)}]"] if images else []
+    if cook_mode == "shop":
+        notes.append(SHOP_NOTE)
+    return "\n".join([*notes, message.strip()]).strip()
 
 
 def _dish_key(name: str) -> str:
@@ -300,20 +327,24 @@ async def suggest_meals(
     n: int = 5,
     exclude: list[str] | None = None,
 ) -> SuggestResult:
-    """Generate up to n meal candidates from the inventory (Mode A), already checked by code.
+    """Generate up to n meal candidates from the inventory (Mode A), already checked by code for the cooking mode.
 
     request: the user's wishes in free text ("quick, kids are eating, vegetarian"). max_minutes: time
     limit if the user gave one. exclude: dish names already shown or rejected. Candidates are built
-    around inventory items and prefer USE SOON ones. "passed" candidates use only inventory items and
-    staples and respect the preferences: show them by putting their ids in meal_ids. "failed" ones say
-    why (missing items, pantry not scanned, a violated preference) and must not be shown as Mode A meals.
+    around inventory items and prefer USE SOON ones. "passed" candidates respect the preferences and the
+    cooking mode (ONLY WHAT I HAVE: inventory and staples only; SHOPPING OK: to_buy lists what to buy):
+    show them by putting their ids in meal_ids. "failed" ones say why and must never be shown.
     """
     constraints = Constraints(text=request, max_minutes=max_minutes)
     store = ctx.deps.store
-    found = await recipes.suggest_meals(store, constraints, n=n, exclude=exclude, model=_recipe_model(ctx))
+    mode = ctx.deps.cook_mode
+    ctx.deps.suggested = True
+    found = await recipes.suggest_meals(store, constraints, n=n, exclude=exclude, cook_mode=mode,
+                                        model=_recipe_model(ctx))
     for r in found:
         _remember(ctx, r)
-    out = checks.check_candidates(found, inventory.get_inventory(store), store.load_preferences(), store.load_scan_state())
+    out = checks.check_candidates(found, inventory.get_inventory(store), store.load_preferences(),
+                                  store.load_scan_state(), mode)
     _log("suggest_meals", f"{request!r} max={max_minutes} n={n} exclude={exclude}",
          f"passed {[c.name for c in out.passed]} failed {[(c.name, c.reason) for c in out.failed]}")
     return out
@@ -401,6 +432,7 @@ async def check_output(ctx: RunContext[Deps], reply: AgentReply) -> AgentReply:
     store = ctx.deps.store
     result = checks.check_reply(
         reply, ctx.deps.recipes, inventory.get_inventory(store), store.load_preferences(), store.load_scan_state(),
+        ctx.deps.cook_mode,
     )
 
     def record(detail: str) -> None:
@@ -460,16 +492,19 @@ async def run_turn(
     model: Model | None = None,
     recipe_model: Model | None = None,
     vision_model: Model | None = None,
+    cook_mode: CookMode = "home",
 ) -> TurnResult:
     """One chat turn: load the session history, run the agent, save the history, return the reply.
 
     `images` are the photos uploaded with this message, each with the place the user tagged.
+    `cook_mode` is the page's switch (T4.5). In home mode, a turn that called suggest_meals and shows
+    fewer than 2 suggested meals gets AgentReply.offer_shop (the page offers "Shopping OK").
     """
     images = list(images or [])
     if not message.strip() and not images:
         raise ValueError("a turn needs a message or at least one photo")
-    return await _run(store, session_id, user_prompt(message, images), images,
-                      model=model, recipe_model=recipe_model, vision_model=vision_model)
+    return await _run(store, session_id, user_prompt(message, images, cook_mode), images,
+                      model=model, recipe_model=recipe_model, vision_model=vision_model, cook_mode=cook_mode)
 
 
 def has_items(store: Store) -> bool:
@@ -533,10 +568,11 @@ async def _run(
     recipe_model: Model | None,
     vision_model: Model | None = None,
     hidden: bool = False,
+    cook_mode: CookMode = "home",
 ) -> TurnResult:
     history = store.load_session_messages(session_id)
     deps = Deps(store=store, images=images, recipe_model=recipe_model, vision_model=vision_model,
-                recipes=last_reply_recipes(store, history))
+                recipes=last_reply_recipes(store, history), cook_mode=cook_mode)
     model = model or llm.agent_model()
     start = time.perf_counter()
     result = await agent.run(
@@ -549,6 +585,9 @@ async def _run(
     )
     latency = time.perf_counter() - start
     fill_meals(result.output, deps.recipes)
+    reply = result.output
+    if cook_mode == "home" and deps.suggested and not hidden and not reply.off_topic:
+        reply.offer_shop = sum(not m.requested for m in reply.meals) < 2
     messages = result.all_messages()
     if hidden:
         _hide_prompt(result.new_messages(), prompt)

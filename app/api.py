@@ -24,7 +24,7 @@ from app import config
 from app.agent import TurnResult, run_opening, run_turn
 from app.llm import setup_observability
 from app.models import (
-    AgentReply, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
+    AgentReply, CookMode, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
     TurnUsage,
 )
 from app.store import Store
@@ -160,6 +160,7 @@ async def chat(
     message: Annotated[str, Form()] = "",
     images: Annotated[list[UploadFile], File(description=f"Up to {MAX_IMAGES} photos")] = [],
     locations: Annotated[list[str], Form(description="One of fridge|freezer|pantry per image, in order")] = [],
+    cook_mode: Annotated[CookMode, Form(description="home = only what is there; shop = a few items to buy are OK")] = "home",
 ) -> ChatResponse:
     """One chat turn: the agent's reply with meal cards, the trace, and the refreshed inventory panel."""
     images = [i for i in images if i.filename]  # /docs sends an empty file part when none is chosen
@@ -170,7 +171,7 @@ async def chat(
         raise HTTPException(400, "Send a message or at least one photo.")
     paths = await _save_uploads(images)
     try:
-        turn = await runner(store, session_id, message, list(zip(paths, tags)))
+        turn = await runner(store, session_id, message, list(zip(paths, tags)), cook_mode=cook_mode)
     except ModelAPIError as e:
         log.warning("chat %s: model API error: %s", session_id, e)
         raise HTTPException(503, MODEL_DOWN) from e
