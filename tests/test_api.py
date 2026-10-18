@@ -350,3 +350,24 @@ def test_photo_service_down_is_503(client, store, monkeypatch):
 
 async def _done(value):
     return value
+
+
+def test_patch_inventory_sets_and_clears_an_amount(client, store):
+    r = client.patch("/inventory", json=[{"op": "add", "name": "chicken", "category": "meat"},
+                                         {"op": "set_amount", "name": "chicken", "amount": 500, "unit": "g"}])
+    assert r.status_code == 200, r.text
+    chicken = {i["name"]: i for i in r.json()["inventory"]}["chicken"]
+    assert (chicken["amount"], chicken["unit"], chicken["amount_text"], chicken["qty_level"]) == (500, "g", "500 g", "some")
+    r = client.patch("/inventory", json=[{"op": "set_amount", "name": "chicken", "amount": None}])
+    chicken = {i["name"]: i for i in r.json()["inventory"]}["chicken"]
+    assert chicken["amount"] is None and chicken["amount_text"] == ""
+
+
+def test_patch_inventory_add_field_with_an_amount(client):
+    r = client.patch("/inventory", json=[{"op": "add", "name": "milk 2 l", "location": "fridge", "qty_level": "some"}])
+    milk = {i["name"]: i for i in r.json()["inventory"]}["milk"]
+    assert (milk["display_name"], milk["amount_text"]) == ("milk", "2 l")
+
+
+def test_patch_inventory_rejects_a_bad_unit(client):
+    assert client.patch("/inventory", json=[{"op": "set_amount", "name": "milk", "amount": 2, "unit": "cup"}]).status_code == 422

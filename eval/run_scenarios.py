@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import config  # noqa: E402
+from app.amounts import format_amount, parse_amount  # noqa: E402
 from app.agent import run_opening, run_turn  # noqa: E402
 from app.llm import setup_observability  # noqa: E402
 from app.models import MAX_TO_BUY, AgentReply, InventoryChange, ToolTraceItem  # noqa: E402
@@ -46,6 +47,7 @@ EXPECT_KEYS = {
     "shopping_list_empty", "check_first_contains", "check_first_must_not_contain", "check_first_empty",
     "substitution_for", "preference_saved", "inventory_lacks", "max_questions", "message_matches", "asks_for_photo",
     "message_must_not_match", "off_topic", "shopping_list_not_empty", "meals_fit_shop", "offer_shop",
+    "inventory_amount",
 }
 
 
@@ -190,10 +192,16 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
     for w in expect.get("preference_saved") or []:
         if not _has(avoided, w):
             fail(f"no stored preference avoids {w} (avoid lists: {avoided})")
-    inv_names = [i.name for i in get_inventory(store)]
+    inv = get_inventory(store)
+    inv_names = [i.name for i in inv]
     for w in expect.get("inventory_lacks") or []:
         if any(same_ingredient(n, w) for n in inv_names):
             fail(f"{w} still in the inventory")
+    for w, want in (expect.get("inventory_amount") or {}).items():  # {"egg": "6 pcs"}: compared as displayed
+        got = next((i.amount_text for i in inv if same_ingredient(i.name, w)), None)
+        want_text = format_amount(*(parse_amount(str(want)) or (None, None)))
+        if got != want_text:
+            fail(f"{w} amount is {got!r}, expected {want_text!r}")
 
     if (n := expect.get("max_questions")) is not None and len(reply.questions) > n:
         fail(f"{len(reply.questions)} questions > {n}")

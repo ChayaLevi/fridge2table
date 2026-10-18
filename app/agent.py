@@ -307,10 +307,13 @@ async def update_inventory(ctx: RunContext[Deps], changes: list[InventoryChange]
     """Apply inventory changes the user asked for and return the updated inventory.
 
     Ops: add (name; optional qty_level plenty|some|low, location fridge|freezer|pantry, category,
-    use_soon), remove, set_qty (qty_level; omit it to mean "none left"), set_use_soon (use_soon),
-    rename (new_name). Use it when the user says the inventory changed ("we're out of eggs" -> remove
-    egg; "bought chicken" -> add chicken; "the spinach should be used soon" -> set_use_soon). Only
-    change what the user said.
+    use_soon, amount, unit), remove, set_qty (qty_level; omit it to mean "none left"), set_use_soon
+    (use_soon), rename (new_name), set_amount (amount, unit pcs|g|kg|ml|l|pack; amount null clears it).
+    Use it when the user says the inventory changed ("we're out of eggs" -> remove egg; "bought chicken"
+    -> add chicken; "the spinach should be used soon" -> set_use_soon). When the user gives an exact
+    amount, record it with set_amount ("we have 6 eggs" -> set_amount egg 6 pcs; "there's 2 liters of
+    milk" -> set_amount milk 2 l), or with add + amount if the item is not in the inventory. An amount
+    does not change qty_level; never guess one the user did not say. Only change what the user said.
     """
     inventory.update_inventory(ctx.deps.store, changes, source="chat")
     ops = ", ".join(f"{c.op} {c.name}" for c in changes)

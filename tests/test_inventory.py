@@ -396,3 +396,91 @@ def test_summary_marks_not_seen_items_first(store):
     store.save_inventory([item("milk"), item("butter", not_seen=True)])
     line = inventory_summary(get_inventory(store), ScanState(scanned={})).splitlines()[0]
     assert line.index("butter (some, NOT SEEN IN LAST PHOTO)") < line.index("milk")
+
+
+# --- exact amounts (T6.3) ---------------------------------------------------------------------------
+
+def test_set_amount_keeps_qty_level_and_is_stored_as_entered(store):
+    update_inventory(store, [add("milk", category="dairy", qty_level="low")])
+    inv = by_name(update_inventory(store, [InventoryChange(op="set_amount", name="milk", amount=1.5, unit="l")]))
+    assert (inv["milk"].amount, inv["milk"].unit, inv["milk"].qty_level) == (1.5, "l", "low")
+    assert inv["milk"].amount_text == "1.5 l"
+    assert by_name(Store(store.path).load_inventory())["milk"].unit == "l"  # persisted
+
+
+def test_set_amount_default_unit_by_category(store):
+    update_inventory(store, [add("egg", category="egg"), add("chicken", category="meat"), add("milk", category="dairy")])
+    inv = by_name(update_inventory(store, [
+        InventoryChange(op="set_amount", name="eggs", amount=6),
+        InventoryChange(op="set_amount", name="chicken", amount=500),
+        InventoryChange(op="set_amount", name="milk", amount=2),
+    ]))
+    assert (inv["egg"].amount, inv["egg"].unit) == (6, "pcs")
+    assert (inv["chicken"].amount, inv["chicken"].unit) == (500, "g")
+    assert (inv["milk"].amount, inv["milk"].unit) == (2, "l")
+
+
+@pytest.mark.parametrize("amount", [None, 0])
+def test_set_amount_none_or_zero_clears_it(store, amount):
+    update_inventory(store, [add("milk", amount=2, unit="l")])
+    inv = by_name(update_inventory(store, [InventoryChange(op="set_amount", name="milk", amount=amount)]))
+    assert "milk" in inv and inv["milk"].amount is None and inv["milk"].unit is None
+    assert inv["milk"].amount_text == ""
+
+
+def test_set_amount_on_a_missing_item_is_ignored(store):
+    assert "milk" not in by_name(update_inventory(store, [InventoryChange(op="set_amount", name="milk", amount=2)]))
+
+
+def test_set_amount_rejects_negative():
+    with pytest.raises(ValueError):
+        InventoryChange(op="set_amount", name="milk", amount=-1)
+
+
+def test_add_reads_the_amount_from_the_name(store):
+    inv = by_name(update_inventory(store, [add("milk 2 l", location="fridge"), add("6 eggs", category="egg")],
+                                   source="manual"))
+    assert (inv["milk"].amount, inv["milk"].unit, inv["milk"].display_name) == (2, "l", "milk")
+    assert (inv["egg"].amount, inv["egg"].unit, inv["egg"].display_name) == (6, "pcs", "eggs")
+
+
+def test_add_without_amount_keeps_the_stored_amount(store):
+    update_inventory(store, [add("milk", amount=2, unit="l")])
+    inv = by_name(update_inventory(store, [add("milk", qty_level="plenty")]))
+    assert (inv["milk"].amount, inv["milk"].unit, inv["milk"].qty_level) == (2, "l", "plenty")
+
+
+def test_rename_confirm_and_qty_keep_the_amount(store):
+    store.save_inventory([item("white bottle", uncertain=True, confidence=0.3, category="dairy")])
+    update_inventory(store, [InventoryChange(op="set_amount", name="white bottle", amount=1, unit="l")])
+    update_inventory(store, [InventoryChange(op="confirm", name="white bottle")])
+    update_inventory(store, [InventoryChange(op="set_qty", name="white bottle", qty_level="low")])
+    inv = by_name(update_inventory(store, [InventoryChange(op="rename", name="white bottle", new_name="milk")]))
+    assert (inv["milk"].amount, inv["milk"].unit) == (1, "l")
+
+
+def test_rename_onto_an_existing_item_keeps_an_amount(store):
+    update_inventory(store, [add("milk"), add("white bottle", amount=1, unit="l")])
+    inv = by_name(update_inventory(store, [InventoryChange(op="rename", name="white bottle", new_name="milk")]))
+    assert (inv["milk"].amount, inv["milk"].unit) == (1, "l")
+
+
+def test_recognition_keeps_the_users_amount(store):
+    update_inventory(store, [add("milk", amount=2, unit="l")], source="chat")
+    inv = by_name(merge_recognized(store, [item("milk", qty_level="low")], places=["fridge"]))
+    assert (inv["milk"].amount, inv["milk"].qty_level) == (2, "low")
+
+
+def test_summary_shows_the_amount(store):
+    update_inventory(store, [add("milk", amount=2, unit="l"), add("chicken", category="meat", amount=1500, unit="g"),
+                             add("egg")])
+    text = inventory_summary(get_inventory(store), ScanState(scanned={}))
+    assert "milk (2 l, some)" in text
+    assert "chicken (1.5 kg, some)" in text
+    assert "egg (some)" in text
+
+
+def test_add_with_an_amount_keeps_the_display_name_of_an_existing_item(store):
+    update_inventory(store, [add("egg", display_name="Free-range eggs")])
+    inv = by_name(update_inventory(store, [add("6 eggs")], source="manual"))
+    assert (inv["egg"].display_name, inv["egg"].amount) == ("Free-range eggs", 6)

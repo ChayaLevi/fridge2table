@@ -2,8 +2,10 @@ import secrets
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from pydantic.json_schema import SkipJsonSchema
+
+from app.amounts import Unit, format_amount
 
 QtyLevel = Literal["plenty", "some", "low"]
 Location = Literal["fridge", "freezer", "pantry"]
@@ -34,10 +36,20 @@ class InventoryItem(BaseModel):
     is_staple: bool = False
     source: Literal["photo", "chat", "manual", "staple"]
     updated_at: datetime
+    # Optional exact amount (T6.3), only from the user (panel or chat), stored as entered; recognition never
+    # sets it. Independent of qty_level, which stays the level the checks use.
+    amount: float | None = None
+    unit: Unit | None = None
+
+    @computed_field
+    @property
+    def amount_text(self) -> str:
+        """For display: "2 l", "1.5 kg", "" when there is no amount."""
+        return format_amount(self.amount, self.unit)
 
 
 class InventoryChange(BaseModel):
-    op: Literal["add", "remove", "set_qty", "set_use_soon", "rename", "add_staple", "confirm"]
+    op: Literal["add", "remove", "set_qty", "set_use_soon", "rename", "add_staple", "confirm", "set_amount"]
     name: str  # ingredient the change applies to
     display_name: str | None = None  # add
     category: str | None = None  # add
@@ -45,6 +57,8 @@ class InventoryChange(BaseModel):
     qty_level: QtyLevel | None = None  # add, set_qty
     use_soon: bool | None = None  # add, set_use_soon
     new_name: str | None = None  # rename
+    amount: float | None = Field(default=None, ge=0)  # set_amount (None or 0 clears it), add
+    unit: Unit | None = None  # set_amount, add; None = the default unit for the item's category
 
 
 class Constraints(BaseModel):

@@ -27,6 +27,7 @@ A kitchen agent that knows what is in your home: photograph the fridge and pantr
 | Inventory correction | Editable side panel with uncertain items highlighted. The agent also asks about up to 3 uncertain items in chat. No separate clarification wizard. |
 | Staples | Default editable list (salt, oil, ...) assumed present unless the user removes them. |
 | Expiry | No expiry tracking. The user marks items "use soon". |
+| Quantities | Coarse levels (plenty / some / low) always; an optional exact amount (g, kg, ml, l, pcs, pack) only when the user enters it (T6.3). Recognition never guesses amounts; the checks stay presence-based. |
 | Coverage | The inventory is built from three places: fridge, freezer, pantry. The user tags each photo with its place. The agent tracks which places were scanned and asks for the missing ones. Until the pantry is scanned, pantry-type ingredients are never reported as definitely missing. |
 | Persistence | Inventory and preferences persist across sessions. Chat history per session. |
 | UI | Mobile web app: chat + inventory side panel (a drawer on a phone). |
@@ -86,7 +87,7 @@ All tools live in `app/tools/` as plain functions with Pydantic I/O. The agent w
 |---|---|---|
 | `recognize_inventory(image_paths)` | LLM (vision) | images → `list[InventoryItem]` (draft, with `confidence`, `uncertain`) |
 | `get_inventory()` | code | → `list[InventoryItem]` (confirmed + staples) |
-| `update_inventory(changes)` | code | `list[InventoryChange]` (add / remove / set_qty / set_use_soon / rename) → updated inventory |
+| `update_inventory(changes)` | code | `list[InventoryChange]` (add / remove / set_qty / set_use_soon / rename / confirm / add_staple / set_amount) → updated inventory |
 | `suggest_meals(constraints, n, exclude)` | LLM (text) + code | free-text constraints, how many, dishes to exclude → `SuggestResult`: candidates (id, name, ingredients, time; **no steps**) already run through `validate_suggestion`, split into `passed` and `failed` (with the reason) |
 | `get_recipe(dish)` | LLM (text) | dish name → `Recipe` (no steps); the agent sees it as a `MealCandidate` |
 | `get_steps(recipe_id)` | LLM (text) | recipe id → the same `Recipe` with `steps` filled; generated on first request, then stored. Called by the API when the user opens a card, never by the agent |
@@ -120,6 +121,9 @@ class InventoryItem(BaseModel):
     is_staple: bool = False
     source: Literal["photo", "chat", "manual", "staple"]
     updated_at: datetime
+    amount: float | None = None   # optional exact amount, only from the user (panel or chat), stored as entered
+    unit: Literal["pcs", "g", "kg", "ml", "l", "pack"] | None = None
+    amount_text: str              # computed for display: "2 l", "1.5 kg", "" when no amount
 
 class Ingredient(BaseModel):
     name: str               # canonical
@@ -204,6 +208,14 @@ class AgentReply(BaseModel):
     # trace is attached by the server from the run's messages, not produced by the model
 ```
 
+**Exact amounts (T6.3, `app/amounts.py`).** `qty_level` is always set and is what the checks use. The exact amount is optional and comes only from the user: the panel's Amount line, the add field ("milk 2 l", "6 eggs"), or chat ("we have 6 eggs" → `set_amount`). Recognition never guesses one. `InventoryChange` op `set_amount` (name, amount, unit; amount null or 0 clears it; unit null = the category default) never changes `qty_level`; rename, confirm, set_qty and later photos keep the amount. Helpers, all deterministic:
+- `parse_amount(text)` → `(amount, unit)` or None: "300 g", "1.5 kg", "500ml", "2 l", "2" (pcs), "1/2 l", "about 300 g" parse; "a handful", "2 tbsp", "1 lb" → None.
+- `to_base(amount, unit)` → `(value, base_unit)`: kg → g ×1000, l → ml ×1000; g, ml, pcs, pack stay.
+- `format_amount(amount, unit)` for display: 1500 g → "1.5 kg", 0.5 l → "500 ml".
+- `default_unit(category, name)`: egg, fruit, vegetable → pcs; meat, fish, dairy (cheese), grain, pasta, baking → g; drink and milk → l; sauce → ml; otherwise pcs.
+
+The checks stay presence-based: amounts are never compared with recipe amounts. T6.1 "I made it" and T6.4 "Bought it" will use `parse_amount` / `to_base` to subtract or add when the units are compatible, and otherwise move `qty_level` by one step.
+
 **Matching rule (used by `compute_missing` and `validate_suggestion`):** an ingredient counts as available if its canonical name equals an inventory item's canonical name, or both map to the same entry in `data/synonyms.json`, or it is in the staples list (and the user has not removed that staple). Items with `qty_level == "low"` still count as available. Optional ingredients never fail validation.
 
 **Unscanned pantry rule:** if the pantry has never been scanned, a missing essential ingredient whose `category` is in `PANTRY_CATEGORIES` goes to `check_first`, not `missing_essential`. In Mode A, `validate_suggestion` still fails such a meal (we only suggest from what we know is there), and the failure reason says "pantry not scanned" so the agent can mention it.
@@ -215,7 +227,7 @@ One page, mobile first.
 - **Meal cards** inside agent messages: name, time, the inventory items it uses (chips; "use soon" chips highlighted). Tap → full recipe in a bottom sheet.
 - **Shopping list** block inside agent messages when present: substitutions on top, then "To buy", then "Check your pantry first" (muted style).
 - **Trace line** under each agent message, collapsed by default: "3 tools · updated inventory → 5 candidates → 1 failed (no cream) → replaced". Expanded: one line per tool call.
-- **Inventory panel**: a drawer opened from a header button, with a count badge. Grouped by location; each location header shows "scanned 2 days ago" or "not scanned yet" with a camera button that opens the photo picker pre-tagged with that place. Uncertain items at the top with a warning style. Each item: name, quantity level (tap to cycle), "use soon" toggle, delete. "Add item" input. A "Staples" section that can be collapsed.
+- **Inventory panel**: a drawer opened from a header button, with a count badge. Grouped by location; each location header shows "scanned 2 days ago" or "not scanned yet" with a camera button that opens the photo picker pre-tagged with that place. Uncertain items at the top with a warning style. Each item: name (with its exact amount when set: "Milk · 2 l"), quantity level dot, and on tap its actions: quantity level, "use soon" toggle, rename, delete, and an **Amount** line (a number input that accepts 1.5, unit chips pcs / g / kg / ml / l / pack with the category's default preselected, Save, Clear; saved with `PATCH /inventory` `set_amount`). "Add item" input, which also accepts an amount ("milk 2 l", "6 eggs"). A "Staples" section that can be collapsed.
 - Loading state while the agent runs. If possible, stream the message text.
 
 ## 9. Model choice

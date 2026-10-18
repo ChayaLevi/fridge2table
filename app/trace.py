@@ -22,7 +22,8 @@ OUTPUT_TOOL_NAME = "reply"  # the agent's output tool (app.agent uses this const
 OUTPUT_CHECK = "output check"
 LIMIT = 100  # characters per summary
 
-_OP_WORDS = {"add": "added", "remove": "removed", "set_qty": "qty set", "set_use_soon": "use-soon set", "rename": "renamed"}
+_OP_WORDS = {"add": "added", "remove": "removed", "set_qty": "qty set", "set_use_soon": "use-soon set", "rename": "renamed",
+             "set_amount": "amount set"}
 
 
 def short(text: str, limit: int = LIMIT) -> str:
@@ -45,10 +46,20 @@ def _recipe_name(ref: Any, recipes: dict[str, Recipe]) -> str:
     return recipe.name if recipe else str(ref)
 
 
+def _amount_arg(change: dict[str, Any]) -> str:
+    """" 6 pcs" for a set_amount change ("" for other ops; " cleared" when the amount is cleared)."""
+    if change.get("op") != "set_amount":
+        return ""
+    if not change.get("amount"):
+        return " cleared"
+    return f" {change['amount']:g} {change.get('unit') or ''}".rstrip() if isinstance(change["amount"], (int, float)) else ""
+
+
 def args_summary(tool: str, args: dict[str, Any], recipes: dict[str, Recipe]) -> str:
     """"remove egg, add chicken", "'quick' max 30 min", "Lasagna", "'no pork' avoid pork"."""
     if tool == "update_inventory":
-        text = ", ".join(f"{c.get('op')} {c.get('name')}" for c in args.get("changes") or [] if isinstance(c, dict))
+        text = ", ".join(f"{c.get('op')} {c.get('name')}" + _amount_arg(c)
+                         for c in args.get("changes") or [] if isinstance(c, dict))
     elif tool == "suggest_meals":
         parts = [repr(args["request"])] if args.get("request") else []
         if args.get("max_minutes"):

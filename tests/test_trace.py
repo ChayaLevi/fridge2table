@@ -253,3 +253,11 @@ def test_step_labels():
 
 def test_trace_sentence_of_no_steps_is_empty():
     assert trace_sentence([]) == ""
+
+
+def test_set_amount_in_the_trace():
+    changes = {"changes": [{"op": "set_amount", "name": "egg", "amount": 6, "unit": "pcs"},
+                           {"op": "set_amount", "name": "milk", "amount": 1.5, "unit": "l"},
+                           {"op": "set_amount", "name": "cheese", "amount": None}]}
+    assert args_summary("update_inventory", changes, {}) == "set_amount egg 6 pcs, set_amount milk 1.5 l, set_amount cheese cleared"
+    assert result_summary("update_inventory", changes, "Applied: ...") == ("amount set 3", False)

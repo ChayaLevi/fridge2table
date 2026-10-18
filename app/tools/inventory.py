@@ -14,6 +14,7 @@ from collections.abc import Iterable
 from functools import lru_cache
 from typing import Literal
 
+from app.amounts import default_unit, format_amount, split_amount
 from app.config import STAPLES_PATH
 from app.models import InventoryChange, InventoryItem, Location, ScanState
 from app.store import Store
@@ -78,6 +79,9 @@ def update_inventory(
     - add_staple: the name becomes a staple (assumed always present); a stored item with that name
       is replaced by the staple.
     - set_qty with qty_level=None means "below low": the item is removed.
+    - set_amount sets the optional exact amount (unit None = the category's default unit); amount None or
+      0 clears it. It never changes qty_level. add takes amount/unit too, or reads them from the name
+      ("milk 2 l", "6 eggs"); an add without an amount keeps the stored one.
     - Names that are not in the inventory are ignored for remove/set_qty/set_use_soon/rename.
     """
     stored = store.load_inventory()
@@ -112,7 +116,16 @@ def update_inventory(
         # A user or agent edit confirms the item.
         item.source, item.confidence, item.uncertain, item.not_seen, item.updated_at = source, 1.0, False, False, now
 
+    def set_amount(item: InventoryItem, amount: float | None, unit) -> None:
+        if not amount:
+            item.amount, item.unit = None, None
+        else:
+            item.amount, item.unit = amount, unit or default_unit(item.category, item.name)
+
     for ch in changes:
+        if ch.op == "add" and ch.amount is None and (split := split_amount(ch.name)) is not None:
+            typed, amount, unit = split
+            ch = ch.model_copy(update={"name": typed, "amount": amount, "unit": unit})
         name = normalize(ch.name)
         if not name:
             continue
@@ -147,6 +160,8 @@ def update_inventory(
                 for field in ("display_name", "category", "location", "qty_level", "use_soon"):
                     if (value := getattr(ch, field)) is not None:
                         setattr(item, field, value)
+            if ch.amount is not None:
+                set_amount(item, ch.amount, ch.unit)
             touch(item)
             continue
 
@@ -158,6 +173,9 @@ def update_inventory(
         elif ch.op == "set_qty":
             item.qty_level = ch.qty_level
             touch(item)
+        elif ch.op == "set_amount":
+            set_amount(item, ch.amount, ch.unit)
+            touch(item)
         elif ch.op == "set_use_soon":
             item.use_soon = True if ch.use_soon is None else ch.use_soon
             touch(item)
@@ -168,6 +186,8 @@ def update_inventory(
             existing = next((i for i in stored if i.name == new and i is not item), None)
             if existing is not None:  # renamed onto an item we already have: keep one
                 existing.use_soon = existing.use_soon or item.use_soon
+                if existing.amount is None:
+                    existing.amount, existing.unit = item.amount, item.unit
                 drop(item)
                 item = existing
             else:
@@ -225,7 +245,7 @@ def merge_recognized(
 
 
 def _item_text(i: InventoryItem) -> str:
-    flags = [i.qty_level]
+    flags = [format_amount(i.amount, i.unit), i.qty_level] if i.amount is not None else [i.qty_level]
     if i.use_soon:
         flags.append("USE SOON")
     if i.uncertain:
@@ -238,7 +258,8 @@ def _item_text(i: InventoryItem) -> str:
 def inventory_summary(items: list[InventoryItem], scan_state: ScanState) -> str:
     """Compact inventory text for prompts: one line per place, then the staples.
 
-    Each place says when it was scanned or "NOT SCANNED". Items read "name (qty[, USE SOON][, UNCERTAIN])".
+    Each place says when it was scanned or "NOT SCANNED". Items read
+    "name ([amount, ]qty[, USE SOON][, UNCERTAIN])", e.g. "milk (2 l, some)".
     """
     lines = []
     for loc in LOCATIONS:

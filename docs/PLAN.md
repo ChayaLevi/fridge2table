@@ -241,6 +241,18 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - Only if the decision point passed:
   - **T6.1 "We cooked it":** a button on each meal card ("We cooked this") and a chat intent. Lowers each used non-staple ingredient one level (`plenty → some → low → removed`) via `update_inventory`. Add a scenario.
   - **T6.2 Share shopping list:** a "Copy list" button on the shopping-list block (plain text, one item per line). Done early on 2026-10-18 at the human's request, with a "Download .txt" button next to it.
+
+### T6.3 Exact amount per inventory item (added 2026-10-18 at the human's request)
+- Recognition never guesses exact amounts: it sets only `qty_level`. The exact amount is optional and comes only from the user (panel or chat). The checks (`compute_missing`, `validate_suggestion`) stay presence-based; amounts are never compared with recipe amounts.
+- `InventoryItem.amount: float | None`, `unit: "pcs" | "g" | "kg" | "ml" | "l" | "pack" | None`, stored as entered. Helpers in `app/amounts.py`: `to_base` (kg → g ×1000, l → ml ×1000; pack stays pack), `format_amount` (1500 g → "1.5 kg", 0.5 l → "500 ml"), `parse_amount` (free-text recipe amounts: "300 g", "1.5 kg", "2", "500ml", "2 l"; "a handful" → None; at least 15 test cases), `default_unit` by category (egg, fruit, vegetable → pcs; meat, fish, dairy, grain, pasta, baking → g; drink, milk → l; sauce → ml; else pcs).
+- `InventoryChange` op `set_amount` (name, amount, unit; amount null clears it). It does not change `qty_level`; rename / confirm keep the amount. `inventory_summary` shows it ("milk (2 l, some)").
+- Agent: the `update_inventory` docstring mentions `set_amount` ("we have 6 eggs", "there's 2 liters of milk"). One new scenario; the existing ones still pass.
+- Page: in an item's actions, an "Amount" line: a number input (`inputmode="decimal"`, accepts 1.5), unit chips pcs / g / kg / ml / l / pack (default from the category), Clear; saved with `PATCH /inventory` `set_amount`. The row shows "Milk · 2 l" next to the name; the quantity dot stays. The "Add to <place>" field accepts "milk 2 l" or "6 eggs".
+- **Done when:** unit tests pass (models, `parse_amount`, `set_amount`, summary); the new scenario passes on real models; in a phone-size browser the human sets "500 g" on an item, sees it in the row, clears it, and adds "milk 2 l" from the Add field.
+- Later use: **T6.1 "I made it"** and **T6.4 "Bought it"** will use `parse_amount` and `to_base`: subtract (I made it) or add (Bought it) the recipe amount when the units are compatible (`same_kind`); otherwise change `qty_level` by one step.
+
+### T6.4 "Bought it" (planned 2026-10-18, not specified yet)
+- From the shopping list, mark items as bought: they are added to the inventory (or their amount raised, see T6.3). To be specified before it is built.
 - **Done when:** issues fixed or consciously deferred; scenarios ≥ 9/10 pass.
 
 ## P7 — Freeze (Thu Oct 22) 🧑

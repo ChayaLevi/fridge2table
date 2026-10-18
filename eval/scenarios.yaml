@@ -24,6 +24,7 @@
 #   message_must_not_match (regex), off_topic (true/false: the reply's off_topic flag)
 #   shopping_list_not_empty, meals_fit_shop (Shopping OK: no avoided ingredient, at most 3 to buy per meal),
 #   offer_shop (true/false: the reply offers the "Shopping OK" button)
+#   inventory_amount: {ingredient: "6 pcs"} the item's exact amount after the turn ("" = none), as displayed
 
 inventories:
   demo:
@@ -285,3 +286,13 @@ scenarios:
           meals_fit_shop: true
           shopping_list_not_empty: true
           offer_shop: false
+
+  - id: 15
+    name: Exact amounts from chat (set_amount; the level stays, nothing else changes)
+    seed: {inventory: demo, scanned: [fridge]}
+    turns:
+      - message: We have 6 eggs, and there's 2 liters of milk in the fridge.
+        expect:
+          first_tool: update_inventory
+          inventory_amount: {egg: 6 pcs, milk: 2 l, cheddar: ""}
+          off_topic: false

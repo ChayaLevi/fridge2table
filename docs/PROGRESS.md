@@ -34,15 +34,18 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T5.2 Latency (numbers in `eval/RESULTS.md`)
 - [ ] T5.3 Real user run #1 + decision point 🧑
 - [ ] P6 Fixes (+ T6.1 if the decision point passed; T6.2 done early, 2026-10-18)
+- [x] T6.3 Exact amount per inventory item (added and built 2026-10-18 at the human's request; the human's browser check is open)
+- [ ] T6.4 "Bought it" (planned 2026-10-18, not specified yet)
 - [ ] P7 Freeze 🧑
 
 ## Next up
 
+- **Open: the human checks T6.3** in a phone-size browser (set "500 g" on an item, see it in the row, clear it, add "milk 2 l" from the Add field; see the T6.3 log entry).
 - **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing). T5.2 is done (2026-10-15). After T5.1: T5.3, the real user run (🧑).
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 449 tests pass (2026-10-18, after T6.2 Copy list / Download .txt). Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 557 tests pass (2026-10-18, after T6.3 exact amounts). Scenario suite: 15 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15; 15 = exact amounts from chat, added 2026-10-18), 15/15 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -63,7 +66,8 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - ~~Model defaults were provisional Gemini/Claude strings~~ (superseded by the DeepSeek switch and T0.4; model values are bare DeepSeek IDs, see "Current model settings").
 - Extras beyond the plan (small): `.gitignore`, `pytest.ini` (asyncio_mode=auto), `httpx` dev dependency (needed by FastAPI TestClient), `LOG_LEVEL`/`LOGFIRE_TOKEN` in `.env.example` (CLAUDE.md debugging aids).
 - `data/synonyms.json` has 115 entries (112 + 3 added in the T1.1 redo) (flat map, no chains; a test enforces that targets are canonical). Ambiguous keys like bare `pepper` were left out on purpose.
-- `InventoryChange` ops: add | remove | set_qty | set_use_soon | rename | **add_staple** | **confirm** (2026-10-14) (added 2026-10-14 at the human's request: staples of the user's own, table `custom_staples`). Fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`.
+- `InventoryChange` ops: add | remove | set_qty | set_use_soon | rename | **add_staple** | **confirm** (2026-10-14) (added 2026-10-14 at the human's request: staples of the user's own, table `custom_staples`) | **set_amount** (2026-10-18, T6.3). Fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`, `amount`, `unit`.
+- **Exact amounts (2026-10-18, T6.3, the human's design):** `qty_level` always; an optional `amount` + `unit` only from the user. Recognition never sets it; the checks never look at it. CLAUDE.md rule 5 was changed accordingly.
 - 2026-10-12 (later): PLAN/PRODUCT were updated (pantry coverage). T0.2 re-done: added `ScanState`, `PANTRY_CATEGORIES`, `Ingredient.category`, `MissingReport.check_first`, `AgentReply.check_first`, extended category list. Tests now 6 pass. T0.1/T0.3 unaffected. T0.5 now asks for 4–6 sets (≥2 fridge, ≥2 pantry), folders `<household>_<place>`.
 - Order change (user request, 2026-10-12): the human has no API keys/photos yet, so T0.4 is deferred and P1/P2 are built with mocked models. T0.4, the real run of T1.4 and T1.6, and T2.5 wait for keys/photos.
 - Repo was not a git repo; `git init` done in T0.1.
@@ -94,6 +98,37 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-18 — T6.3 Exact amount per inventory item (the human's request)
+
+- Built:
+  - `app/amounts.py` (new, deterministic): `Unit` (`pcs | g | kg | ml | l | pack`), `parse_amount` (free text → `(amount, unit)` or None: "300 g", "1.5 kg", "1,5 kg", "1,000 g", "500ml", "2 l", "2" = pcs, "1/2 l", "1 1/2 kg", "about 300 g", "300 g (2 cups)"; "a handful", "2 tbsp", "1 lb", "2 lemons", "0" → None), `to_base`, `same_kind` (for T6.1 / T6.4), `format_amount`, `default_unit(category, name)` (milk-type liquids by name → l), `split_amount` (the add field: "milk 2 l", "6 eggs", "2 liters of milk", "a pack of butter"; "7up", "6eggs" are not amounts).
+  - `app/models.py`: `InventoryItem.amount`, `unit`, computed `amount_text` (in the API JSON; ignored when a stored row is read back). `InventoryChange` op `set_amount`, fields `amount` (≥ 0) and `unit`.
+  - `app/tools/inventory.py`: `set_amount` (amount None or 0 clears; unit None = `default_unit`; `qty_level` untouched); `add` takes `amount`/`unit` or reads them from the name with `split_amount` (for the agent too); an add without an amount keeps the stored one; rename onto an existing item takes the amount if that item has none; photos keep it (`merge_recognized` never touched it). `inventory_summary`: "milk (2 l, some)".
+  - `app/agent.py`: the `update_inventory` docstring explains `set_amount` and "never guess an amount". `app/trace.py`: "set_amount egg 6 pcs" / "amount set 2".
+  - `app/static/index.html`: the row shows "chicken · 500 g" (muted) next to the name; the dot stays. In the item's actions, an Amount line: number input (`inputmode="decimal"`, accepts "1.5" and "1,5"), unit chips with the category default preselected, Save (and Enter), Clear (only when an amount is set). A chip tap with a number typed saves at once; a bad number gets an orange border. `defaultUnit()` mirrors `default_unit()`. The Add field needed no change: the server splits "milk 2 l".
+  - `eval/scenarios.yaml` scenario 15 + expect key `inventory_amount` in `eval/run_scenarios.py`.
+  - Tests: `tests/test_amounts.py` (88: 26 parse cases, 17 None cases, to_base, format, default unit, split), 13 in `tests/test_inventory.py`, 2 in `tests/test_models.py`, 3 in `tests/test_api.py`, 1 in `tests/test_trace.py`, 1 in `tests/test_scenarios.py`. 557 pass.
+  - Docs: `CLAUDE.md` rule 5 and the layout; `docs/PRODUCT.md` §3 (a Quantities row), §6 (ops), §7 (fields and an "Exact amounts" paragraph), §8 (the Amount line); §11 had nothing about exact quantities. `docs/PLAN.md`: T6.3, the note for T6.1 / T6.4, a T6.4 stub.
+- Decisions / deviations:
+  - The helpers live in `app/amounts.py`, not in `models.py` (they are logic, and `models.py` imports `format_amount` for `amount_text`).
+  - `set_amount` on an item not in the inventory is ignored, like the other ops; the docstring tells the agent to use `add` with `amount` then.
+  - `set_amount` with amount 0 clears the amount (does not remove the item).
+  - Units are only the six listed: "2 tbsp", "1 lb", "16 oz", "2 cloves" parse to None. `parse_amount` accepts a trailing note after "(" "," ";" only.
+  - The user's request said "the existing 12" scenarios; the suite had 14, all re-run.
+- Checked: `uv run pytest -q` 557 passed. Scenario 15 on real models 3/3 (4.0-4.3 s, `update_inventory(set_amount egg 6 pcs, set_amount milk 2 l)`, "Got it, noted the 6 eggs and 2 liters of milk."); full suite `--jobs 4` 15/15. Headless Edge 390x844 (a separate HOUSEHOLD_DIR): chicken's default chip g; 500 + Save → "chicken · 500 g"; "1,5" + kg chip → "1.5 kg"; Clear → no amount, Clear gone; "abc" flagged; "milk 2 l" in Add to fridge → "milk · 2 l" first in Fridge (l chip, input 2); "6 eggs" → "eggs · 6 pcs" (fixed afterwards: an existing item keeps its display name); qty levels unchanged; no horizontal scroll; no page errors.
+- Next task must know: T6.1 / T6.4 use `parse_amount`, `to_base`, `same_kind` from `app/amounts.py`; when the units differ or there is no amount, move `qty_level` one step.
+- Open: the human's own check in a phone-size browser.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_amounts.py -q
+uv run python eval/run_scenarios.py --only 15
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `557 passed`; then `88 passed`; then `[PASS] #15 ...` and `1/1 passed` with `update_inventory(set_amount egg 6 pcs, set_amount milk 2 l)` in the trace; then the server starts.
+Manual check: open http://localhost:8000 in a phone-size window (DevTools, device toolbar), open Inventory, tap an item (or add "chicken" first), type 500 in Amount, tap the g chip (or Save): the row reads "chicken · 500 g" and the dot stays. Tap the item again and press Clear: the amount is gone. Type "milk 2 l" in "Add to fridge…" and press Enter: "milk · 2 l" shows at the top of Fridge.
 
 ### 2026-10-18 — Inventory panel: add at the top, search, a real reset button (the human's request)
 

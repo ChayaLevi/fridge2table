@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models import AgentReply, Ingredient, Recipe, Substitution, ToolTraceItem, TurnUsage
+from app.models import AgentReply, Ingredient, InventoryChange, Recipe, Substitution, ToolTraceItem, TurnUsage
 from app.store import Store
-from app.tools.inventory import get_inventory
+from app.tools.inventory import get_inventory, update_inventory
 
 _spec = importlib.util.spec_from_file_location(
     "run_scenarios", Path(__file__).resolve().parent.parent / "eval" / "run_scenarios.py")
@@ -30,9 +30,9 @@ def _store(*items: str, scanned=("fridge",)) -> Store:
     return store
 
 
-def test_suite_file_loads_with_fourteen_scenarios():
+def test_suite_file_loads_with_fifteen_scenarios():
     inventories, scenarios = sc.load_suite()
-    assert [s["id"] for s in scenarios] == list(range(1, 15))
+    assert [s["id"] for s in scenarios] == list(range(1, 16))
     for s in scenarios:  # every seed is valid
         sc.seed_store(Store(":memory:"), s.get("seed") or {}, inventories)
     for s in scenarios:
@@ -158,3 +158,12 @@ async def test_run_suite_with_a_fake_agent(monkeypatch):
     assert [x[3] for x in seen] == ["home", "home", "shop"]  # cook_mode per turn, home by default
     table = sc.summary_table([results])
     assert "| 1 | a | 1/1 | 1.5 s |" in table and "**1/2**" in table
+
+
+def test_check_turn_inventory_amount():
+    store = _store("egg, egg, plenty", "milk, dairy, some")
+    update_inventory(store, [InventoryChange(op="set_amount", name="milk", amount=2000, unit="ml")])
+    reply = AgentReply(message="Noted.")
+    assert sc.check_turn({"inventory_amount": {"milk": "2 l", "egg": ""}}, reply, _trace("update_inventory"), store) == []
+    fails = sc.check_turn({"inventory_amount": {"egg": "6 pcs"}}, reply, _trace("update_inventory"), store)
+    assert fails == ["egg amount is '', expected '6 pcs'"]

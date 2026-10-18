@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 from app.models import (
     AgentReply, Constraints, FailedCandidate, Ingredient, InventoryChange, InventoryItem, MealCandidate,
     MissingReport, PANTRY_CATEGORIES, Preference, Recipe, ScanState, StepTiming, Substitution, SuggestResult,
@@ -71,3 +73,20 @@ def test_meal_candidate_view():
 def test_agent_reply_schema_hides_meals_from_the_model():
     props = AgentReply.model_json_schema()["properties"]
     assert "meal_ids" in props and "meals" not in props
+
+
+def test_inventory_item_amount_is_optional_and_round_trips():
+    base = dict(id="1", name="milk", display_name="Milk", category="dairy", qty_level="some", location="fridge",
+                confidence=1.0, uncertain=False, source="manual", updated_at=datetime(2026, 10, 18))
+    plain = InventoryItem(**base)
+    assert plain.amount is None and plain.unit is None and plain.amount_text == ""
+    milk = InventoryItem(**base, amount=0.5, unit="l")
+    assert milk.amount_text == "500 ml"
+    again = InventoryItem.model_validate_json(milk.model_dump_json())  # stored rows carry amount_text too
+    assert (again.amount, again.unit) == (0.5, "l")
+    assert InventoryItem.model_validate_json(plain.model_dump_json(exclude={"amount", "unit", "amount_text"})).amount is None
+
+
+def test_inventory_item_rejects_an_unknown_unit():
+    with pytest.raises(ValueError):
+        InventoryChange(op="set_amount", name="milk", amount=2, unit="cups")

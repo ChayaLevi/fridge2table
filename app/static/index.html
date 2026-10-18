@@ -182,6 +182,12 @@
                   font-size: 13px; }
   .actions .act.on { background: var(--warn); border-color: var(--warn); color: #fff; }
   .actions .act.danger { color: var(--warn); }
+  .item .name .amt { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .amount { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .amount label { font-size: 13px; color: var(--muted); }
+  .amount input { width: 72px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 16px; }
+  .amount input.bad { border-color: var(--warn); }
+  .amount .seg button { padding: 5px 9px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
   .seg button { border: 0; background: var(--surface); padding: 5px 10px; font-size: 13px; }
   .seg button + button { border-left: 1px solid var(--line); }
@@ -401,6 +407,14 @@
 "use strict";
 const PLACES = ["fridge", "freezer", "pantry"];
 const QTY_LEVELS = ["plenty", "some", "low"];
+const UNITS = ["pcs", "g", "kg", "ml", "l", "pack"];
+// The preselected unit chip; mirrors default_unit() in app/amounts.py.
+const LIQUIDS = new Set(["milk", "cream", "heavy cream", "buttermilk", "juice", "orange juice", "apple juice", "kefir"]);
+function defaultUnit(item) {
+  if (LIQUIDS.has(item.name) || item.category === "drink") return "l";
+  if (item.category === "sauce") return "ml";
+  return ["meat", "fish", "dairy", "grain", "pasta", "baking"].includes(item.category) ? "g" : "pcs";
+}
 const PLACE_LABEL = { fridge: "🧊 Fridge", freezer: "❄️ Freezer", pantry: "🥫 Pantry" };
 const MAX_PHOTOS = 4;
 
@@ -1000,7 +1014,8 @@ function renderItem(item) {
   const main = el("button", { class: "main", type: "button", "aria-expanded": open ? "true" : "false",
                               onclick: () => { state.openItem = open ? null : item.name; redrawLists(); } },
     el("span", { class: "emo", "aria-hidden": "true" }, itemEmoji(item)),
-    el("span", { class: "name" }, item.display_name),
+    el("span", { class: "name" }, item.display_name,
+      item.amount_text ? el("span", { class: "amt" }, ` · ${item.amount_text}`) : null),
     item.use_soon ? el("span", { class: "flag soonflag", title: "Use soon" }, "⏰") : null,
     item.is_staple ? null : el("span", { class: `lvl ${item.qty_level}` }, el("i"), item.qty_level));
   if (item.is_staple) {
@@ -1025,9 +1040,41 @@ function renderItem(item) {
         "⏰ Use soon"),
       el("button", { class: "act", type: "button", onclick: () => editName(row, item) }, "✎ Rename"),
       el("button", { class: "act danger", type: "button",
-                     onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "Delete")));
+                     onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "Delete"),
+      renderAmount(item)));
   }
   return row;
+}
+
+// The optional exact amount (T6.3): a number and a unit chip (preselected from the category). A chip tap
+// picks the unit and saves when a number is typed; Enter or Save saves; Clear removes the amount.
+// The quantity level stays as it is.
+function renderAmount(item) {
+  let unit = item.unit || defaultUnit(item);
+  const input = el("input", { type: "text", inputmode: "decimal", autocomplete: "off", placeholder: "e.g. 1.5",
+                              value: item.amount ?? "", "aria-label": `Amount of ${item.display_name}` });
+  const number = () => {
+    const v = input.value.trim().replace(",", ".");
+    return /^(\d+(\.\d*)?|\.\d+)$/.test(v) && Number(v) > 0 ? Number(v) : null;
+  };
+  const save = () => {
+    const amount = number();
+    if (amount === null) { input.classList.add("bad"); input.focus(); return; }
+    editInventory([{ op: "set_amount", name: item.name, amount, unit }]);
+  };
+  input.addEventListener("input", () => input.classList.remove("bad"));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
+  const chips = UNITS.map((u) => el("button", { class: u === unit ? "on" : "", type: "button", onclick: () => {
+    unit = u;
+    chips.forEach((c) => c.classList.toggle("on", c.textContent === u));
+    if (number() !== null) save();
+  } }, u));
+  return el("div", { class: "amount" },
+    el("label", {}, "Amount"), input,
+    el("span", { class: "seg", role: "group", "aria-label": "Unit" }, chips),
+    el("button", { class: "act", type: "button", onclick: save }, "Save"),
+    item.amount != null ? el("button", { class: "act", type: "button",
+      onclick: () => editInventory([{ op: "set_amount", name: item.name, amount: null }]) }, "Clear") : null);
 }
 
 // Inline rename. Saving also confirms an uncertain item, even with the name unchanged.
