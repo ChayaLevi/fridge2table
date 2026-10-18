@@ -156,7 +156,7 @@
   .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--bg); z-index: 11;
             display: flex; flex-direction: column; box-shadow: -4px 0 20px rgba(0,0,0,.15); }
   .drawer header { position: sticky; top: 0; }
-  .drawer .body { overflow-y: auto; padding: 12px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .drawer .body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
   .loc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
   .loc-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line); }
   .loc-head h2 { font-size: 16px; margin: 0; }
@@ -243,7 +243,14 @@
   .chat-row .when { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
   .chat-row .here { color: var(--accent); font-weight: 600; }
   .restart { margin: 18px 0 6px; text-align: center; }
-  .restart .link { border: 0; background: none; color: var(--warn); text-decoration: underline; padding: 6px; }
+  .restart .startbtn { width: 100%; height: 44px; border: 1px solid #f2d3b3; border-radius: 22px; background: var(--warn-soft);
+                       color: var(--warn); font-weight: 600; }
+  .restart .startbtn:active { background: #f8dcc2; }
+  .invsearch { flex: none; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .invsearch input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 999px;
+                     padding: 8px 14px; font: inherit; background: var(--surface); color: var(--text); }
+  .invsearch input:focus { outline: none; border-color: var(--accent); }
+  .add + .items, .add + .empty-loc { border-top: 1px solid var(--line); }
   .restart .confirm { background: var(--warn-soft); border: 1px solid #f2d3b3; border-radius: var(--radius);
                       padding: 12px; text-align: left; }
   .restart .confirm p { margin: 0 0 10px; }
@@ -362,6 +369,10 @@
     <h1>Inventory</h1>
     <button class="hbtn" id="closeInv" type="button">Close</button>
   </header>
+  <div class="invsearch">
+    <input id="invSearch" type="search" placeholder="Search the inventory…" aria-label="Search the inventory"
+           autocomplete="off">
+  </div>
   <div class="body" id="invBody"></div>
 </aside>
 
@@ -402,6 +413,7 @@ const state = {
   nextPlace: null,      // set by a panel camera button: the place for the next picked photos
   reviewPlaces: null,   // places shown in the review sheet while it is open
   openItem: null,       // the inventory item whose actions are shown (one at a time)
+  recentAdds: [],       // names added with the panel's add fields since it opened: shown first, newest on top
   busy: false,
   transcript: [],       // what is shown, so a reload of the same session shows it again
   // the cooking mode switch (T4.5): "home" = only what is there, "shop" = a few things to buy are OK
@@ -1046,8 +1058,18 @@ function renderAdd(place) {
   const add = () => {
     const name = input.value.trim();
     if (!name) return;
-    editInventory([place ? { op: "add", name, location: place, qty_level: "some" } : { op: "add_staple", name }]);
+    // The canonical name comes back from the server; match the new item by display name after the edit.
+    const before = new Set(state.inventory.map((i) => i.name));
     input.value = "";
+    editInventory([place ? { op: "add", name, location: place, qty_level: "some" } : { op: "add_staple", name }])
+      .then(() => {
+        const typed = name.toLowerCase();
+        const added = state.inventory.find((i) => i.display_name.toLowerCase() === typed)
+          || state.inventory.find((i) => !before.has(i.name));
+        if (!added) return;
+        state.recentAdds = [added.name, ...state.recentAdds.filter((n) => n !== added.name)];
+        redrawLists();
+      });
   };
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
   return el("div", { class: "add" }, input, el("button", { type: "button", onclick: add }, "Add"));
@@ -1062,11 +1084,30 @@ function renderInventory() {
   const wasOpen = body.querySelector("details.staples")?.open || false;
   const top = body.scrollTop;
   body.replaceChildren();
+  // Searching: only the matching items, places without a match hidden, no add fields or reset.
+  const query = $("invSearch").value.trim().toLowerCase();
+  const match = (i) => !query || i.display_name.toLowerCase().includes(query) || i.name.includes(query);
+  if (query) {
+    const hits = state.inventory.filter(match);
+    if (!hits.length) body.append(el("div", { class: "empty-loc" }, `No items match “${$("invSearch").value.trim()}”.`));
+    for (const place of PLACES) {
+      const here = hits.filter((i) => i.source !== "staple" && i.location === place);
+      if (here.length) body.append(el("section", { class: "loc" },
+        el("div", { class: "loc-head" }, el("h2", {}, PLACE_LABEL[place])),
+        el("ul", { class: "items" }, here.map(renderItem))));
+    }
+    const st = hits.filter((i) => i.source === "staple");
+    if (st.length) body.append(el("section", { class: "loc" },
+      el("div", { class: "loc-head" }, el("h2", {}, "Staples")),
+      el("ul", { class: "items" }, st.map(renderItem))));
+    return;
+  }
+  const recent = (i) => { const k = state.recentAdds.indexOf(i.name); return k < 0 ? Infinity : k; };
   for (const place of PLACES) {
     const here = own.filter((i) => i.location === place)
-      // Items waiting for a decision first; otherwise the stored order, so a row does not jump away
-      // while its actions are open (⏰ marks use-soon items).
-      .sort((a, b) => (b.uncertain - a.uncertain) || (b.not_seen - a.not_seen));
+      // Just added (newest first), then items waiting for a decision; otherwise the stored order, so a
+      // row does not jump away while its actions are open (⏰ marks use-soon items).
+      .sort((a, b) => (recent(a) - recent(b)) || (b.uncertain - a.uncertain) || (b.not_seen - a.not_seen));
     const when = state.scanState.scanned[place];
     const declined = place === "freezer" && state.scanState.freezer_declined;
     const unsure = here.some((i) => i.uncertain || i.not_seen);
@@ -1081,19 +1122,19 @@ function renderInventory() {
         "Orange: I'm not sure what it is. Grey: not seen in the last photo. ✓ if it's right, × if it's gone, "
         + "or tap the item to rename it.")
              : null,
+      renderAdd(place),
       here.length ? el("ul", { class: "items" }, here.map(renderItem))
-                  : el("div", { class: "empty-loc" }, "Nothing here yet."),
-      renderAdd(place)));
+                  : el("div", { class: "empty-loc" }, "Nothing here yet.")));
   }
   body.append(el("details", { class: "loc staples", open: wasOpen },
     el("summary", {}, `Staples (${staples.length}) — assumed in the kitchen`),
-    el("ul", { class: "items" }, staples.map(renderItem)),
-    renderAdd(null)));
+    renderAdd(null),
+    el("ul", { class: "items" }, [...staples].sort((a, b) => (recent(a) - recent(b)) || 0).map(renderItem))));
   body.append(renderRestart(own.length));
   body.scrollTop = top;
 }
 
-// Clear the inventory and rebuild it from new photos. Two taps: the link, then the confirm button.
+// Clear the inventory and rebuild it from new photos. Two taps: the button, then the confirm button.
 function renderRestart(count) {
   const box = el("div", { class: "restart" });
   const ask = () => box.replaceChildren(el("div", { class: "confirm" },
@@ -1102,7 +1143,7 @@ function renderRestart(count) {
     el("div", { class: "row2" },
       el("button", { class: "keep", type: "button", onclick: () => box.replaceChildren(link) }, "Cancel"),
       el("button", { class: "danger", type: "button", onclick: startOver }, "Clear inventory"))));
-  const link = el("button", { class: "link", type: "button", onclick: ask }, "Start over: clear the inventory");
+  const link = el("button", { class: "startbtn", type: "button", onclick: ask }, "🗑 Clear the inventory and start over");
   box.append(link);
   return box;
 }
@@ -1324,7 +1365,16 @@ $("gallery").addEventListener("click", () => pickPhotos(null, "galleryFile"));
 for (const id of ["file", "galleryFile"]) {
   $(id).addEventListener("change", (e) => { addPhotos(e.target.files); e.target.value = ""; });
 }
-$("openInv").addEventListener("click", () => showOverlay("drawer"));
+$("openInv").addEventListener("click", () => {
+  $("invSearch").value = "";  // each opening starts with the full list, in the stored order
+  state.recentAdds = [];
+  renderInventory();
+  showOverlay("drawer");
+});
+$("invSearch").addEventListener("input", () => { state.openItem = null; renderInventory(); });
+$("invSearch").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.value) { e.stopPropagation(); e.target.value = ""; renderInventory(); }
+});
 $("closeInv").addEventListener("click", closeOverlays);
 $("closeSheet").addEventListener("click", closeOverlays);
 $("reviewLater").addEventListener("click", closeOverlays);

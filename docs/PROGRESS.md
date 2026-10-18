@@ -95,6 +95,23 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Log
 
+### 2026-10-18 — Inventory panel: add at the top, search, a real reset button (the human's request)
+
+- Built: `app/static/index.html` only.
+  - The "Add to …" field now sits at the top of each place (and of Staples), under the hint, not under the list. An item added there shows first in its place, newest on top (`state.recentAdds`, matched by the typed name; cleared when the panel opens again, then the stored order is back).
+  - A search box under the panel header (`#invSearch`): matches display name or canonical name, case-insensitive. While searching: only matching items, grouped by place (staples too), places with no match hidden, no add fields or reset; "No items match …" when nothing matches. Esc clears the search (a second Esc closes the panel). Opening the panel clears it.
+  - "Start over" is a full-width button (`.startbtn`, orange) instead of an underlined link; the two-step confirm is unchanged.
+  - Layout fix: the panel body is the only scroller (`flex: 1; min-height: 0`), the search bar has its own bottom edge.
+- Checked in headless Edge 390x844 (a separate HOUSEHOLD_DIR in the scratchpad): yogurt added after milk/eggs/butter/cheddar showed first; "che" showed only cheddar; "zzz" showed the empty message; the reset button at the bottom; no page errors. `uv run pytest -q` 449 passed.
+
+**How to verify**
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `449 passed`; then the server starts.
+Manual check: open http://localhost:8000, open Inventory, type an item in "Add to fridge…" and press Enter: it shows first in Fridge, right under the field. Type part of a name in the search box: only matching items show. At the bottom, "🗑 Clear the inventory and start over" is a button; tapping it asks for confirmation.
+
 ### 2026-10-18 — T6.2 Share shopping list (done early, the human's request)
 
 - Why: the human wants the shopping list to leave the app. Options and effort (copy, WhatsApp, SMS/email, share sheet, .txt, QR, link, Todoist, WeChat) were written up for the team lead in a proposal outside the repo; the human chose copy + download now.
