@@ -458,7 +458,7 @@ def test_agent_registers_the_planned_tools():
     names = set(agent_module.toolset.tools)
     assert names == {
         "recognize_inventory", "get_inventory", "update_inventory", "suggest_meals", "get_recipe",
-        "compute_missing", "validate_suggestion", "save_preference", "mark_bought",
+        "compute_missing", "validate_suggestion", "save_preference", "mark_bought", "mark_made",
     }
     assert deps.images == [] and deps.recipes == {}
 
@@ -722,3 +722,33 @@ async def test_mark_bought_named_items_with_an_amount(store):
     inv = {i.name: i for i in get_inventory(store)}
     assert (inv["egg"].qty_level, inv["egg"].amount_text) == ("plenty", "12 pcs")
     assert (inv["chicken"].category, inv["chicken"].location, inv["chicken"].amount) == ("meat", "fridge", None)
+
+
+# --- "I made it" (T6.1) ----------------------------------------------------------------------------
+
+async def test_mark_made_uses_the_last_reply_substitutions(store):
+    seen_ids: dict[str, str] = {}
+
+    def mode_b(messages, info):
+        seen_ids.update(ids_by_name(messages[-1].parts))
+        if sum(1 for m in messages if isinstance(m, ModelRequest)) == 1:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(
+            message="You can use your cottage cheese instead of ricotta; the list is below.",
+            meal_ids=[seen_ids["Lasagna"]], substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}]))])
+
+    await run_turn(store, "s1", "I want to make lasagna", model=FunctionModel(mode_b), recipe_model=LASAGNA_MODEL)
+    model, _ = scripted(("mark_made", {"recipe_id": seen_ids["Lasagna"]}), reply(message="Enjoy! I took it out."))
+    turn = await run_turn(store, "s1", "We made the lasagna", model=model, recipe_model=LASAGNA_MODEL)
+    inv = {i.name: i for i in get_inventory(store)}
+    assert inv["cottage cheese"].qty_level == "low"  # the substitute, one level down (no exact amount)
+    assert inv["egg"].qty_level == "some"  # plenty -> some
+    assert inv["spinach"].qty_level == "some"  # not in the recipe: untouched
+    made = next(t for t in turn.trace if t.tool == "mark_made")
+    assert made.args_summary == "Lasagna" and "cottage cheese some → low" in made.result_summary
+
+
+async def test_mark_made_with_an_unknown_id_is_sent_back(store):
+    model, _ = scripted(("mark_made", {"recipe_id": "zzz"}), reply(message="Which dish?"))
+    turn = await run_turn(store, "s3", "we made it", model=model)
+    assert any(t.tool == "mark_made" and t.failed for t in turn.trace)

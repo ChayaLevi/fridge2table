@@ -313,6 +313,15 @@
   #sheet .p-serve { background: #e8eefb; color: #3b5fae; }
   #sheet .p-have { background: var(--accent-soft); color: var(--accent); }
   #sheet .panel { margin-top: 14px; border-radius: 14px; padding: 12px 12px 8px; }
+  .madebar { margin-top: 12px; }
+  .madebar .madebtn { width: 100%; height: 44px; border: 0; border-radius: 22px; background: var(--accent); color: #fff;
+                      font-size: 15px; font-weight: 650; }
+  .madebar .madebtn:disabled { opacity: .6; }
+  .madebar .madeline { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 9px 12px;
+                       background: var(--accent-soft); border-radius: 12px; font-size: 13px; }
+  .madebar .madeline span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .madebar .madeline button { flex: none; border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
+                              border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
   #sheet .panel h3 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: baseline; gap: 6px; }
   #sheet .panel h3 .n { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--muted); }
   #sheet .ingredients { background: #f3f8f4; }
@@ -1011,6 +1020,46 @@ function stepList(steps, ingredients) {
     el("span", { class: "num" }, String(i + 1)), el("span", { class: "txt" }, stepText(s, ingredients)))));
 }
 
+// T6.1: "I made it" takes the recipe's ingredients out of the inventory (the server decides how: exact
+// amounts subtracted when the units allow, else one level down; staples never; the reply's substitutes
+// instead of what they replace). One line says what changed, with Undo (restores the touched items).
+function madeBar(meal, reply) {
+  const line = el("div", { class: "madeline", hidden: true });
+  const btn = el("button", { class: "madebtn", type: "button" }, "🍳 I made it");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const data = await api(`/recipe/${encodeURIComponent(meal.id)}/made`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ substitutions: reply.substitutions || [] }),
+      });
+      setInventory(data);
+      btn.hidden = true;
+      const undo = el("button", { type: "button" }, "Undo");
+      undo.addEventListener("click", async () => {
+        undo.disabled = true;
+        try {
+          setInventory(await api(`/inventory/undo/${encodeURIComponent(data.token)}`, { method: "POST" }));
+          line.replaceChildren(el("span", {}, "Undone: the inventory is back as it was."));
+          btn.hidden = false;
+          btn.disabled = false;
+        } catch (err) {
+          line.replaceChildren(el("span", {}, err.message));
+        }
+      });
+      line.hidden = false;
+      line.replaceChildren(
+        el("span", {}, data.changes.length ? `✓ Took out: ${data.summary}` : "Nothing to take out: none of it is in the inventory."),
+        data.changes.length ? undo : null);
+    } catch (err) {
+      line.hidden = false;
+      line.replaceChildren(el("span", {}, err.message));
+      btn.disabled = false;
+    }
+  });
+  return el("div", { class: "madebar" }, btn, line);
+}
+
 async function openRecipe(meal, data) {
   const reply = replyForMeal((data && data.reply) || {}, meal);
   const body = $("sheetBody");
@@ -1030,6 +1079,7 @@ async function openRecipe(meal, data) {
       el("span", { class: "pill p-time" }, `⏱ ${meal.time_minutes} min`),
       el("span", { class: "pill p-serve" }, `👥 serves ${meal.servings}`),
       el("span", { class: "pill p-have" }, `✓ ${have} of ${ings.length} at home`)),
+    madeBar(meal, reply),
     modeB ? renderShop(reply) : null,
     el("div", { class: "panel ingredients" },
       el("h3", {}, "🧺 Ingredients", el("span", { class: "n" }, `${ings.length} item${ings.length === 1 ? "" : "s"}`)),

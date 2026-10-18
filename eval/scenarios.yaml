@@ -27,6 +27,7 @@
 #   inventory_amount: {ingredient: "6 pcs"} the item's exact amount after the turn ("" = none), as displayed
 #   not_enough_contains: ingredients the household has too little of (reply.not_enough, "have 4, need 5")
 #   last_list_in_inventory: true = every To buy / Check first item of the previous turn's reply is now plenty
+#   went_down: ingredients there is less of after the turn (gone, a lower exact amount, or a lower level)
 
 inventories:
   demo:
@@ -328,4 +329,18 @@ scenarios:
         expect:
           first_tool: mark_bought
           last_list_in_inventory: true
+          off_topic: false
+
+  - id: 18
+    name: I made it (Mode A egg ideas, then "we made the omelette" -> eggs go down)
+    seed: {inventory: demo, scanned: [fridge, pantry], amounts: {egg: 12 pcs}}
+    turns:
+      - message: What can I cook tonight? Maybe an omelette, or something else with eggs.
+        expect:
+          tools_called: [suggest_meals]
+          min_meals: 1
+      - message: We made the omelette.
+        expect:
+          tools_called: [mark_made]
+          went_down: [egg]
           off_topic: false

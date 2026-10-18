@@ -83,6 +83,31 @@ class PackSize(BaseModel):
     text: str
 
 
+class MadeChange(BaseModel):
+    """What "I made it" did to one inventory item (T6.1): "egg 12 → 7 pcs", "spinach some → low", "cheddar removed"."""
+
+    name: str  # canonical
+    display_name: str
+    before: str  # "12 pcs", "some"
+    after: str  # "7 pcs", "low", "removed"
+
+    def text(self) -> str:
+        if self.after == "removed":
+            return f"{self.display_name} removed"
+        b, a = self.before.split(" "), self.after.split(" ")
+        if len(b) == 2 and len(a) == 2 and b[1] == a[1]:  # same unit word: "12 → 7 pcs"
+            return f"{self.display_name} {b[0]} → {self.after}"
+        return f"{self.display_name} {self.before} → {self.after}"
+
+
+class MadeResult(BaseModel):
+    changes: list[MadeChange]
+    token: str  # POST /inventory/undo/{token} restores the touched items exactly
+
+    def summary(self) -> str:
+        return ", ".join(c.text() for c in self.changes) or "nothing to deduct"
+
+
 class Constraints(BaseModel):
     text: str = ""
     max_minutes: int | None = None

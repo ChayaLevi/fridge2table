@@ -14,10 +14,11 @@ from collections.abc import Iterable
 from functools import lru_cache
 from typing import Literal
 
-from app.amounts import Unit, default_unit, format_amount, same_kind, split_amount, to_base
+from app.amounts import Unit, default_unit, format_amount, parse_amount, same_kind, split_amount, sum_base, to_base
 from app.config import STAPLES_PATH
 from app.models import (
-    PANTRY_CATEGORIES, BoughtItem, InventoryChange, InventoryItem, Location, PackSize, ScanState,
+    PANTRY_CATEGORIES, BoughtItem, InventoryChange, InventoryItem, Location, MadeChange, MadeResult, PackSize, Recipe,
+    ScanState, Substitution,
 )
 from app.store import Store
 from app.tools.normalize import normalize
@@ -389,3 +390,85 @@ def mark_bought(
     if changes:
         update_inventory(store, changes, source=source)
     return previous
+
+
+# --- "I made it" (T6.1) ------------------------------------------------------------------------------
+
+_STEP_DOWN = {"plenty": "some", "some": "low", "low": None}  # None = removed
+
+
+def mark_made(
+    store: Store, recipe: Recipe, substitutions: Iterable[Substitution] = (),
+    source: Literal["chat", "manual"] = "manual",
+) -> MadeResult:
+    """Deduct a cooked recipe's ingredients from the inventory; return what changed and an undo token.
+
+    Per ingredient (amounts of one name added up; a substituted ingredient counts against its substitute):
+    - The item has an exact amount and the recipe amounts parse to the same kind of unit (to_base):
+      subtract, in the item's unit; at 0 or below the item is removed. qty_level is left as it is.
+    - Otherwise qty_level goes one step down (plenty → some → low → removed); an exact amount that
+      could not be subtracted (other units, "a handful") is left as it is.
+    - Staples are never deducted; ingredients not in the inventory are skipped (optional ones too).
+    The touched items are saved as they were, so undo_made(token) restores them exactly.
+    """
+    subs = {normalize(s.missing): normalize(s.use_instead) for s in substitutions}
+    stored = {i.name: i for i in store.load_inventory()}
+    need: dict[str, list[str]] = {}
+    for ing in recipe.ingredients:
+        name = normalize(ing.name)
+        if name:
+            need.setdefault(subs.get(name, name), []).append(ing.amount)
+
+    changes: list[MadeChange] = []
+    edits: list[InventoryChange] = []
+    snapshot: list[InventoryItem] = []
+    for name, amounts in need.items():
+        item = stored.get(name)
+        if item is None or item.is_staple:
+            continue
+        snapshot.append(item)
+        parsed = [parse_amount(a) for a in amounts]
+        total = sum_base(parsed) if all(p is not None for p in parsed) else None
+        if item.amount is not None and item.unit is not None and total is not None \
+                and total[1] == to_base(1, item.unit)[1]:
+            before = format_amount(item.amount, item.unit)
+            factor = to_base(1, item.unit)[0]
+            left = round((to_base(item.amount, item.unit)[0] - total[0]) / factor, 6)
+            if left <= 1e-9:
+                edits.append(InventoryChange(op="remove", name=name))
+                after = "removed"
+            else:
+                edits.append(InventoryChange(op="set_amount", name=name, amount=left, unit=item.unit))
+                after = format_amount(left, item.unit)
+        else:
+            before, step = item.qty_level, _STEP_DOWN[item.qty_level]
+            if step is None:
+                edits.append(InventoryChange(op="remove", name=name))
+                after = "removed"
+            else:
+                edits.append(InventoryChange(op="set_qty", name=name, qty_level=step))
+                after = step
+        changes.append(MadeChange(name=name, display_name=item.display_name, before=before, after=after))
+
+    token = uuid.uuid4().hex
+    store.save_undo(token, json.dumps([i.model_dump(mode="json", exclude={"amount_text"}) for i in snapshot]))
+    if edits:
+        update_inventory(store, edits, source=source)
+    return MadeResult(changes=changes, token=token)
+
+
+def undo_made(store: Store, token: str) -> bool:
+    """Put back the items an "I made it" touched, exactly as they were (False if the token is unknown or used)."""
+    data = store.pop_undo(token)
+    if data is None:
+        return False
+    snapshot = [InventoryItem.model_validate(d) for d in json.loads(data)]
+    stored = store.load_inventory()
+    for old in snapshot:
+        k = next((n for n, i in enumerate(stored) if i.id == old.id or i.name == old.name), None)
+        if k is None:
+            stored.append(old)
+        else:
+            stored[k] = old
+    store.save_inventory(stored)
+    return True

@@ -239,7 +239,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 
 - Fix the top issues from T5.3 first. Rerun `eval/run_scenarios.py` after each fix.
 - Only if the decision point passed:
-  - **T6.1 "We cooked it":** a button on each meal card ("We cooked this") and a chat intent. Lowers each used non-staple ingredient one level (`plenty → some → low → removed`) via `update_inventory`. Add a scenario.
+  - **T6.1 "We cooked it":** built on 2026-10-18 at the human's request as "I made it", with amounts (see T6.1 below).
   - **T6.2 Share shopping list:** a "Copy list" button on the shopping-list block (plain text, one item per line). Done early on 2026-10-18 at the human's request, with a "Download .txt" button next to it.
 - **Done when:** issues fixed or consciously deferred; scenarios ≥ 9/10 pass.
 
@@ -257,6 +257,12 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - `compute_missing`: the item goes to To buy (or `check_first` by the unscanned-pantry rule) and to `not_enough` (`Shortfall {name, have, need}`), so the page shows "eggs · have 4, need 5". `validate_suggestion` fails with that reason; the trace label reads "failed check (not enough egg)". A substitute is compared the same way.
 - Every other case (no exact amount, an unparsable recipe amount, mixed units, pack) stays presence-only.
 - **Done when:** unit tests pass (4 pcs vs 5 → missing; 6 vs 5 → ok; 1 kg vs 300 g → ok; 200 g vs 300 g → missing; 1.5 l vs 500 ml → ok; plenty without amount vs 5 → ok; 1 l vs "2 cups" and pack vs 200 g → presence only; a short substitute → missing); a new scenario (4 eggs, a 5-egg frittata → eggs to buy with have / need) and the existing ones pass on real models; in a phone-size browser, eggs at 4 pcs → the shopping block shows "eggs · have 4, need 5", at 12 pcs → eggs not in To buy.
+
+### T6.1 "I made it" (specified 2026-10-18 by the human, replaces the "We cooked it" stretch)
+- An **I made it** button in the recipe window deducts the recipe's ingredients: an exact amount with a recipe amount in the same kind of unit (`parse_amount`, `to_base`) is subtracted, and the item is removed at 0 or below; otherwise `qty_level` goes one step down (plenty → some → low → removed), and an amount that could not be subtracted is left as it is. Substituted ingredients deduct the substitute (the reply's substitutions). Staples are never deducted; ingredients not in the inventory are skipped (optional ones too).
+- One short line says what changed ("eggs 12 → 7 pcs, milk 1 l → 750 ml, spinach some → low, cheddar removed") with **Undo**, which restores the touched items exactly (a snapshot).
+- Server: `POST /recipe/{id}/made` (optional substitutions) → the changes and an undo token; `POST /inventory/undo/{token}`. The agent's thin tool `mark_made(recipe_id)` for "we made the lasagna".
+- **Done when:** unit tests (exact subtract, subtract to zero removes, incompatible units step down, substitute deducted, staple untouched, undo restores) and a scenario ("we made the omelette" after a Mode A turn → eggs go down) pass, and the existing scenarios still pass; in a phone-size browser: eggs at 12 pcs, ask for an omelette, open the recipe, I made it → eggs drop by the recipe amount and the line shows it; Undo → back to 12; I made it again, then "what can I cook?" → the suggestions work from the lower inventory.
 
 ### T6.4 "Bought it" (added 2026-10-18 at the human's request)
 - The recipe amount on the shopping list is what the recipe needs, not what people buy: it is never copied into the inventory. The list shows it as "need 500 g" / "need ¾ cup".

@@ -398,3 +398,34 @@ def test_bought_returns_the_previous_amount_for_the_chip(client, store):
 
 def test_bought_rejects_a_bad_amount(client):
     assert client.post("/inventory/bought", json=[{"name": "egg", "amount": 0}]).status_code == 422
+
+
+def test_made_deducts_and_undo_restores(client, store):
+    from app.models import Ingredient, Recipe
+    client.patch("/inventory", json=[{"op": "add", "name": "egg", "category": "egg", "qty_level": "plenty"},
+                                     {"op": "set_amount", "name": "egg", "amount": 12, "unit": "pcs"},
+                                     {"op": "add", "name": "cottage cheese", "category": "dairy"}])
+    recipe = Recipe(id="om1234", name="Omelette", time_minutes=10, ingredients=[
+        Ingredient(name="egg", amount="3", essential=True, category="egg"),
+        Ingredient(name="ricotta", amount="100 g", essential=True, category="dairy"),
+        Ingredient(name="salt", amount="a pinch", essential=False, category="spice")])
+    store.save_recipe(recipe)
+    r = client.post("/recipe/om1234/made", json={"substitutions": [{"missing": "ricotta", "use_instead": "cottage cheese"}]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["summary"] == "eggs 12 → 9 pcs, cottage cheese some → low"
+    items = {i["name"]: i for i in body["inventory"]}
+    assert items["egg"]["amount"] == 9 and items["cottage cheese"]["qty_level"] == "low"
+    r = client.post(f"/inventory/undo/{body['token']}")
+    assert r.status_code == 200
+    items = {i["name"]: i for i in r.json()["inventory"]}
+    assert items["egg"]["amount"] == 12 and items["cottage cheese"]["qty_level"] == "some"
+    assert client.post(f"/inventory/undo/{body['token']}").status_code == 404
+
+
+def test_made_without_body_and_unknown_recipe(client, store):
+    from app.models import Ingredient, Recipe
+    store.save_recipe(Recipe(id="x1", name="X", time_minutes=5, ingredients=[
+        Ingredient(name="egg", amount="2", essential=True, category="egg")]))
+    assert client.post("/recipe/x1/made").status_code == 200
+    assert client.post("/recipe/nope/made").status_code == 404

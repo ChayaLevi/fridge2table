@@ -40,9 +40,13 @@ CREATE TABLE IF NOT EXISTS recipes (
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS undo (
+    token TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+);
 """
 
-_TABLES = ("inventory", "preferences", "staples_state", "custom_staples", "scan_state", "sessions", "recipes")
+_TABLES = ("inventory", "preferences", "staples_state", "custom_staples", "scan_state", "sessions", "recipes", "undo")
 
 
 class Store:
@@ -124,6 +128,19 @@ class Store:
     def load_recipe(self, recipe_id: str) -> Recipe | None:
         row = self._conn.execute("SELECT data FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
         return Recipe.model_validate_json(row[0]) if row else None
+
+    # undo snapshots ("I made it", T6.1): the touched items as they were, by token
+
+    def save_undo(self, token: str, data: str) -> None:
+        with self._conn:
+            self._conn.execute("INSERT OR REPLACE INTO undo (token, data) VALUES (?, ?)", (token, data))
+
+    def pop_undo(self, token: str) -> str | None:
+        """The snapshot for this token, deleted on read (an undo works once)."""
+        with self._conn:
+            row = self._conn.execute("SELECT data FROM undo WHERE token = ?", (token,)).fetchone()
+            self._conn.execute("DELETE FROM undo WHERE token = ?", (token,))
+        return row[0] if row else None
 
     # scan state
 

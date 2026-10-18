@@ -28,7 +28,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from app import config, llm
 from app.amounts import Unit
 from app.models import (
-    MAX_TO_BUY, AgentReply, BoughtItem, Constraints, CookMode, InventoryChange, Location, MealCandidate, MissingReport, Recipe,
+    MAX_TO_BUY, AgentReply, BoughtItem, Constraints, CookMode, InventoryChange, Substitution, Location, MealCandidate, MissingReport, Recipe,
     StepTiming, SuggestResult, ToolTraceItem, TurnUsage, ValidationResult,
 )
 from app.store import Store
@@ -337,9 +337,8 @@ class BoughtSpec(BaseModel):
     unit: Unit | None = None
 
 
-def _last_reply_list(ctx: RunContext[Deps]) -> list[str]:
-    """To buy + Check your pantry first of the session's last reply, recomputed by code against the current
-    inventory (the model's own lists in the history may differ from what the page showed)."""
+def _last_reply(ctx: RunContext[Deps]) -> tuple[list[str], list[Substitution]]:
+    """meal_ids and substitutions of the session's last reply (the accepted one), from the history."""
     for msg in reversed(ctx.messages):
         if not isinstance(msg, ModelResponse):
             continue
@@ -347,17 +346,48 @@ def _last_reply_list(ctx: RunContext[Deps]) -> list[str]:
             if isinstance(part, ToolCallPart) and part.tool_name == OUTPUT_TOOL_NAME:
                 args = part.args_as_dict()
                 ids = [i.strip() for i in args.get("meal_ids") or [] if isinstance(i, str)]
-                subs = {normalize(s.get("missing", "")) for s in args.get("substitutions") or [] if isinstance(s, dict)}
-                store = ctx.deps.store
-                inv, scan = inventory.get_inventory(store), store.load_scan_state()
-                names: list[str] = []
-                for i in ids:
-                    recipe = ctx.deps.recipes.get(i) or store.load_recipe(i)
-                    if recipe is not None:
-                        report = checks.compute_missing(recipe, inv, scan)
-                        names += [n for n in report.missing_essential + report.check_first if n not in subs]
-                return list(dict.fromkeys(names))
-    return []
+                subs = [Substitution.model_validate(s) for s in args.get("substitutions") or []
+                        if isinstance(s, dict) and s.get("missing") and s.get("use_instead")]
+                return ids, subs
+    return [], []
+
+
+def _last_reply_list(ctx: RunContext[Deps]) -> list[str]:
+    """To buy + Check your pantry first of the session's last reply, recomputed by code against the current
+    inventory (the model's own lists in the history may differ from what the page showed)."""
+    ids, subs = _last_reply(ctx)
+    substituted = {normalize(s.missing) for s in subs}
+    store = ctx.deps.store
+    inv, scan = inventory.get_inventory(store), store.load_scan_state()
+    names: list[str] = []
+    for i in ids:
+        recipe = ctx.deps.recipes.get(i) or store.load_recipe(i)
+        if recipe is not None:
+            report = checks.compute_missing(recipe, inv, scan)
+            names += [n for n in report.missing_essential + report.check_first if n not in substituted]
+    return list(dict.fromkeys(names))
+
+
+@toolset.tool
+async def mark_made(ctx: RunContext[Deps], recipe_id: str) -> str:
+    """The user cooked a dish ("we made the lasagna", "I cooked the omelette"): deduct its ingredients.
+
+    recipe_id: the id of that recipe in this conversation (from your last reply's meal_ids or a tool
+    result; if the dish was never shown, call get_recipe first and use its id). The substitutions of your
+    last reply are applied (the substitute is deducted). Code subtracts exact amounts when the units
+    allow, else lowers each item one level; staples are never deducted. Returns what changed: tell the
+    user in one short sentence. Do not call it again for the same meal.
+    """
+    store = ctx.deps.store
+    recipe = ctx.deps.recipes.get(recipe_id.strip()) or store.load_recipe(recipe_id.strip())
+    if recipe is None:
+        known = ", ".join(f"{r.id} ({r.name})" for r in ctx.deps.recipes.values()) or "none: call get_recipe first"
+        raise ModelRetry(f"unknown recipe id {recipe_id!r}; use one of: {known}")
+    ids, subs = _last_reply(ctx)
+    res = inventory.mark_made(store, recipe, subs if recipe.id in ids else [], source="chat")
+    out = f"Made {recipe.name}. Deducted: {res.summary()}.\nInventory now:\n{_inventory_text(store)}"
+    _log("mark_made", recipe.name, res.summary())
+    return out
 
 
 @toolset.tool

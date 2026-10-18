@@ -28,10 +28,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import config  # noqa: E402
-from app.amounts import format_amount, parse_amount  # noqa: E402
+from app.amounts import format_amount, parse_amount, to_base  # noqa: E402
 from app.agent import run_opening, run_turn  # noqa: E402
 from app.llm import setup_observability  # noqa: E402
-from app.models import MAX_TO_BUY, AgentReply, InventoryChange, ToolTraceItem  # noqa: E402
+from app.models import MAX_TO_BUY, AgentReply, InventoryChange, InventoryItem, ToolTraceItem  # noqa: E402
 from app.store import Store  # noqa: E402
 from app.tools.checks import validate_suggestion  # noqa: E402
 from app.tools.inventory import get_inventory, update_inventory  # noqa: E402
@@ -47,8 +47,21 @@ EXPECT_KEYS = {
     "shopping_list_empty", "check_first_contains", "check_first_must_not_contain", "check_first_empty",
     "substitution_for", "preference_saved", "inventory_lacks", "max_questions", "message_matches", "asks_for_photo",
     "message_must_not_match", "off_topic", "shopping_list_not_empty", "meals_fit_shop", "offer_shop",
-    "inventory_amount", "not_enough_contains", "last_list_in_inventory",
+    "inventory_amount", "not_enough_contains", "last_list_in_inventory", "went_down",
 }
+
+_LEVEL = {"low": 1, "some": 2, "plenty": 3}
+
+
+def _went_down(old: InventoryItem, new: InventoryItem | None) -> bool:
+    """Less of it than before the turn: gone, a lower exact amount (same unit kind), or a lower level."""
+    if new is None:
+        return True
+    if old.amount is not None and new.amount is not None and old.unit and new.unit:
+        a, b = to_base(old.amount, old.unit), to_base(new.amount, new.unit)
+        if a[1] == b[1] and b[0] < a[0]:
+            return True
+    return _LEVEL[new.qty_level] < _LEVEL[old.qty_level]
 
 
 # --- loading and seeding ---------------------------------------------------------------------------
@@ -119,7 +132,7 @@ def _in_order(actual: list[str], wanted: list[str]) -> bool:
 
 
 def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceItem], store: Store,
-               previous: AgentReply | None = None) -> list[str]:
+               previous: AgentReply | None = None, before: list[InventoryItem] | None = None) -> list[str]:
     """Every expectation that does not hold, as one short line each (empty = pass)."""
     fails: list[str] = []
     tools = [t.tool for t in trace]
@@ -216,6 +229,13 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
             got = next((i for i in inv if same_ingredient(i.name, w)), None)
             if got is None or got.qty_level != "plenty":
                 fail(f"{w} not in the inventory as plenty ({got.qty_level if got else 'missing'})")
+    for w in expect.get("went_down") or []:  # "we made the omelette": less egg than before the turn
+        old = next((i for i in before or [] if same_ingredient(i.name, w)), None)
+        new = next((i for i in inv if same_ingredient(i.name, w)), None)
+        if old is None:
+            fail(f"{w} was not in the inventory before the turn")
+        elif not _went_down(old, new):
+            fail(f"{w} did not go down ({old.amount_text or old.qty_level} -> {new.amount_text or new.qty_level})")
     short = [s.name for s in reply.not_enough]
     for w in expect.get("not_enough_contains") or []:  # shown as "eggs · have 4, need 5"
         if not _has(short, w):
@@ -276,6 +296,7 @@ async def run_scenario(scenario: dict, inventories: dict, stores: dict[int, Stor
         start = time.perf_counter()
         out: dict[str, Any] = {"turn": i, "message": message, "photos": len(photos)}
         try:
+            before = get_inventory(store)
             if turn.get("opening"):
                 res = await run_opening(store, session)
             else:
@@ -288,7 +309,7 @@ async def run_scenario(scenario: dict, inventories: dict, stores: dict[int, Stor
                 "meals": [{"name": m.name, "time_minutes": m.time_minutes,
                            "ingredients": [i.name for i in m.ingredients]} for m in res.reply.meals]}
             out["usage"] = res.usage.model_dump()
-            out["failures"] = check_turn(turn.get("expect") or {}, res.reply, res.trace, store, previous)
+            out["failures"] = check_turn(turn.get("expect") or {}, res.reply, res.trace, store, previous, before)
             previous = res.reply
         except Exception as e:  # a crash (retry limit, usage limit, API error) is a failed turn
             out["latency_s"] = round(time.perf_counter() - start, 1)

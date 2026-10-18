@@ -597,3 +597,102 @@ def test_location_for():
     assert location_for("pasta") == "pantry" and location_for("spice") == "pantry"
     assert location_for("frozen") == "freezer"
     assert location_for("meat") == "fridge" and location_for(None) == "fridge"
+
+
+# --- "I made it" (T6.1) ----------------------------------------------------------------------------------
+
+from app.models import Ingredient, Recipe, Substitution  # noqa: E402
+from app.tools.inventory import mark_made, undo_made  # noqa: E402
+
+
+def dish_of(*ings):
+    """ings: (name, amount[, essential])."""
+    return Recipe(name="Dish", time_minutes=20, ingredients=[
+        Ingredient(name=i[0], amount=i[1], essential=i[2] if len(i) > 2 else True, category="other") for i in ings])
+
+
+def test_made_subtracts_an_exact_amount(store):
+    update_inventory(store, [add("egg", category="egg", qty_level="plenty", amount=12, unit="pcs"),
+                             add("milk", category="dairy", amount=1, unit="l")])
+    res = mark_made(store, dish_of(("egg", "5"), ("milk", "250 ml")))
+    inv = by_name(get_inventory(store))
+    assert (inv["egg"].amount, inv["egg"].unit, inv["egg"].qty_level) == (7, "pcs", "plenty")
+    assert (inv["milk"].amount, inv["milk"].unit, inv["milk"].amount_text) == (0.75, "l", "750 ml")
+    assert res.summary() == "egg 12 → 7 pcs, milk 1 l → 750 ml"
+
+
+def test_made_sums_an_ingredient_listed_twice(store):
+    update_inventory(store, [add("egg", category="egg", amount=6, unit="pcs")])
+    mark_made(store, dish_of(("egg", "3"), ("egg", "1, to glaze")))
+    assert by_name(get_inventory(store))["egg"].amount == 2
+
+
+@pytest.mark.parametrize("have, need", [(5, "5"), (4, "5")])
+def test_made_subtract_to_zero_or_below_removes(store, have, need):
+    update_inventory(store, [add("egg", category="egg", amount=have, unit="pcs")])
+    res = mark_made(store, dish_of(("egg", need)))
+    assert "egg" not in by_name(get_inventory(store))
+    assert res.summary() == "egg removed"
+
+
+def test_made_without_amount_steps_the_level_down(store):
+    update_inventory(store, [add("spinach", qty_level="plenty"), add("onion", qty_level="some"),
+                             add("cheddar", qty_level="low")])
+    res = mark_made(store, dish_of(("spinach", "200 g"), ("onion", "1"), ("cheddar", "50 g")))
+    inv = by_name(get_inventory(store))
+    assert inv["spinach"].qty_level == "some" and inv["onion"].qty_level == "low" and "cheddar" not in inv
+    assert res.summary() == "spinach plenty → some, onion some → low, cheddar removed"
+
+
+@pytest.mark.parametrize("recipe_amount", ["2 cups", "a splash", "500 g"])
+def test_made_incompatible_units_step_down_and_keep_the_amount(store, recipe_amount):
+    update_inventory(store, [add("milk", category="dairy", qty_level="plenty", amount=1, unit="l")])
+    mark_made(store, dish_of(("milk", recipe_amount)))
+    milk = by_name(get_inventory(store))["milk"]
+    assert (milk.qty_level, milk.amount, milk.unit) == ("some", 1, "l")
+
+
+def test_made_deducts_the_substitute(store):
+    update_inventory(store, [add("cottage cheese", category="dairy", amount=500, unit="g")])
+    res = mark_made(store, dish_of(("ricotta", "400 g"), ("pasta", "250 g")),
+                    [Substitution(missing="ricotta", use_instead="cottage cheese")])
+    inv = by_name(get_inventory(store))
+    assert inv["cottage cheese"].amount == 100 and "ricotta" not in inv
+    assert res.summary() == "cottage cheese 500 → 100 g"  # pasta is not in the inventory: skipped
+
+
+def test_made_never_touches_staples(store):
+    update_inventory(store, [add("egg", qty_level="plenty")])
+    res = mark_made(store, dish_of(("salt", "1 tsp"), ("olive oil", "2 tbsp"), ("egg", "2")))
+    inv = by_name(get_inventory(store))
+    assert inv["salt"].source == "staple" and inv["olive oil"].source == "staple"
+    assert [c.name for c in res.changes] == ["egg"]
+
+
+def test_made_never_touches_an_edited_staple(store):
+    update_inventory(store, [InventoryChange(op="set_qty", name="salt", qty_level="low")])  # now a stored staple
+    mark_made(store, dish_of(("salt", "1 tsp")))
+    assert by_name(get_inventory(store))["salt"].qty_level == "low"
+
+
+def test_made_deducts_an_optional_ingredient_only_if_present(store):
+    update_inventory(store, [add("parsley", qty_level="some")])
+    res = mark_made(store, dish_of(("parsley", "a handful", False), ("chive", "1 tbsp", False)))
+    assert by_name(get_inventory(store))["parsley"].qty_level == "low"
+    assert [c.name for c in res.changes] == ["parsley"]
+
+
+def test_undo_restores_the_exact_previous_state(store):
+    update_inventory(store, [add("egg", category="egg", qty_level="plenty", amount=12, unit="pcs", use_soon=True),
+                             add("cheddar", qty_level="low"), add("spinach", qty_level="plenty")])
+    before = {i.name: i.model_dump() for i in store.load_inventory()}
+    res = mark_made(store, dish_of(("egg", "5"), ("cheddar", "50 g"), ("spinach", "100 g")))
+    assert "cheddar" not in by_name(get_inventory(store))
+    assert undo_made(store, res.token) is True
+    after = {i.name: i.model_dump() for i in store.load_inventory()}
+    assert after == before  # amounts, levels, flags, ids, sources, times
+    assert undo_made(store, res.token) is False  # works once
+
+
+def test_undo_with_an_unknown_token(store):
+    assert undo_made(store, "nope") is False

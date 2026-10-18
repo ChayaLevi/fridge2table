@@ -72,7 +72,7 @@ def args_summary(tool: str, args: dict[str, Any], recipes: dict[str, Recipe]) ->
         text = " ".join(parts)
     elif tool == "get_recipe":
         text = str(args.get("dish", ""))
-    elif tool in ("compute_missing", "validate_suggestion"):
+    elif tool in ("compute_missing", "validate_suggestion", "mark_made"):
         text = _recipe_name(args.get("recipe_id", ""), recipes)
     elif tool == "save_preference":
         text = repr(args.get("text", "")) + (f" avoid {', '.join(args['avoid'])}" if args.get("avoid") else "")
@@ -93,6 +93,9 @@ def result_summary(tool: str, args: dict[str, Any], content: Any) -> tuple[str, 
         return ", ".join(f"{_OP_WORDS.get(op, op)} {n}" for op, n in ops.items()) or "no changes", False
     if tool == "mark_bought":
         return short(str(content).splitlines()[0] if content else "bought"), False
+    if tool == "mark_made":
+        first = str(content).splitlines()[0] if content else ""
+        return short(first.split("Deducted: ", 1)[-1].rstrip(".") if "Deducted: " in first else "made"), False
     if tool == "suggest_meals":
         res = _as(SuggestResult, content)
         if isinstance(res, SuggestResult):
@@ -203,6 +206,10 @@ def step_label(tool: str, args: dict[str, Any], content: Any, failed: bool, deta
         changes = ", ".join(f"{_OP_WORDS.get(c.get('op'), c.get('op'))} {c.get('name')}"
                             for c in args.get("changes") or [] if isinstance(c, dict))
         return short(f"updated the inventory ({changes})" if changes else "updated the inventory", 80)
+    if tool == "mark_made":
+        first = str(content).splitlines()[0] if content else ""
+        what = first.split("Deducted: ", 1)[-1].rstrip(".") if "Deducted: " in first else ""
+        return short(f"took the ingredients out ({what})" if what else "took the ingredients out", 80)
     if tool == "mark_bought":
         first = str(content).splitlines()[0] if content else ""
         names = first.removeprefix("Bought: ").removesuffix(" (now plenty).")

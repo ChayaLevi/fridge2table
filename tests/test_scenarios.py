@@ -30,9 +30,9 @@ def _store(*items: str, scanned=("fridge",)) -> Store:
     return store
 
 
-def test_suite_file_loads_with_seventeen_scenarios():
+def test_suite_file_loads_with_eighteen_scenarios():
     inventories, scenarios = sc.load_suite()
-    assert [s["id"] for s in scenarios] == list(range(1, 18))
+    assert [s["id"] for s in scenarios] == list(range(1, 19))
     for s in scenarios:  # every seed is valid
         sc.seed_store(Store(":memory:"), s.get("seed") or {}, inventories)
     for s in scenarios:
@@ -184,3 +184,15 @@ def test_meals_must_not_contain_ignores_an_egg_free_dish_name():
     assert sc.check_turn({"meals_must_not_contain": ["egg"]}, free, _trace("suggest_meals"), store) == []
     named = AgentReply(message="x", meals=[_recipe("Egg fried rice", "rice")])
     assert sc.check_turn({"meals_must_not_contain": ["egg"]}, named, _trace("suggest_meals"), store) == ["Egg fried rice contains egg"]
+
+
+def test_check_turn_went_down():
+    store = _store("egg, egg, plenty", "spinach, vegetable, some", "milk, dairy, some")
+    update_inventory(store, [InventoryChange(op="set_amount", name="egg", amount=12, unit="pcs")])
+    before = get_inventory(store)
+    update_inventory(store, [InventoryChange(op="set_amount", name="egg", amount=9, unit="pcs"),
+                             InventoryChange(op="remove", name="spinach")])
+    reply = AgentReply(message="ok")
+    assert sc.check_turn({"went_down": ["egg", "spinach"]}, reply, _trace("mark_made"), store, None, before) == []
+    fails = sc.check_turn({"went_down": ["milk", "cheddar"]}, reply, _trace("mark_made"), store, None, before)
+    assert fails == ["milk did not go down (some -> some)", "cheddar was not in the inventory before the turn"]

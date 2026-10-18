@@ -33,7 +33,8 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [ ] T5.1 Vision model comparison
 - [x] T5.2 Latency (numbers in `eval/RESULTS.md`)
 - [ ] T5.3 Real user run #1 + decision point 🧑
-- [ ] P6 Fixes (+ T6.1 if the decision point passed; T6.2 done early, 2026-10-18)
+- [ ] P6 Fixes (T6.1, T6.2 done early on 2026-10-18 at the human's request, before the decision point)
+- [x] T6.1 "I made it" (specified and built 2026-10-18; the human's browser check is open)
 - [x] T6.3 Exact amount per inventory item (added and built 2026-10-18 at the human's request; the human's browser check is open)
 - [x] T6.3b Amount-aware code checks (added and built 2026-10-18 at the human's request; the human's browser check is open)
 - [x] T6.4 "Bought it" (specified and built 2026-10-18 at the human's request; the human's browser check is open)
@@ -41,12 +42,12 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 
 ## Next up
 
-- **Open: the human checks T6.4** in a phone-size browser (lasagna → Bought on ground beef → 500 g → Bought all → lasagna again; see the T6.4 log entry). **Open: the human checks T6.3 and T6.3b** in a phone-size browser (T6.3: set "500 g" on an item, see it in the row, clear it, add "milk 2 l" from the Add field; T6.3b: eggs at 4 pcs, "I want to make a frittata with 5 eggs" → "egg · have 4, need 5"; at 12 pcs → not in To buy; see the log entries).
+- **Open: the human checks T6.1** in a phone-size browser (eggs 12 pcs → omelette → I made it → Undo → I made it → "what can I cook?"; see the T6.1 log entry). **Open: the human checks T6.4** in a phone-size browser (lasagna → Bought on ground beef → 500 g → Bought all → lasagna again; see the T6.4 log entry). **Open: the human checks T6.3 and T6.3b** in a phone-size browser (T6.3: set "500 g" on an item, see it in the row, clear it, add "milk 2 l" from the Add field; T6.3b: eggs at 4 pcs, "I want to make a frittata with 5 eggs" → "egg · have 4, need 5"; at 12 pcs → not in To buy; see the log entries).
 - **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing). T5.2 is done (2026-10-15). After T5.1: T5.3, the real user run (🧑).
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 610 tests pass (2026-10-18, after T6.4 Bought it). Scenario suite: 17 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15; 15 = exact amounts from chat, 16 = amount-aware check, 17 = Bought it, added 2026-10-18), 17/17 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 630 tests pass (2026-10-18, after T6.1 I made it). Scenario suite: 18 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15; 15 = exact amounts from chat, 16 = amount-aware check, 17 = Bought it, 18 = I made it, added 2026-10-18), 18/18 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -99,6 +100,37 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-18 — T6.1 "I made it" (the human's request)
+
+- Built:
+  - `app/models.py`: `MadeChange` (name, display_name, before, after; `text()` = "egg 12 → 9 pcs" when the unit word is the same, "milk 1 l → 750 ml", "spinach some → low", "cheddar removed") and `MadeResult` (changes, token, `summary()`).
+  - `app/store.py`: table `undo` (token → JSON snapshot), `save_undo`, `pop_undo` (deleted on read: an undo works once); `reset_all` clears it.
+  - `app/tools/inventory.py`: `mark_made(store, recipe, substitutions, source)` returns a `MadeResult`. Per ingredient name, amounts are summed, and a substituted ingredient counts against its substitute. With an exact amount and a recipe amount of the same base unit (pcs, g, ml, pack): subtract in the item's unit (1 l − 250 ml = 0.75 l, shown "750 ml"), remove at 0 or below, `qty_level` unchanged. Otherwise one level down (`_STEP_DOWN`), an exact amount left as it is. Staples (virtual or stored with `is_staple`) are never touched; names not stored are skipped. The touched items are saved before the edits; the edits run through `update_inventory`. `undo_made(store, token)` puts the snapshot back (replaces by id or name, re-adds removed items).
+  - `app/api.py`: `POST /recipe/{id}/made` (body optional: `{substitutions}`) → `MadeState` = the panel state + `changes` + `summary` + `token` (404 for an unknown recipe); `POST /inventory/undo/{token}` → the panel state (404 if unknown or used).
+  - `app/agent.py`: tool `mark_made(recipe_id)`. It applies the last reply's substitutions when the recipe was in that reply. An unknown id is a ModelRetry listing the known ids, or "call get_recipe first". It returns "Made X. Deducted: … " + the inventory. `_last_reply()` (meal_ids + substitutions from the history) is now shared with `mark_bought`'s `_last_reply_list`. `app/trace.py`: "mark_made(Omelette) → egg 12 → 9 pcs, …", label "took the ingredients out (…)".
+  - `app/static/index.html`: `madeBar(meal, reply)` under the pills of the recipe window: a full-width **🍳 I made it** button. Afterwards the button hides and one line reads "✓ Took out: egg 12 → 9 pcs, butter some → low, …" with **Undo**. Undo → "Undone: the inventory is back as it was." and the button comes back. It sends the reply's substitutions; the panel refreshes from the response.
+  - `eval/run_scenarios.py`: expect key `went_down` (gone, a lower exact amount, or a lower level than before the turn; the runner snapshots the inventory before each turn). Scenario 18 (demo seed, eggs 12 pcs: egg ideas, then "We made the omelette.").
+  - Tests: 14 in `tests/test_inventory.py` (exact subtract incl. ml from l, summed duplicates, to zero and below removes, no amount steps down, incompatible / unparsable amounts step down and keep the amount, substitute deducted, staples untouched (virtual and edited), optional only if present, undo restores exactly and only once, unknown token), 2 in `tests/test_api.py`, 2 in `tests/test_agent.py` (substitute through the last reply, unknown id sent back), 1 in `tests/test_trace.py`, 1 in `tests/test_scenarios.py`. 630 pass.
+  - Docs: `docs/PRODUCT.md` §4 (Flow 6; "We cooked it" removed from Stretch), §6 (`mark_made`), §8 (the recipe window line); `docs/PLAN.md` T6.1 with "Done when" (the P6 stretch bullet points to it).
+- Decisions / deviations:
+  - "Leave any amount untouched only if the units were incompatible": an exact amount is also left as it is when the recipe amount does not parse at all ("a handful", "to taste"), since it cannot be subtracted either. An item with no amount just steps down.
+  - After an exact subtraction `qty_level` stays as it was (12 → 9 eggs stays plenty); the amount is the truth there.
+  - Built before the T5.3 decision point, at the human's request (the plan had T6.1 as a stretch goal behind it).
+  - Undo tokens live in the household's SQLite file, so an undo works after a server restart; there is no expiry.
+- Checked: `uv run pytest -q` 630 passed. Scenario 18 on real models 3/3 (`mark_made(Spinach and Cheddar Omelette)` → "egg 12 → 6 pcs" / "12 → 4 pcs", spinach, cheddar, butter some → low, onion plenty → some); full suite `--jobs 4` 18/18. Headless Edge 390x844 (demo seed, a separate HOUSEHOLD_DIR): the panel set egg to 12 pcs. "I want to make an omelette" → recipe "Egg · 3". I made it → "✓ Took out: egg 12 → 9 pcs, butter some → low, milk some → low, cheddar some → low" and the inventory showed 9 pcs. Undo → "Undone …", the whole inventory equal to before (egg 12 pcs). I made it again → 9 pcs. "what can I cook?" → 3 cards from the lower inventory (9 eggs still enough for an omelette). No horizontal scroll, no page errors.
+- Next task must know: `mark_made` / `undo_made` are the only deduction path (page and agent). The chat has no Undo; "undo that" in chat is not handled (the agent could use `update_inventory`).
+- Open: the human's browser check. Without an exact amount, any amount steps an item down a whole level: in the omelette, an optional splash of milk (15 ml) took milk from some to low. That is the specified rule; a smaller rule (e.g. optional ingredients or tiny amounts not deducted) is a possible follow-up if it feels wrong in use.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_inventory.py tests/test_api.py tests/test_agent.py -q -k "made or undo"
+uv run python eval/run_scenarios.py --only 18
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `630 passed`; then `18 passed, 141 deselected`; then `[PASS] #18 ...` and `1/1 passed`, turn 2 with `mark_made > output check` and "egg 12 → … pcs"; then the server starts.
+Manual check: open http://localhost:8000 in a phone-size window (DevTools, device toolbar). If the inventory is empty, run `POST /admin/seed` on http://localhost:8000/docs and reload. Open Inventory, tap Egg, type 12, tap pcs. Ask "I want to make an omelette", tap the card. Under the pills tap **🍳 I made it**: the line reads "✓ Took out: egg 12 → 9 pcs, …" (9 if the recipe uses 3 eggs), and Inventory shows the lower egg amount. Tap **Undo**: "Undone …", egg is 12 pcs again. Tap I made it again, close the recipe, ask "what can I cook?": the ideas come from the lower inventory (open the trace line to see the steps).
 
 ### 2026-10-18 — T6.4 "Bought it" (the human's request)
 

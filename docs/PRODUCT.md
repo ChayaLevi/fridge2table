@@ -67,9 +67,13 @@ A kitchen agent that knows what is in your home: photograph the fridge and pantr
 **Flow 5: proactive opening**
 - When the app opens and the inventory is not empty, the agent greets with a suggestion that targets "use soon" items ("Your spinach needs using. Want a spinach dish tonight?"). If no "use soon" items exist, it gives a short generic greeting with one quick idea.
 
+**Flow 6: I made it (T6.1)**
+1. In the recipe window, **🍳 I made it** takes the recipe's ingredients out of the inventory. Per ingredient: if the item has an exact amount and the recipe amount parses to the same kind of unit (`to_base`), it is subtracted (the item is removed at 0 or below); otherwise the item goes one level down (`plenty → some → low → removed`) and an amount that could not be subtracted is left as it is. A substituted ingredient is taken from its substitute (cottage cheese, not ricotta). Staples are never deducted; ingredients not in the inventory are skipped.
+2. One line says what changed ("eggs 12 → 9 pcs, milk some → low, cheddar removed") with **Undo**, which puts the touched items back exactly as they were.
+3. In chat, "we made the lasagna" does the same through the agent's `mark_made` tool, and the agent says what changed.
+
 **Stretch (only if the Oct 20 decision point passes):**
-- "We cooked it": after the user confirms they cooked a suggested meal, the agent lowers the used ingredients (`plenty → some → low → removed`) via `update_inventory`.
-- Share shopping list: a button that copies the list as plain text.
+- Share shopping list: a button that copies the list as plain text (done early, T6.2).
 
 ## 5. Agent behaviour
 
@@ -100,6 +104,7 @@ All tools live in `app/tools/` as plain functions with Pydantic I/O. The agent w
 | `compute_missing(recipe_id)` | **code** | id of a recipe from this run → `MissingReport` (essential ingredients missing, after normalization and staples) |
 | `validate_suggestion(recipe_id)` | **code** | id of a recipe from this run → `ValidationResult` (ok, missing essentials, violated preferences). Still a separate tool: for Mode B dishes and for re-checks after an inventory change in the same turn |
 | `mark_bought(items, everything)` | code | items the user bought (name, optional amount) or everything on the last reply's list → each becomes plenty; a new one goes to its place by category; staples ignored (T6.4) |
+| `mark_made(recipe_id)` | code | a recipe of this conversation the user cooked → its ingredients deducted (exact amounts subtracted when the units allow, else one level down; the last reply's substitutes; staples never), what changed (T6.1) |
 | `save_preference(text, avoid)` | code | free text + list of canonical ingredients to avoid → `Preference` |
 | `get_preferences()` | code | → `list[Preference]` |
 
@@ -234,6 +239,7 @@ The checks compare amounts only in the case the amount rule below describes (T6.
 One page, mobile first.
 - **Chat** (main area): message bubbles; an attach-photo button (camera or gallery, up to 4); text input. Before sending, each photo thumbnail shows a place tag (Fridge / Freezer / Pantry) that cycles on tap.
 - **Meal cards** inside agent messages: name, time, the inventory items it uses (chips; "use soon" chips highlighted). Tap → full recipe in a bottom sheet.
+- **Recipe window**: photo, time / servings / "N of M at home", a **🍳 I made it** button (T6.1; afterwards one line "✓ Took out: eggs 12 → 9 pcs, milk some → low" with **Undo**), the shopping-list block for a Mode B dish, the ingredients with their status, the steps.
 - **Shopping list** block inside agent messages when present: substitutions on top, then "To buy", then "Check your pantry first" (muted style). Each item reads "ground beef · need 500 g" (or "egg · have 4, need 5", T6.3b) with a **Bought** button; after a tap the item is ticked and greyed, and a line "Added ground beef. How much did you buy?" offers 2-3 package-size chips and Skip. Under the list: **✓ Bought all**, 📋 Copy list, ⬇️ Download .txt. The recipe window shows the same block.
 - **Trace line** under each agent message, collapsed by default: "3 tools · updated inventory → 5 candidates → 1 failed (no cream) → replaced". Expanded: one line per tool call.
 - **Inventory panel**: a drawer opened from a header button, with a count badge. Grouped by location; each location header shows "scanned 2 days ago" or "not scanned yet" with a camera button that opens the photo picker pre-tagged with that place. Uncertain items at the top with a warning style. Each item: name (with its exact amount when set: "Milk · 2 l"), quantity level dot, and on tap its actions: quantity level, "use soon" toggle, rename, delete, and an **Amount** line (a number input that accepts 1.5, unit chips pcs / g / kg / ml / l / pack with the category's default preselected, Save, Clear; saved with `PATCH /inventory` `set_amount`). "Add item" input, which also accepts an amount ("milk 2 l", "6 eggs"). A "Staples" section that can be collapsed.

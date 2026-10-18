@@ -275,3 +275,13 @@ def test_mark_bought_in_the_trace():
     assert args_summary("mark_bought", args, {}) == "egg, everything on the list"
     assert result_summary("mark_bought", args, content) == ("Bought: ground beef, pasta (now plenty).", False)
     assert step_label("mark_bought", args, content, False) == "marked bought (ground beef, pasta)"
+
+
+def test_mark_made_in_the_trace():
+    from app.models import Recipe
+    from app.trace import step_label
+    om = Recipe(id="om1", name="Omelette", ingredients=[], time_minutes=10)
+    content = "Made Omelette. Deducted: eggs 12 → 9 pcs, spinach some → low.\nInventory now:\n..."
+    assert args_summary("mark_made", {"recipe_id": "om1"}, {"om1": om}) == "Omelette"
+    assert result_summary("mark_made", {}, content) == ("eggs 12 → 9 pcs, spinach some → low", False)
+    assert step_label("mark_made", {}, content, False) == "took the ingredients out (eggs 12 → 9 pcs, spinach some → low)"

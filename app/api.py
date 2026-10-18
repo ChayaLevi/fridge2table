@@ -30,7 +30,7 @@ from app.llm import setup_observability
 from app.amounts import Unit
 from app.models import (
     AgentReply, BoughtItem, CookMode, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
-    PackSize, TurnUsage,
+    MadeChange, PackSize, TurnUsage,
 )
 from app.store import Store
 from app.tools import inventory, photos, recipes
@@ -138,6 +138,18 @@ class BoughtState(InventoryState):
     previous: dict[str, AmountValue | None]
 
 
+class MadeRequest(BaseModel):
+    substitutions: list[Substitution] = []  # the reply's substitutions: the substitute is deducted
+
+
+class MadeState(InventoryState):
+    """After "I made it": the panel's state, what changed, one line for the page, and the undo token."""
+
+    changes: list[MadeChange]
+    summary: str  # "egg 12 → 7 pcs, spinach some → low, cheddar removed"
+    token: str
+
+
 class ChatResponse(InventoryState):
     reply: AgentReply  # meals are filled (full recipes, without steps)
     trace: list[ToolTraceItem]
@@ -243,6 +255,25 @@ def post_bought(store: StoreDep, items: list[BoughtItem]) -> BoughtState:
         **_state(store), sizes=sizes,
         previous={n: AmountValue(amount=p[0], unit=p[1]) if p else None for n, p in previous.items()},
     )
+
+
+@app.post("/recipe/{recipe_id}/made")
+def recipe_made(recipe_id: str, store: StoreDep, body: MadeRequest | None = None) -> MadeState:
+    """The user cooked this recipe (T6.1): its ingredients are deducted from the inventory (exact amounts
+    subtracted when the units allow, else one level down; staples never). Undo with the returned token."""
+    recipe = store.load_recipe(recipe_id)
+    if recipe is None:
+        raise HTTPException(404, "Unknown recipe id")
+    res = inventory.mark_made(store, recipe, (body or MadeRequest()).substitutions, source="manual")
+    return MadeState(**_state(store), changes=res.changes, summary=res.summary(), token=res.token)
+
+
+@app.post("/inventory/undo/{token}")
+def inventory_undo(token: str, store: StoreDep) -> InventoryState:
+    """Undo an "I made it": the touched items come back exactly as they were. Works once per token."""
+    if not inventory.undo_made(store, token):
+        raise HTTPException(404, "Nothing to undo (unknown or already used)")
+    return InventoryState(**_state(store))
 
 
 @app.post("/inventory/reset")
