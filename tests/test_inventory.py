@@ -484,3 +484,116 @@ def test_add_with_an_amount_keeps_the_display_name_of_an_existing_item(store):
     update_inventory(store, [add("egg", display_name="Free-range eggs")])
     inv = by_name(update_inventory(store, [add("6 eggs")], source="manual"))
     assert (inv["egg"].display_name, inv["egg"].amount) == ("Free-range eggs", 6)
+
+
+# --- "Bought it" (T6.4) ----------------------------------------------------------------------------------
+
+from app.models import BoughtItem  # noqa: E402
+from app.tools.inventory import location_for, mark_bought, package_sizes  # noqa: E402
+
+
+def bought(name, **kw):
+    return BoughtItem(name=name, **kw)
+
+
+def test_bought_new_item_is_plenty_in_its_place_without_amount(store):
+    mark_bought(store, [bought("ground beef", category="meat"), bought("lasagna noodle", category="pasta"),
+                        bought("peas", category="frozen")])
+    inv = by_name(get_inventory(store))
+    beef = inv["ground beef"]
+    assert (beef.qty_level, beef.location, beef.category, beef.amount, beef.source) == ("plenty", "fridge", "meat", None, "manual")
+    assert inv["lasagna noodle"].location == "pantry"
+    assert inv["pea"].location == "freezer"
+
+
+def test_bought_new_item_without_category_goes_to_the_fridge(store):
+    mark_bought(store, [bought("mystery")])
+    item_ = by_name(get_inventory(store))["mystery"]
+    assert (item_.location, item_.category, item_.qty_level) == ("fridge", "other", "plenty")
+
+
+def test_bought_existing_item_becomes_plenty_and_keeps_its_place(store):
+    update_inventory(store, [add("milk", category="dairy", location="freezer", qty_level="low")])
+    mark_bought(store, [bought("milk", category="dairy")])
+    milk = by_name(get_inventory(store))["milk"]
+    assert (milk.qty_level, milk.location) == ("plenty", "freezer")
+
+
+def test_bought_without_amount_clears_a_stale_amount_and_returns_it(store):
+    update_inventory(store, [add("egg", category="egg", amount=4, unit="pcs")])
+    previous = mark_bought(store, [bought("eggs", category="egg")])
+    egg = by_name(get_inventory(store))["egg"]
+    assert (egg.qty_level, egg.amount, egg.unit) == ("plenty", None, None)
+    assert previous == {"egg": (4, "pcs")}
+
+
+def test_chip_after_bought_adds_to_what_the_item_had(store):
+    update_inventory(store, [add("egg", category="egg", amount=4, unit="pcs")])
+    mark_bought(store, [bought("egg")])
+    mark_bought(store, [bought("egg", amount=12, unit="pcs", had_amount=4, had_unit="pcs")])
+    egg = by_name(get_inventory(store))["egg"]
+    assert (egg.amount, egg.unit, egg.amount_text) == (16, "pcs", "16 pcs")
+
+
+def test_amount_adds_to_the_current_amount_in_its_unit(store):
+    update_inventory(store, [add("rice", category="grain", amount=1, unit="kg")])
+    mark_bought(store, [bought("rice", amount=500, unit="g")])
+    flour = by_name(get_inventory(store))["rice"]
+    assert (flour.amount, flour.unit, flour.amount_text) == (1.5, "kg", "1.5 kg")
+
+
+def test_amount_of_another_kind_replaces(store):
+    update_inventory(store, [add("butter", category="dairy", amount=1, unit="pack")])
+    mark_bought(store, [bought("butter", amount=250, unit="g")])
+    butter = by_name(get_inventory(store))["butter"]
+    assert (butter.amount, butter.unit) == (250, "g")
+
+
+def test_chip_on_a_new_item_sets_the_amount(store):
+    mark_bought(store, [bought("ground beef", category="meat")])
+    mark_bought(store, [bought("ground beef", category="meat", amount=500, unit="g")])
+    beef = by_name(get_inventory(store))["ground beef"]
+    assert (beef.amount_text, beef.qty_level) == ("500 g", "plenty")
+
+
+def test_new_item_with_an_amount_and_no_unit_uses_the_category_default(store):
+    mark_bought(store, [bought("milk", category="dairy", amount=2)])
+    assert by_name(get_inventory(store))["milk"].amount_text == "2 l"
+
+
+def test_staple_names_are_ignored(store):
+    before = by_name(get_inventory(store))
+    mark_bought(store, [bought("salt", category="spice"), bought("olive oil", category="condiment")])
+    after = by_name(get_inventory(store))
+    assert after["salt"].is_staple and after["salt"].source == "staple"
+    assert store.load_inventory() == [] and before.keys() == after.keys()
+
+
+def test_a_removed_staple_comes_back(store):
+    update_inventory(store, [InventoryChange(op="remove", name="salt")])
+    assert "salt" not in by_name(get_inventory(store))
+    mark_bought(store, [bought("salt", category="spice")])
+    assert by_name(get_inventory(store))["salt"].source == "staple"
+
+
+def test_bought_names_are_normalized_and_deduplicated(store):
+    mark_bought(store, [bought("Eggs", category="egg"), bought("egg", category="egg", amount=6, unit="pcs")])
+    inv = [i for i in get_inventory(store) if i.name == "egg"]
+    assert len(inv) == 1 and inv[0].amount is None  # the second entry for the same name is ignored
+
+
+def test_package_sizes():
+    assert [s.text for s in package_sizes("eggs", "egg")] == ["6 pcs", "12 pcs", "18 pcs"]
+    assert [s.text for s in package_sizes("sugar", "baking")] == ["500 g", "1 kg"]
+    assert [s.text for s in package_sizes("milk", "dairy")] == ["1 l", "2 l"]
+    assert [s.text for s in package_sizes("cheddar", "dairy")] == ["200 g", "500 g"]
+    assert [s.text for s in package_sizes("ground beef", "meat")] == ["500 g", "1 kg"]
+    assert [s.text for s in package_sizes("salmon", "fish")] == ["500 g", "1 kg"]
+    assert [s.text for s in package_sizes("thing", "other")] == ["1 pack", "2 packs"]
+    assert [s.text for s in package_sizes("thing", None)] == ["1 pack", "2 packs"]
+
+
+def test_location_for():
+    assert location_for("pasta") == "pantry" and location_for("spice") == "pantry"
+    assert location_for("frozen") == "freezer"
+    assert location_for("meat") == "fridge" and location_for(None) == "fridge"

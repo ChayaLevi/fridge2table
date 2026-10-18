@@ -22,17 +22,20 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResult
+from pydantic import BaseModel, Field
 from pydantic_ai.toolsets import FunctionToolset
 
 from app import config, llm
+from app.amounts import Unit
 from app.models import (
-    MAX_TO_BUY, AgentReply, Constraints, CookMode, InventoryChange, Location, MealCandidate, MissingReport, Recipe,
+    MAX_TO_BUY, AgentReply, BoughtItem, Constraints, CookMode, InventoryChange, Location, MealCandidate, MissingReport, Recipe,
     StepTiming, SuggestResult, ToolTraceItem, TurnUsage, ValidationResult,
 )
 from app.store import Store
 from app.timing import TimedModel, TimedToolset
 from app.trace import OUTPUT_CHECK, OUTPUT_TOOL_NAME, build_trace
 from app.tools import checks, inventory, preferences, recipes, recognize
+from app.tools.normalize import normalize
 
 log = logging.getLogger(__name__)
 
@@ -312,8 +315,8 @@ async def update_inventory(ctx: RunContext[Deps], changes: list[InventoryChange]
     Ops: add (name; optional qty_level plenty|some|low, location fridge|freezer|pantry, category,
     use_soon, amount, unit), remove, set_qty (qty_level; omit it to mean "none left"), set_use_soon
     (use_soon), rename (new_name), set_amount (amount, unit pcs|g|kg|ml|l|pack; amount null clears it).
-    Use it when the user says the inventory changed ("we're out of eggs" -> remove egg; "bought chicken"
-    -> add chicken; "the spinach should be used soon" -> set_use_soon). When the user gives an exact
+    Use it when the user says the inventory changed ("we're out of eggs" -> remove egg; "the spinach
+    should be used soon" -> set_use_soon). For things the user bought, use mark_bought instead. When the user gives an exact
     amount, record it with set_amount ("we have 6 eggs" -> set_amount egg 6 pcs; "there's 2 liters of
     milk" -> set_amount milk 2 l), or with add + amount if the item is not in the inventory. An amount
     does not change qty_level; never guess one the user did not say. Only change what the user said.
@@ -322,6 +325,61 @@ async def update_inventory(ctx: RunContext[Deps], changes: list[InventoryChange]
     ops = ", ".join(f"{c.op} {c.name}" for c in changes)
     out = f"Applied: {ops}.\nInventory now:\n{_inventory_text(ctx.deps.store)}"
     _log("update_inventory", ops, f"{len(changes)} changes")
+    return out
+
+
+class BoughtSpec(BaseModel):
+    """One item the user says they bought."""
+
+    name: str
+    category: str | None = None  # only needed for an item that is on no recipe of this conversation
+    amount: float | None = Field(default=None, gt=0)  # only if the user said how much ("12 eggs")
+    unit: Unit | None = None
+
+
+def _last_reply_list(ctx: RunContext[Deps]) -> list[str]:
+    """To buy + Check your pantry first of the session's last reply, recomputed by code against the current
+    inventory (the model's own lists in the history may differ from what the page showed)."""
+    for msg in reversed(ctx.messages):
+        if not isinstance(msg, ModelResponse):
+            continue
+        for part in msg.parts:
+            if isinstance(part, ToolCallPart) and part.tool_name == OUTPUT_TOOL_NAME:
+                args = part.args_as_dict()
+                ids = [i.strip() for i in args.get("meal_ids") or [] if isinstance(i, str)]
+                subs = {normalize(s.get("missing", "")) for s in args.get("substitutions") or [] if isinstance(s, dict)}
+                store = ctx.deps.store
+                inv, scan = inventory.get_inventory(store), store.load_scan_state()
+                names: list[str] = []
+                for i in ids:
+                    recipe = ctx.deps.recipes.get(i) or store.load_recipe(i)
+                    if recipe is not None:
+                        report = checks.compute_missing(recipe, inv, scan)
+                        names += [n for n in report.missing_essential + report.check_first if n not in subs]
+                return list(dict.fromkeys(names))
+    return []
+
+
+@toolset.tool
+async def mark_bought(ctx: RunContext[Deps], items: list[BoughtSpec] = [], everything: bool = False) -> str:
+    """The user bought things ("I bought the eggs and the milk", "got everything on the list").
+
+    items: what they bought, by name. everything: true when they bought everything on the shopping list
+    of your last reply; code then takes its To buy and Check your pantry first items (items may stay
+    empty). Each item becomes plenty in the inventory (a new one goes to its place by category). Give
+    amount/unit only when the user said how much they bought ("I bought 12 eggs"): it is added to what
+    is there. A total ("we have 12 eggs now") is not a purchase amount: record it with update_inventory
+    set_amount instead (after mark_bought if they also said they bought it). Never use the recipe's amount.
+    Staples are ignored. Returns what was marked and the updated inventory.
+    """
+    categories = {normalize(i.name): i.category for r in ctx.deps.recipes.values() for i in r.ingredients}
+    wanted = list(items) + ([BoughtSpec(name=n) for n in _last_reply_list(ctx)] if everything else [])
+    bought = [BoughtItem(name=b.name, category=categories.get(normalize(b.name)) or b.category,
+                         amount=b.amount, unit=b.unit) for b in wanted]
+    marked = list(inventory.mark_bought(ctx.deps.store, bought, source="chat"))
+    out = (f"Bought: {', '.join(marked) or 'nothing'} (now plenty).\n"
+           f"Inventory now:\n{_inventory_text(ctx.deps.store)}")
+    _log("mark_bought", ", ".join(b.name for b in wanted) or ("everything" if everything else ""), out.splitlines()[0])
     return out
 
 

@@ -61,6 +61,28 @@ class InventoryChange(BaseModel):
     unit: Unit | None = None  # set_amount, add; None = the default unit for the item's category
 
 
+class BoughtItem(BaseModel):
+    """One shopping-list item the user bought (T6.4). The recipe amount is never copied in: an amount
+    comes only from the user (a package-size chip or what they said)."""
+
+    name: str
+    category: str | None = None  # from the recipe's ingredient; decides the place of a new item
+    amount: float | None = Field(default=None, gt=0)  # what was bought: added to the amount the item has
+    unit: Unit | None = None
+    # The amount the item had before "Bought" cleared it (the page sends it back with a chip, so the chip
+    # adds to it: 4 pcs + 12 pcs = 16 pcs).
+    had_amount: float | None = None
+    had_unit: Unit | None = None
+
+
+class PackSize(BaseModel):
+    """A package-size chip after "Bought": "12 pcs", "500 g", "1 l"."""
+
+    amount: float
+    unit: Unit
+    text: str
+
+
 class Constraints(BaseModel):
     text: str = ""
     max_minutes: int | None = None

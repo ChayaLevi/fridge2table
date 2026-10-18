@@ -30,9 +30,9 @@ def _store(*items: str, scanned=("fridge",)) -> Store:
     return store
 
 
-def test_suite_file_loads_with_sixteen_scenarios():
+def test_suite_file_loads_with_seventeen_scenarios():
     inventories, scenarios = sc.load_suite()
-    assert [s["id"] for s in scenarios] == list(range(1, 17))
+    assert [s["id"] for s in scenarios] == list(range(1, 18))
     for s in scenarios:  # every seed is valid
         sc.seed_store(Store(":memory:"), s.get("seed") or {}, inventories)
     for s in scenarios:
@@ -167,3 +167,20 @@ def test_check_turn_inventory_amount():
     assert sc.check_turn({"inventory_amount": {"milk": "2 l", "egg": ""}}, reply, _trace("update_inventory"), store) == []
     fails = sc.check_turn({"inventory_amount": {"egg": "6 pcs"}}, reply, _trace("update_inventory"), store)
     assert fails == ["egg amount is '', expected '6 pcs'"]
+
+
+def test_check_turn_last_list_in_inventory():
+    store = _store("ground beef, meat, plenty", "pasta, pasta, some")
+    previous = AgentReply(message="x", shopping_list=["ground beef"], check_first=["pasta"])
+    fails = sc.check_turn({"last_list_in_inventory": True}, AgentReply(message="ok"), _trace("mark_bought"), store, previous)
+    assert fails == ["pasta not in the inventory as plenty (some)"]
+    assert sc.check_turn({"last_list_in_inventory": True}, AgentReply(message="ok"), _trace("mark_bought"), store, None) \
+        == ["the previous reply had no shopping list"]
+
+
+def test_meals_must_not_contain_ignores_an_egg_free_dish_name():
+    store = _store("spinach, vegetable, some")
+    free = AgentReply(message="x", meals=[_recipe("Spinach Egg-Free Skillet", "spinach")])
+    assert sc.check_turn({"meals_must_not_contain": ["egg"]}, free, _trace("suggest_meals"), store) == []
+    named = AgentReply(message="x", meals=[_recipe("Egg fried rice", "rice")])
+    assert sc.check_turn({"meals_must_not_contain": ["egg"]}, named, _trace("suggest_meals"), store) == ["Egg fried rice contains egg"]

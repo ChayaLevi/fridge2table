@@ -458,7 +458,7 @@ def test_agent_registers_the_planned_tools():
     names = set(agent_module.toolset.tools)
     assert names == {
         "recognize_inventory", "get_inventory", "update_inventory", "suggest_meals", "get_recipe",
-        "compute_missing", "validate_suggestion", "save_preference",
+        "compute_missing", "validate_suggestion", "save_preference", "mark_bought",
     }
     assert deps.images == [] and deps.recipes == {}
 
@@ -687,3 +687,38 @@ async def test_mode_b_get_recipe_reports_what_is_missing_so_two_agent_calls_do(s
     assert turn.reply.shopping_list == ["ground beef"] and turn.reply.check_first == ["pasta"]
     assert [t.tool for t in turn.trace] == ["get_recipe", "output check"]
     assert turn.trace[0].label == "recipe for Lasagna, 2 missing, 1 not confirmed"
+
+
+# --- "Bought it" (T6.4) ----------------------------------------------------------------------------
+
+async def test_mark_bought_everything_takes_the_last_reply_list(store):
+    seen_ids: dict[str, str] = {}
+
+    def mode_b(messages, info):
+        seen_ids.update(ids_by_name(messages[-1].parts))
+        if sum(1 for m in messages if isinstance(m, ModelRequest)) == 1:
+            return ModelResponse(parts=[ToolCallPart("get_recipe", {"dish": "lasagna"})])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply(
+            message="You can use your cottage cheese instead of ricotta; the list is below.",
+            meal_ids=[seen_ids["Lasagna"]], substitutions=[{"missing": "ricotta", "use_instead": "cottage cheese"}]))])
+
+    first = await run_turn(store, "s1", "I want to make lasagna", model=FunctionModel(mode_b), recipe_model=LASAGNA_MODEL)
+    assert first.reply.shopping_list == ["ground beef"] and first.reply.check_first == ["pasta"]
+
+    model, _ = scripted(("mark_bought", {"everything": True}), reply(message="Great, all in the inventory."))
+    turn = await run_turn(store, "s1", "I bought everything on the list", model=model, recipe_model=LASAGNA_MODEL)
+    inv = {i.name: i for i in get_inventory(store)}
+    assert (inv["ground beef"].qty_level, inv["ground beef"].location, inv["ground beef"].amount) == ("plenty", "fridge", None)
+    assert inv["pasta"].location == "pantry"  # by the recipe's category
+    assert "ricotta" not in inv  # substituted, so it was not on the list
+    assert any(t.tool == "mark_bought" for t in turn.trace)
+
+
+async def test_mark_bought_named_items_with_an_amount(store):
+    model, _ = scripted(("mark_bought", {"items": [{"name": "eggs", "amount": 12, "unit": "pcs"},
+                                                   {"name": "chicken", "category": "meat"}]}),
+                        reply(message="Noted."))
+    await run_turn(store, "s2", "I bought 12 eggs and some chicken", model=model)
+    inv = {i.name: i for i in get_inventory(store)}
+    assert (inv["egg"].qty_level, inv["egg"].amount_text) == ("plenty", "12 pcs")
+    assert (inv["chicken"].category, inv["chicken"].location, inv["chicken"].amount) == ("meat", "fridge", None)

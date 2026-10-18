@@ -27,12 +27,14 @@ from pydantic_ai.models import Model
 from app import config
 from app.agent import TurnResult, run_opening, run_turn
 from app.llm import setup_observability
+from app.amounts import Unit
 from app.models import (
-    AgentReply, CookMode, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
-    TurnUsage,
+    AgentReply, BoughtItem, CookMode, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
+    PackSize, TurnUsage,
 )
 from app.store import Store
 from app.tools import inventory, photos, recipes
+from app.tools.normalize import normalize
 from app.trace import trace_sentence
 
 log = logging.getLogger(__name__)
@@ -121,6 +123,19 @@ class InventoryState(BaseModel):
 
     inventory: list[InventoryItem]
     scan_state: ScanState
+
+
+class AmountValue(BaseModel):
+    amount: float
+    unit: Unit
+
+
+class BoughtState(InventoryState):
+    """After "Bought": the panel's state, the package-size chips per item, and the amount each item had
+    before (send it back as had_amount / had_unit with a chip, so the chip adds to it)."""
+
+    sizes: dict[str, list[PackSize]]
+    previous: dict[str, AmountValue | None]
 
 
 class ChatResponse(InventoryState):
@@ -215,6 +230,19 @@ def patch_inventory(store: StoreDep, changes: list[InventoryChange]) -> Inventor
     """The panel's direct edits (no agent). Items edited here are `source="manual"` and win over photos."""
     inventory.update_inventory(store, changes, source="manual")
     return InventoryState(**_state(store))
+
+
+@app.post("/inventory/bought")
+def post_bought(store: StoreDep, items: list[BoughtItem]) -> BoughtState:
+    """Shopping-list items the user bought (T6.4): each becomes plenty (a new one goes to its place by
+    category). An amount comes only from a package-size chip; the recipe amount is never used. Staples
+    are ignored. Keys of `sizes` / `previous` are canonical names."""
+    previous = inventory.mark_bought(store, items, source="manual")
+    sizes = {normalize(b.name): inventory.package_sizes(b.name, b.category) for b in items if normalize(b.name)}
+    return BoughtState(
+        **_state(store), sizes=sizes,
+        previous={n: AmountValue(amount=p[0], unit=p[1]) if p else None for n, p in previous.items()},
+    )
 
 
 @app.post("/inventory/reset")

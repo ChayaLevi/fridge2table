@@ -14,9 +14,11 @@ from collections.abc import Iterable
 from functools import lru_cache
 from typing import Literal
 
-from app.amounts import default_unit, format_amount, split_amount
+from app.amounts import Unit, default_unit, format_amount, same_kind, split_amount, to_base
 from app.config import STAPLES_PATH
-from app.models import InventoryChange, InventoryItem, Location, ScanState
+from app.models import (
+    PANTRY_CATEGORIES, BoughtItem, InventoryChange, InventoryItem, Location, PackSize, ScanState,
+)
 from app.store import Store
 from app.tools.normalize import normalize
 
@@ -277,3 +279,113 @@ def inventory_summary(items: list[InventoryItem], scan_state: ScanState) -> str:
     staples = [i.name for i in items if i.source == "staple"]
     lines.append("staples (assumed present): " + (", ".join(staples) if staples else "none"))
     return "\n".join(lines)
+
+
+# --- "Bought it" (T6.4) ------------------------------------------------------------------------------
+
+# Common package sizes for the chips after "Bought": by canonical name first, then by category.
+_SIZES_BY_NAME: dict[str, list[tuple[float, Unit]]] = {
+    "egg": [(6, "pcs"), (12, "pcs"), (18, "pcs")],
+    "milk": [(1, "l"), (2, "l")],
+    "butter": [(250, "g"), (500, "g")],
+    "cream": [(200, "ml"), (500, "ml")],
+    "heavy cream": [(200, "ml"), (500, "ml")],
+    "greek yogurt": [(500, "g"), (1, "kg")],
+    "yogurt": [(500, "g"), (1, "kg")],
+    "bread": [(1, "pack"), (2, "pack")],
+    **dict.fromkeys(["sugar", "all-purpose flour", "rice", "pasta", "lasagna noodle", "spaghetti", "oats"],
+                    [(500, "g"), (1, "kg")]),
+    **dict.fromkeys(["cheddar", "mozzarella", "parmesan", "ricotta", "cottage cheese", "cream cheese", "feta"],
+                    [(200, "g"), (500, "g")]),
+}
+_SIZES_BY_CATEGORY: dict[str, list[tuple[float, Unit]]] = {
+    "egg": [(6, "pcs"), (12, "pcs"), (18, "pcs")],
+    "meat": [(500, "g"), (1, "kg")],
+    "fish": [(500, "g"), (1, "kg")],
+    "dairy": [(200, "g"), (500, "g")],
+    "vegetable": [(1, "pcs"), (3, "pcs"), (1, "kg")],
+    "fruit": [(3, "pcs"), (6, "pcs"), (1, "kg")],
+    "grain": [(500, "g"), (1, "kg")],
+    "pasta": [(500, "g"), (1, "kg")],
+    "baking": [(500, "g"), (1, "kg")],
+    "canned": [(1, "pcs"), (2, "pcs"), (4, "pcs")],
+    "sauce": [(250, "ml"), (500, "ml")],
+    "condiment": [(250, "ml"), (500, "ml")],
+    "drink": [(1, "l"), (2, "l")],
+    "frozen": [(500, "g"), (1, "kg")],
+}
+_DEFAULT_SIZES: list[tuple[float, Unit]] = [(1, "pack"), (2, "pack")]
+
+
+def package_sizes(name: str, category: str | None) -> list[PackSize]:
+    """The 2-3 chips offered after "Bought" (a fixed table: by name, then by category, then 1 / 2 packs)."""
+    name = normalize(name)
+    sizes = _SIZES_BY_NAME.get(name) or _SIZES_BY_CATEGORY.get(category or "") or _DEFAULT_SIZES
+    return [PackSize(amount=a, unit=u, text=format_amount(a, u)) for a, u in sizes]
+
+
+def location_for(category: str | None) -> Location:
+    """Where a bought item goes: pantry-type categories to the pantry, frozen to the freezer, else the fridge."""
+    if category in PANTRY_CATEGORIES:
+        return "pantry"
+    if category == "frozen":
+        return "freezer"
+    return "fridge"
+
+
+def _add_amount(base: tuple[float, Unit] | None, amount: float, unit: Unit) -> tuple[float, Unit]:
+    """`amount unit` on top of `base`, in base's unit when the kinds match (1 kg + 500 g = 1.5 kg); else just the new one."""
+    if base is None or not same_kind(base[1], unit):
+        return amount, unit
+    factor = to_base(1, base[1])[0]
+    total = to_base(*base)[0] + to_base(amount, unit)[0]
+    return round(total / factor, 6), base[1]
+
+
+def mark_bought(
+    store: Store, items: list[BoughtItem], source: Literal["chat", "manual"] = "manual",
+) -> dict[str, tuple[float, Unit] | None]:
+    """Put bought shopping-list items in the inventory; return, per name, the amount it had before.
+
+    - A new item: added with qty_level plenty, the place by category (location_for), and an exact amount
+      only if one was given.
+    - An item already there: qty_level plenty, place kept. With an amount, it is added to the amount the
+      item has (or to had_amount/had_unit, what it had before an earlier "Bought" cleared it) when the
+      units are of the same kind, else it replaces it. Without an amount, the old exact amount is cleared:
+      it no longer says what is there ("plenty only").
+    - A staple (assumed always there) is ignored; a staple the user had removed comes back.
+    The recipe's amount is never used.
+    """
+    inv = {i.name: i for i in get_inventory(store)}
+    staples = set(all_staples(store))
+    previous: dict[str, tuple[float, Unit] | None] = {}
+    changes: list[InventoryChange] = []
+    for b in items:
+        name = normalize(b.name)
+        if not name or name in previous:
+            continue
+        item = inv.get(name)
+        previous[name] = (item.amount, item.unit) if item is not None and item.amount is not None else None
+        if name in staples:
+            if item is None:  # removed by the user: bring it back
+                changes.append(InventoryChange(op="add_staple", name=name))
+            continue
+        if item is None:
+            changes.append(InventoryChange(op="add", name=name, display_name=b.name.strip(),
+                                           category=b.category or "other", location=location_for(b.category),
+                                           qty_level="plenty"))
+            if b.amount is not None:
+                changes.append(InventoryChange(op="set_amount", name=name, amount=b.amount,
+                                               unit=b.unit or default_unit(b.category or "other", name)))
+            continue
+        changes.append(InventoryChange(op="set_qty", name=name, qty_level="plenty"))
+        if b.amount is None:
+            changes.append(InventoryChange(op="set_amount", name=name, amount=None))
+            continue
+        unit = b.unit or item.unit or default_unit(item.category, name)
+        base = previous[name] or ((b.had_amount, b.had_unit) if b.had_amount and b.had_unit else None)
+        amount, unit = _add_amount(base, b.amount, unit)
+        changes.append(InventoryChange(op="set_amount", name=name, amount=amount, unit=unit))
+    if changes:
+        update_inventory(store, changes, source=source)
+    return previous

@@ -47,7 +47,7 @@ EXPECT_KEYS = {
     "shopping_list_empty", "check_first_contains", "check_first_must_not_contain", "check_first_empty",
     "substitution_for", "preference_saved", "inventory_lacks", "max_questions", "message_matches", "asks_for_photo",
     "message_must_not_match", "off_topic", "shopping_list_not_empty", "meals_fit_shop", "offer_shop",
-    "inventory_amount", "not_enough_contains",
+    "inventory_amount", "not_enough_contains", "last_list_in_inventory",
 }
 
 
@@ -118,7 +118,8 @@ def _in_order(actual: list[str], wanted: list[str]) -> bool:
     return all(any(a == w for a in it) for w in wanted)
 
 
-def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceItem], store: Store) -> list[str]:
+def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceItem], store: Store,
+               previous: AgentReply | None = None) -> list[str]:
     """Every expectation that does not hold, as one short line each (empty = pass)."""
     fails: list[str] = []
     tools = [t.tool for t in trace]
@@ -149,7 +150,9 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
                 fail(f"{m.name} takes {m.time_minutes} min > {n}")
     for bad in expect.get("meals_must_not_contain") or []:
         for m in meals:
-            if _has([i.name for i in m.ingredients], bad) or _has([m.name], bad):
+            # the dish name counts too ("Eggplant parmesan"), unless it says the item is left out ("Egg-free ...")
+            left_out = re.search(rf"\b{re.escape(bad)}s?[- ]free\b|\b(?:no|without) {re.escape(bad)}", m.name, re.I)
+            if _has([i.name for i in m.ingredients], bad) or (_has([m.name], bad) and not left_out):
                 fail(f"{m.name} contains {bad}")
     mode_b = bool(reply.shopping_list or reply.check_first or reply.substitutions)
     if expect.get("meals_valid"):
@@ -205,6 +208,14 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
         if got != want_text:
             fail(f"{w} amount is {got!r}, expected {want_text!r}")
 
+    if expect.get("last_list_in_inventory"):  # every To buy / Check first item of the previous reply is now plenty
+        wanted = (previous.shopping_list + previous.check_first) if previous else []
+        if not wanted:
+            fail("the previous reply had no shopping list")
+        for w in wanted:
+            got = next((i for i in inv if same_ingredient(i.name, w)), None)
+            if got is None or got.qty_level != "plenty":
+                fail(f"{w} not in the inventory as plenty ({got.qty_level if got else 'missing'})")
     short = [s.name for s in reply.not_enough]
     for w in expect.get("not_enough_contains") or []:  # shown as "eggs · have 4, need 5"
         if not _has(short, w):
@@ -254,6 +265,7 @@ async def run_scenario(scenario: dict, inventories: dict, stores: dict[int, Stor
     seed_store(store, scenario.get("seed") or {}, inventories)
     session = f"scenario-{sid}-{run_tag}"
     turns = []
+    previous = None
     for i, turn in enumerate(scenario["turns"], 1):
         if turn.get("new_session"):
             session = f"scenario-{sid}-{run_tag}-t{i}"
@@ -276,7 +288,8 @@ async def run_scenario(scenario: dict, inventories: dict, stores: dict[int, Stor
                 "meals": [{"name": m.name, "time_minutes": m.time_minutes,
                            "ingredients": [i.name for i in m.ingredients]} for m in res.reply.meals]}
             out["usage"] = res.usage.model_dump()
-            out["failures"] = check_turn(turn.get("expect") or {}, res.reply, res.trace, store)
+            out["failures"] = check_turn(turn.get("expect") or {}, res.reply, res.trace, store, previous)
+            previous = res.reply
         except Exception as e:  # a crash (retry limit, usage limit, API error) is a failed turn
             out["latency_s"] = round(time.perf_counter() - start, 1)
             out["tools"] = []

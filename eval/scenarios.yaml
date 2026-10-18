@@ -26,6 +26,7 @@
 #   offer_shop (true/false: the reply offers the "Shopping OK" button)
 #   inventory_amount: {ingredient: "6 pcs"} the item's exact amount after the turn ("" = none), as displayed
 #   not_enough_contains: ingredients the household has too little of (reply.not_enough, "have 4, need 5")
+#   last_list_in_inventory: true = every To buy / Check first item of the previous turn's reply is now plenty
 
 inventories:
   demo:
@@ -309,8 +310,22 @@ scenarios:
           not_enough_contains: [egg]
       - message: We just bought more, we have 12 eggs now.
         expect:
-          first_tool: update_inventory
+          tools_called: [update_inventory]
           inventory_amount: {egg: 12 pcs}
       - message: I want to make a frittata with 5 eggs.
         expect:
           shopping_list_must_not_contain: [egg]
+
+  - id: 17
+    name: Bought it (Mode B lasagna, then "I bought everything on the list" -> the list is in the inventory)
+    seed: {inventory: demo, scanned: [fridge]}
+    turns:
+      - message: I want to make lasagna.
+        expect:
+          tools_called: [get_recipe, output check]
+          shopping_list_not_empty: true
+      - message: I bought everything on the list.
+        expect:
+          first_tool: mark_bought
+          last_list_in_inventory: true
+          off_topic: false

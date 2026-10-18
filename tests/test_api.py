@@ -371,3 +371,30 @@ def test_patch_inventory_add_field_with_an_amount(client):
 
 def test_patch_inventory_rejects_a_bad_unit(client):
     assert client.patch("/inventory", json=[{"op": "set_amount", "name": "milk", "amount": 2, "unit": "cup"}]).status_code == 422
+
+
+def test_bought_adds_items_and_offers_package_sizes(client, store):
+    r = client.post("/inventory/bought", json=[{"name": "ground beef", "category": "meat"},
+                                               {"name": "lasagna noodle", "category": "pasta"}])
+    assert r.status_code == 200, r.text
+    body = r.json()
+    items = {i["name"]: i for i in body["inventory"]}
+    assert (items["ground beef"]["qty_level"], items["ground beef"]["location"], items["ground beef"]["amount"]) == ("plenty", "fridge", None)
+    assert items["lasagna noodle"]["location"] == "pantry"
+    assert [s["text"] for s in body["sizes"]["ground beef"]] == ["500 g", "1 kg"]
+    assert body["previous"] == {"ground beef": None, "lasagna noodle": None}
+    r = client.post("/inventory/bought", json=[{"name": "ground beef", "category": "meat", "amount": 500, "unit": "g"}])
+    assert {i["name"]: i for i in r.json()["inventory"]}["ground beef"]["amount_text"] == "500 g"
+
+
+def test_bought_returns_the_previous_amount_for_the_chip(client, store):
+    client.patch("/inventory", json=[{"op": "add", "name": "egg", "category": "egg"},
+                                     {"op": "set_amount", "name": "egg", "amount": 4, "unit": "pcs"}])
+    body = client.post("/inventory/bought", json=[{"name": "egg", "category": "egg"}]).json()
+    assert body["previous"] == {"egg": {"amount": 4.0, "unit": "pcs"}}
+    r = client.post("/inventory/bought", json=[{"name": "egg", "amount": 12, "unit": "pcs", "had_amount": 4, "had_unit": "pcs"}])
+    assert {i["name"]: i for i in r.json()["inventory"]}["egg"]["amount_text"] == "16 pcs"
+
+
+def test_bought_rejects_a_bad_amount(client):
+    assert client.post("/inventory/bought", json=[{"name": "egg", "amount": 0}]).status_code == 422

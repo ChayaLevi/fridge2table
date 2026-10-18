@@ -241,6 +241,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - Only if the decision point passed:
   - **T6.1 "We cooked it":** a button on each meal card ("We cooked this") and a chat intent. Lowers each used non-staple ingredient one level (`plenty → some → low → removed`) via `update_inventory`. Add a scenario.
   - **T6.2 Share shopping list:** a "Copy list" button on the shopping-list block (plain text, one item per line). Done early on 2026-10-18 at the human's request, with a "Download .txt" button next to it.
+- **Done when:** issues fixed or consciously deferred; scenarios ≥ 9/10 pass.
 
 ### T6.3 Exact amount per inventory item (added 2026-10-18 at the human's request)
 - Recognition never guesses exact amounts: it sets only `qty_level`. The exact amount is optional and comes only from the user (panel or chat). The checks (`compute_missing`, `validate_suggestion`) stay presence-based; amounts are never compared with recipe amounts (superseded by T6.3b: compared when both sides are known in compatible units).
@@ -257,9 +258,13 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - Every other case (no exact amount, an unparsable recipe amount, mixed units, pack) stays presence-only.
 - **Done when:** unit tests pass (4 pcs vs 5 → missing; 6 vs 5 → ok; 1 kg vs 300 g → ok; 200 g vs 300 g → missing; 1.5 l vs 500 ml → ok; plenty without amount vs 5 → ok; 1 l vs "2 cups" and pack vs 200 g → presence only; a short substitute → missing); a new scenario (4 eggs, a 5-egg frittata → eggs to buy with have / need) and the existing ones pass on real models; in a phone-size browser, eggs at 4 pcs → the shopping block shows "eggs · have 4, need 5", at 12 pcs → eggs not in To buy.
 
-### T6.4 "Bought it" (planned 2026-10-18, not specified yet)
-- From the shopping list, mark items as bought: they are added to the inventory (or their amount raised, see T6.3). To be specified before it is built.
-- **Done when:** issues fixed or consciously deferred; scenarios ≥ 9/10 pass.
+### T6.4 "Bought it" (added 2026-10-18 at the human's request)
+- The recipe amount on the shopping list is what the recipe needs, not what people buy: it is never copied into the inventory. The list shows it as "need 500 g" / "need ¾ cup".
+- A **Bought** button on each To buy / Check your pantry first item, in the chat block and in the recipe window. It adds the item: a new one with qty_level plenty, no exact amount, its place by category (pantry-type → pantry, frozen → freezer, else fridge); an existing one becomes plenty and keeps its place. Staples are ignored.
+- Then an inline line "Added eggs. How much did you buy?" with 2-3 package-size chips from a fixed table in code (by name, then category: egg 6 / 12 / 18 pcs; sugar, flour, rice, pasta 500 g / 1 kg; milk 1 l / 2 l; cheese 200 g / 500 g; meat, fish 500 g / 1 kg; …) and Skip. A chip adds to the amount the item had (4 pcs + 12 pcs = 16 pcs), or sets it. Ignoring the line keeps plenty only.
+- **Bought all**: every item as plenty, no amount, no questions. Bought items are ticked and greyed in the list.
+- Server: `POST /inventory/bought` (names, optional category / amount / unit) runs `inventory.mark_bought`; the agent's thin tool `mark_bought` handles "I bought the eggs and the milk" / "I bought everything on the list".
+- **Done when:** unit tests for the add rules (new item, existing item, chip adds to an amount, staples ignored); a scenario (Mode B, then "I bought everything on the list" → the items in the inventory) and the existing ones pass on real models; in a phone-size browser: "I want to make lasagna" → Bought on ground beef → chip 500 g → the inventory shows ground beef 500 g; Bought all → the rest plenty without amount, ticked; lasagna again → empty To buy.
 
 ## P7 — Freeze (Thu Oct 22) 🧑
 

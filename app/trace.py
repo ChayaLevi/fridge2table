@@ -60,6 +60,9 @@ def args_summary(tool: str, args: dict[str, Any], recipes: dict[str, Recipe]) ->
     if tool == "update_inventory":
         text = ", ".join(f"{c.get('op')} {c.get('name')}" + _amount_arg(c)
                          for c in args.get("changes") or [] if isinstance(c, dict))
+    elif tool == "mark_bought":
+        names = [str(i.get("name")) for i in args.get("items") or [] if isinstance(i, dict)]
+        text = ", ".join(names + (["everything on the list"] if args.get("everything") else []))
     elif tool == "suggest_meals":
         parts = [repr(args["request"])] if args.get("request") else []
         if args.get("max_minutes"):
@@ -88,6 +91,8 @@ def result_summary(tool: str, args: dict[str, Any], content: Any) -> tuple[str, 
     if tool == "update_inventory":
         ops = Counter(c.get("op") for c in args.get("changes") or [] if isinstance(c, dict))
         return ", ".join(f"{_OP_WORDS.get(op, op)} {n}" for op, n in ops.items()) or "no changes", False
+    if tool == "mark_bought":
+        return short(str(content).splitlines()[0] if content else "bought"), False
     if tool == "suggest_meals":
         res = _as(SuggestResult, content)
         if isinstance(res, SuggestResult):
@@ -198,6 +203,10 @@ def step_label(tool: str, args: dict[str, Any], content: Any, failed: bool, deta
         changes = ", ".join(f"{_OP_WORDS.get(c.get('op'), c.get('op'))} {c.get('name')}"
                             for c in args.get("changes") or [] if isinstance(c, dict))
         return short(f"updated the inventory ({changes})" if changes else "updated the inventory", 80)
+    if tool == "mark_bought":
+        first = str(content).splitlines()[0] if content else ""
+        names = first.removeprefix("Bought: ").removesuffix(" (now plenty).")
+        return short(f"marked bought ({names})" if first.startswith("Bought: ") else "marked bought", 80)
     if tool == "suggest_meals":
         res = _as(SuggestResult, content)
         if isinstance(res, SuggestResult):

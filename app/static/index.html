@@ -96,6 +96,18 @@
   .shop ul { margin: 0; padding-left: 18px; }
   .shop .check { color: var(--muted); }
   .shop .empty { color: var(--accent); }
+  .shop li.item-line { margin: 4px 0; }
+  .shop li .need { color: var(--muted); font-size: 13px; }
+  .shop li .boughtbtn { margin-left: 8px; border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
+                        border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; vertical-align: 1px; }
+  .shop li.bought { color: var(--muted); list-style: none; margin-left: -14px; }
+  .shop li.bought .what { text-decoration: line-through; }
+  .shop .boughtask { margin: 4px 0 8px; padding: 8px 10px; background: var(--accent-soft); border-radius: 10px;
+                     font-size: 13px; color: var(--text); }
+  .shop .boughtask .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .shop .boughtask button { border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
+                            border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
+  .shop .boughtask button.skip { color: var(--muted); border-color: var(--line); font-weight: 400; }
   .shop .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .shop .actions button { border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
                           border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
@@ -690,6 +702,7 @@ function isModeB(data) {
 
 // The reply's lists cut down to one meal's ingredients (a reply with several meals has one combined list).
 function replyForMeal(reply, meal) {
+  boughtOf(reply);
   const names = new Set(meal.ingredients.map((i) => i.name.toLowerCase()));
   const mine = (xs) => (xs || []).filter((x) => names.has(String(x).toLowerCase()));
   return { ...reply, meals: [meal], shopping_list: mine(reply.shopping_list), check_first: mine(reply.check_first),
@@ -703,10 +716,109 @@ function shortFor(name, reply) {
   return ((reply && reply.not_enough) || []).find((s) => String(s.name).toLowerCase() === low);
 }
 
-// A shopping-list item as [text, note]: "eggs", "have 4, need 5" when short, else the name and the recipe amount.
+// A shopping-list item as [text, note]: "eggs", "have 4, need 5" when short, else the name and what the
+// recipe needs ("need 500 g": what the recipe uses, not what to buy).
 function shopItem(name, reply) {
   const short = shortFor(name, reply);
-  return short ? [displayName(name), `have ${short.have}, need ${short.need}`] : [name, amountFor(name, reply.meals || [])];
+  if (short) return [displayName(name), `have ${short.have}, need ${short.need}`];
+  const amount = amountFor(name, reply.meals || []);
+  return [name, amount ? `need ${amount}` : ""];
+}
+
+// --- "Bought it" (T6.4) ---------------------------------------------------------------------------
+// The names marked bought in this reply: kept on the reply (saved with the chat), shared by the chat's
+// block and the recipe window. `.ask` (not saved) is the open "How much did you buy?" line.
+function boughtOf(reply) {
+  if (!Array.isArray(reply.bought)) reply.bought = [];
+  return reply.bought;
+}
+
+function categoryFor(name, meals) {
+  const low = String(name).toLowerCase();
+  for (const m of meals || []) {
+    const ing = m.ingredients.find((i) => i.name.toLowerCase() === low);
+    if (ing) return ing.category;
+  }
+  return null;
+}
+
+function redrawShops() {
+  document.querySelectorAll(".shop").forEach((box) => { if (box._redraw) box.replaceWith(box._redraw()); });
+}
+
+async function postBought(items) {
+  const data = await api("/inventory/bought", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(items),
+  });
+  setInventory(data);
+  return data;
+}
+
+// One item: into the inventory as plenty (no amount), then the package-size question.
+async function buyOne(name, reply) {
+  const bought = boughtOf(reply);
+  try {
+    const data = await postBought([{ name, category: categoryFor(name, reply.meals) }]);
+    if (!bought.includes(name)) bought.push(name);
+    bought.ask = { name, sizes: data.sizes[name] || [], had: data.previous[name] || null };
+    saveTranscript();
+  } catch (err) {
+    addEntry({ role: "system", text: err.message });
+  }
+  redrawShops();
+}
+
+// A package-size chip: adds to what the item had before (4 pcs + 12 pcs = 16 pcs), or sets it.
+async function buyAmount(name, size, reply) {
+  const bought = boughtOf(reply);
+  const had = bought.ask && bought.ask.had;
+  bought.ask = null;
+  try {
+    await postBought([{ name, category: categoryFor(name, reply.meals), amount: size.amount, unit: size.unit,
+                        had_amount: had ? had.amount : null, had_unit: had ? had.unit : null }]);
+  } catch (err) {
+    addEntry({ role: "system", text: err.message });
+  }
+  redrawShops();
+}
+
+async function buyAll(names, reply) {
+  const bought = boughtOf(reply);
+  const todo = names.filter((n) => !bought.includes(n));
+  if (!todo.length) return;
+  try {
+    await postBought(todo.map((name) => ({ name, category: categoryFor(name, reply.meals) })));
+    bought.push(...todo);
+    bought.ask = null;
+    saveTranscript();
+  } catch (err) {
+    addEntry({ role: "system", text: err.message });
+  }
+  redrawShops();
+}
+
+// A To buy / Check first line: the name, "need …", and a Bought button; once bought: ✓, greyed, and the
+// amount now in the inventory if the user picked one. The size question opens right under it.
+function boughtLine(name, reply) {
+  const bought = boughtOf(reply);
+  const [text, note] = shopItem(name, reply);
+  if (bought.includes(name)) {
+    const item = itemsByName().get(name);
+    const line = el("li", { class: "item-line bought" }, "✓ ", el("span", { class: "what" }, text),
+      item && item.amount_text ? el("span", { class: "need" }, ` · ${item.amount_text}`) : null);
+    const ask = bought.ask && bought.ask.name === name ? bought.ask : null;
+    if (!ask) return line;
+    const what = item ? item.display_name : name;
+    line.append(el("div", { class: "boughtask" }, `Added ${what}. How much did you buy?`,
+      el("div", { class: "chips" },
+        ...ask.sizes.map((size) => el("button", { type: "button", onclick: () => buyAmount(name, size, reply) }, size.text)),
+        el("button", { class: "skip", type: "button", onclick: () => { bought.ask = null; redrawShops(); } }, "Skip"))));
+    return line;
+  }
+  return el("li", { class: "item-line" }, el("span", { class: "what" }, text),
+    note ? el("span", { class: "need" }, ` · ${note}`) : null,
+    el("button", { class: "boughtbtn", type: "button", "aria-label": `Bought ${text}`,
+                   onclick: () => buyOne(name, reply) }, "Bought"));
 }
 
 // "🛒 To buy: cream · check pantry: pasta" under a card, or that it needs nothing.
@@ -772,13 +884,14 @@ function renderShop(reply) {
     box.append(el("h3", {}, "Use instead"), el("ul", {}, subs.map((s) =>
       shopLine(`${displayName(s.use_instead)} instead of ${s.missing}`, amountFor(s.missing, meals)))));
   }
-  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => shopLine(...shopItem(x, reply)))));
+  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => boughtLine(x, reply))));
   if (check.length) {
     box.append(el("h3", {}, "Check your pantry first"),
-      el("ul", { class: "check" }, check.map((x) => shopLine(...shopItem(x, reply)))));
+      el("ul", { class: "check" }, check.map((x) => boughtLine(x, reply))));
   }
   if (!buy.length && !check.length) box.append(el("div", { class: "empty" }, "✓ Nothing to buy: you have everything."));
   else box.append(shopActions(reply));
+  box._redraw = () => renderShop(reply);
   return box;
 }
 
@@ -803,7 +916,10 @@ function shopActions(reply) {
     const slug = meals.length ? meals[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
     downloadText(shopText(reply), `shopping-list${slug ? "-" + slug : ""}.txt`);
   } }, "⬇️ Download .txt");
-  return el("div", { class: "actions" }, copy, save);
+  const names = [...(reply.shopping_list || []), ...(reply.check_first || [])];
+  const left = names.filter((n) => !boughtOf(reply).includes(n));
+  const all = left.length ? el("button", { type: "button", onclick: () => buyAll(names, reply) }, "✓ Bought all") : null;
+  return el("div", { class: "actions" }, all, copy, save);
 }
 
 // The clipboard API exists only on HTTPS (and localhost); on the home network's plain http the old
@@ -854,7 +970,7 @@ function renderTrace(trace, usage) {
 function ingredientStatus(ing, reply) {
   const low = (x) => String(x).toLowerCase();
   const sub = (reply.substitutions || []).find((s) => low(s.missing) === low(ing.name));
-  const short = shortFor(ing.name, reply);
+  const short = !boughtOf(reply).includes(ing.name) && shortFor(ing.name, reply);
   if (short) return ["buy", `🛒 have ${short.have}, need ${short.need}`];
   if (itemsByName().has(ing.name)) return ["have", "✓ have"];
   if (sub) return ["sub", `use your ${displayName(sub.use_instead)}`];

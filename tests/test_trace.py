@@ -266,3 +266,12 @@ def test_set_amount_in_the_trace():
                            {"op": "set_amount", "name": "cheese", "amount": None}]}
     assert args_summary("update_inventory", changes, {}) == "set_amount egg 6 pcs, set_amount milk 1.5 l, set_amount cheese cleared"
     assert result_summary("update_inventory", changes, "Applied: ...") == ("amount set 3", False)
+
+
+def test_mark_bought_in_the_trace():
+    from app.trace import step_label
+    args = {"items": [{"name": "egg"}], "everything": True}
+    content = "Bought: ground beef, pasta (now plenty).\nInventory now:\n..."
+    assert args_summary("mark_bought", args, {}) == "egg, everything on the list"
+    assert result_summary("mark_bought", args, content) == ("Bought: ground beef, pasta (now plenty).", False)
+    assert step_label("mark_bought", args, content, False) == "marked bought (ground beef, pasta)"
