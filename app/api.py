@@ -1,5 +1,6 @@
 """FastAPI routes: the chat turn, the inventory panel, recipe steps, the opening, demo admin.
 
+Each browser is its own household (a cookie, one SQLite file per household; see `get_store`).
 The agent, the store and the recipe model are FastAPI dependencies (`get_store`, `get_turn_runner`,
 `get_opening_runner`, `get_recipe_model`), so tests swap them with `app.dependency_overrides` and run without a network.
 Model and agent failures come back as JSON `{"detail": "..."}` with a message the page can show,
@@ -8,6 +9,8 @@ never as a 500 traceback.
 
 import json
 import logging
+import re
+import threading
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -15,7 +18,7 @@ from pathlib import Path
 from typing import Annotated, get_args
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, computed_field
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior, UsageLimitExceeded
@@ -49,15 +52,32 @@ AGENT_FAILED = "Sorry, I could not put together a valid answer this time. Please
 
 # --- dependencies ---------------------------------------------------------------------------------
 
-_store: Store | None = None
+HOUSEHOLD_COOKIE = "household"
+_HOUSEHOLD_ID = re.compile(r"[0-9a-f]{32}")
+_stores: dict[str, Store] = {}
+_stores_lock = threading.Lock()
 
 
-def get_store() -> Store:
-    """One store per process, opened on first use (DB_PATH)."""
-    global _store
-    if _store is None:
-        _store = Store()
-    return _store
+def household_id(request: Request, response: Response) -> str:
+    """The browser's household: the id in its cookie, or a new one set on this response.
+
+    Each household has its own SQLite file (HOUSEHOLD_DIR/<id>.db): inventory, preferences, staples,
+    chats and recipes. No login: a household belongs to one browser.
+    """
+    hid = request.cookies.get(HOUSEHOLD_COOKIE, "")
+    if not _HOUSEHOLD_ID.fullmatch(hid):
+        hid = uuid.uuid4().hex
+        response.set_cookie(HOUSEHOLD_COOKIE, hid, max_age=10 * 365 * 24 * 3600, httponly=True, samesite="lax")
+    return hid
+
+
+def get_store(hid: Annotated[str, Depends(household_id)]) -> Store:
+    """The household's store, opened on first use and kept open for the process."""
+    with _stores_lock:
+        store = _stores.get(hid)
+        if store is None:
+            store = _stores[hid] = Store(config.HOUSEHOLD_DIR / f"{hid}.db")
+        return store
 
 
 TurnRunner = Callable[..., Awaitable[TurnResult]]
@@ -85,10 +105,10 @@ StoreDep = Annotated[Store, Depends(get_store)]
 async def lifespan(_: FastAPI):
     setup_observability()
     yield
-    global _store
-    if _store is not None:
-        _store.close()
-        _store = None
+    with _stores_lock:
+        for store in _stores.values():
+            store.close()
+        _stores.clear()
 
 
 app = FastAPI(title="Fridge-to-Table", lifespan=lifespan)
@@ -127,8 +147,11 @@ def health() -> dict:
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+def index(request: Request) -> FileResponse:
+    """The page. Sets the household cookie here, so the page's first parallel requests share one household."""
+    page = FileResponse(STATIC_DIR / "index.html")
+    household_id(request, page)
+    return page
 
 
 def _locations(raw: list[str], n_images: int) -> list[Location]:

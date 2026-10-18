@@ -21,6 +21,10 @@ RECIPE_THINKING = (os.getenv("RECIPE_THINKING") or "off").lower() == "on"
 DB_PATH = Path(os.getenv("DB_PATH") or "data/app.db")
 if not DB_PATH.is_absolute():
     DB_PATH = ROOT / DB_PATH
+# The web app's households, one SQLite file per browser; DB_PATH is for the scripts and evals
+HOUSEHOLD_DIR = Path(os.getenv("HOUSEHOLD_DIR") or "data/households")
+if not HOUSEHOLD_DIR.is_absolute():
+    HOUSEHOLD_DIR = ROOT / HOUSEHOLD_DIR
 UNCERTAIN_THRESHOLD = float(os.getenv("UNCERTAIN_THRESHOLD") or 0.6)
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN") or None

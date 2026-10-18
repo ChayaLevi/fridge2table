@@ -6,3 +6,4 @@ data/*.db
 eval/results/
 data/uploads/
 data/photos/
+data/households/

@@ -42,7 +42,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 445 tests pass (2026-10-15, after the dish photos). Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 449 tests pass (2026-10-18, after one household per browser). Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -58,7 +58,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 ## Decisions and deviations from the plan
 
 - **Demo on another phone (2026-10-14, for T3.3; nothing to package):** the app is a website served from the human's computer. `uv run uvicorn app.api:app --host 0.0.0.0 --port 8000` (no `--reload` for a demo), find the computer's address with `ipconfig` (IPv4 of the Wi-Fi adapter), and open `http://<that IP>:8000` on the phone on the same Wi-Fi (allow Python in the Windows firewall prompt for private networks; "Add to Home Screen" makes it look like an app). The computer must stay on (the DeepSeek key is in its `.env`). If the company network isolates devices, use the human's phone hotspot for both the computer and the other phone. A public tunnel (cloudflared, ngrok) was not set up: no login, the key's cost, company policy; only on an explicit decision. Offered, not built: a start script printing the phone address (optionally a QR code, needs the `qrcode` dependency) and README run notes.
-- **One household, kept (the human's decision, 2026-10-14):** the inventory, preferences, staples and recipes are on the server and shared by every browser and phone (CLAUDE.md: "Single household, no auth"); only the chat History (and each chat's shown transcript) is per browser (`localStorage`). A separate household per browser would touch every table, endpoint and the agent, and is out of scope for this demo; deferred. For a demo where someone needs their own kitchen without touching the human's, run a second server on another database and port (no code change): `set DB_PATH=data\lead.db` then `uv run uvicorn app.api:app --host 0.0.0.0 --port 8001` (cmd.exe; `data/*.db` is git-ignored).
+- ~~One household, kept (2026-10-14)~~ **Superseded 2026-10-18 (the human's decision): one household per browser**, so a public link gives every visitor their own kitchen. A `household` cookie (32 hex chars, set by `/` or by the first API call) picks the SQLite file `HOUSEHOLD_DIR/<id>.db` (default `data/households/`, git-ignored). No login: a phone and a computer are two households, and clearing the browser starts a new one. `DB_PATH` (`data/app.db`) is now used only by the scripts and evals; the old shared web data stays there unused. Uploads and dish photos stay shared folders (file names are unique ids).
 
 - ~~Model defaults were provisional Gemini/Claude strings~~ (superseded by the DeepSeek switch and T0.4; model values are bare DeepSeek IDs, see "Current model settings").
 - Extras beyond the plan (small): `.gitignore`, `pytest.ini` (asyncio_mode=auto), `httpx` dev dependency (needed by FastAPI TestClient), `LOG_LEVEL`/`LOGFIRE_TOKEN` in `.env.example` (CLAUDE.md debugging aids).
@@ -94,6 +94,24 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-18 — One household per browser (the human's request, for a public link)
+
+- Why: the human wants to send a public link (Render) where each visitor has their own inventory.
+- Built: `app/api.py`: `household_id()` reads or sets the `household` cookie (httponly, samesite=lax, 10 years; a malformed value gets a new id, so no path tricks), `get_store()` opens one `Store` per household (`config.HOUSEHOLD_DIR/<id>.db`, cached, under a lock), lifespan closes them all; `/` sets the cookie so the page's first parallel requests share one household. `app/config.py`: `HOUSEHOLD_DIR`. `.env.example`, `.gitignore`. Tests: `tests/test_households.py` (4). The page, the agent and the tools are unchanged.
+- Admin routes (`/admin/seed`, `/admin/reset`) now act on the caller's household only.
+- Deploy notes (not done here; the human pushes): Render web service, build `pip install uv && uv sync --frozen`, start `uv run uvicorn app.api:app --host 0.0.0.0 --port $PORT`, env vars from `.env` plus `PYTHON_VERSION=3.12.7`. On the free plan the disk is wiped on every deploy and restart, so all households are lost; and every visitor spends the DeepSeek key.
+- Tests: 449 pass.
+
+**How to verify**
+```
+uv run pytest -q
+```
+Expected: `449 passed`.
+```
+uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
+```
+Manual check: open `http://localhost:8000` in Chrome and add an item in the panel; open the same address in an Incognito window (or another browser): its panel is empty. Back in the first window, the item is still there. `data/households/` has one `.db` file per browser.
 
 ### 2026-10-15 — Page: dish photos on the meal cards and a colourful recipe window (the human's request)
 - Why: the human wanted a more colourful card with a real photo of the dish ("I want a real photo", not the drawn emoji mock-up), and a recipe window that is less white. Not in `docs/PLAN.md`; asked for directly.
