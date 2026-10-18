@@ -31,7 +31,7 @@ A demo of a **kitchen agent**: the user photographs their fridge/pantry, the age
 2. **Nothing invalid reaches the user.** Every meal in the agent's final reply is re-checked by an `output_validator`; a failing meal raises `ModelRetry` with the reason, so the agent must fix it.
 3. **Tools are plain functions.** Each tool in `app/tools/` is a pure-ish Python function with Pydantic input/output models and its own unit tests. The Pydantic AI `@agent.tool` wrappers in `app/agent.py` are thin. This is what lets us port to another framework later.
 4. **Canonical ingredient names.** All comparisons happen on canonical names produced by `normalize()` (lowercase, singular, synonyms resolved). Never compare raw strings.
-5. **Coarse quantity levels (plenty | some | low) always; an optional exact amount (g, kg, ml, l, pcs, pack) entered only by the user.** Recognition never guesses exact amounts. Code checks stay presence-based.
+5. **Coarse quantity levels (plenty | some | low) always; an optional exact amount (g, kg, ml, l, pcs, pack) entered only by the user.** Recognition never guesses exact amounts. Code checks compare amounts only when both the inventory amount (user-entered) and the recipe amount are known in compatible units; otherwise they are presence-based.
 6. **The user stays in control.** The agent never buys, orders or deletes anything without the user saying so. Inventory edits in the side panel bypass the agent and always win.
 7. **Transparency.** Every agent reply carries a trace of the tool calls made in that turn (tool name, short args summary, short result summary). The UI shows it in a collapsible line.
 

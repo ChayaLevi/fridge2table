@@ -183,11 +183,11 @@
   .actions .act.on { background: var(--warn); border-color: var(--warn); color: #fff; }
   .actions .act.danger { color: var(--warn); }
   .item .name .amt { color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .amount { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .amount label { font-size: 13px; color: var(--muted); }
-  .amount input { width: 72px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 16px; }
-  .amount input.bad { border-color: var(--warn); }
-  .amount .seg button { padding: 5px 9px; }
+  .amountline { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .amountline label { font-size: 13px; color: var(--muted); }
+  .amountline input { width: 72px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 16px; }
+  .amountline input.bad { border-color: var(--warn); }
+  .amountline .seg button { padding: 5px 9px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
   .seg button { border: 0; background: var(--surface); padding: 5px 10px; font-size: 13px; }
   .seg button + button { border-left: 1px solid var(--line); }
@@ -693,14 +693,28 @@ function replyForMeal(reply, meal) {
   const names = new Set(meal.ingredients.map((i) => i.name.toLowerCase()));
   const mine = (xs) => (xs || []).filter((x) => names.has(String(x).toLowerCase()));
   return { ...reply, meals: [meal], shopping_list: mine(reply.shopping_list), check_first: mine(reply.check_first),
-           substitutions: (reply.substitutions || []).filter((s) => names.has(String(s.missing).toLowerCase())) };
+           substitutions: (reply.substitutions || []).filter((s) => names.has(String(s.missing).toLowerCase())),
+           not_enough: (reply.not_enough || []).filter((s) => names.has(String(s.name).toLowerCase())) };
+}
+
+// T6.3b: an item the household has too little of ({name, have, need}, set by code), or undefined.
+function shortFor(name, reply) {
+  const low = String(name).toLowerCase();
+  return ((reply && reply.not_enough) || []).find((s) => String(s.name).toLowerCase() === low);
+}
+
+// A shopping-list item as [text, note]: "eggs", "have 4, need 5" when short, else the name and the recipe amount.
+function shopItem(name, reply) {
+  const short = shortFor(name, reply);
+  return short ? [displayName(name), `have ${short.have}, need ${short.need}`] : [name, amountFor(name, reply.meals || [])];
 }
 
 // "🛒 To buy: cream · check pantry: pasta" under a card, or that it needs nothing.
 function buyLine(meal, reply) {
   const own = replyForMeal(reply, meal);
   const parts = [];
-  if (own.shopping_list.length) parts.push(`🛒 To buy: ${own.shopping_list.join(", ")}`);
+  const named = (x) => { const s = shortFor(x, own); return s ? `${x} (have ${s.have}, need ${s.need})` : x; };
+  if (own.shopping_list.length) parts.push(`🛒 To buy: ${own.shopping_list.map(named).join(", ")}`);
   if (own.check_first.length) parts.push(`check pantry: ${own.check_first.join(", ")}`);
   return el("div", { class: "buyline" },
     parts.length ? parts.join(" · ") : el("span", { class: "none" }, "✓ Nothing to buy"));
@@ -758,10 +772,10 @@ function renderShop(reply) {
     box.append(el("h3", {}, "Use instead"), el("ul", {}, subs.map((s) =>
       shopLine(`${displayName(s.use_instead)} instead of ${s.missing}`, amountFor(s.missing, meals)))));
   }
-  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => shopLine(x, amountFor(x, meals)))));
+  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => shopLine(...shopItem(x, reply)))));
   if (check.length) {
     box.append(el("h3", {}, "Check your pantry first"),
-      el("ul", { class: "check" }, check.map((x) => shopLine(x, amountFor(x, meals)))));
+      el("ul", { class: "check" }, check.map((x) => shopLine(...shopItem(x, reply)))));
   }
   if (!buy.length && !check.length) box.append(el("div", { class: "empty" }, "✓ Nothing to buy: you have everything."));
   else box.append(shopActions(reply));
@@ -771,7 +785,7 @@ function renderShop(reply) {
 // T6.2: the list as plain text, one item per line, to copy or save as a .txt file.
 function shopText(reply) {
   const meals = reply.meals || [];
-  const item = (x) => { const a = amountFor(x, meals); return `- ${x}${a ? ` (${a})` : ""}`; };
+  const item = (x) => { const [text, a] = shopItem(x, reply); return `- ${text}${a ? ` (${a})` : ""}`; };
   const lines = [`Shopping list${meals.length ? `: ${meals.map((m) => m.name).join(", ")}` : ""}`];
   if ((reply.shopping_list || []).length) lines.push("", "To buy:", ...reply.shopping_list.map(item));
   if ((reply.check_first || []).length) lines.push("", "Check your pantry first:", ...reply.check_first.map(item));
@@ -840,6 +854,8 @@ function renderTrace(trace, usage) {
 function ingredientStatus(ing, reply) {
   const low = (x) => String(x).toLowerCase();
   const sub = (reply.substitutions || []).find((s) => low(s.missing) === low(ing.name));
+  const short = shortFor(ing.name, reply);
+  if (short) return ["buy", `🛒 have ${short.have}, need ${short.need}`];
   if (itemsByName().has(ing.name)) return ["have", "✓ have"];
   if (sub) return ["sub", `use your ${displayName(sub.use_instead)}`];
   if ((reply.shopping_list || []).some((x) => low(x) === low(ing.name))) return ["buy", "🛒 to buy"];
@@ -1069,7 +1085,7 @@ function renderAmount(item) {
     chips.forEach((c) => c.classList.toggle("on", c.textContent === u));
     if (number() !== null) save();
   } }, u));
-  return el("div", { class: "amount" },
+  return el("div", { class: "amountline" },
     el("label", {}, "Amount"), input,
     el("span", { class: "seg", role: "group", "aria-label": "Unit" }, chips),
     el("button", { class: "act", type: "button", onclick: save }, "Save"),

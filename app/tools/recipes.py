@@ -31,6 +31,9 @@ INGREDIENT_RULES = """\
 Ingredient rules:
 - name: a plain generic English ingredient name, singular ("tomato", "pasta", "cheddar"), no amounts or \
 preparation words in the name; put those in amount ("2, diced").
+- amount: a number with g, kg, ml or l for what is weighed or measured ("300 g", "500 ml"), a bare count \
+for whole items ("5" eggs, "2, diced" onions); spoons or "to taste" only for small amounts. Code compares \
+these with the amounts the household entered.
 - essential: true if the dish fails or becomes a different dish without it. Always essential: the main \
 protein, the base (pasta, rice, bread, dough, tortilla), and every ingredient named in the dish. Optional \
 (false) only for garnishes, decorative herbs, toppings and "to taste" extras. Examples:

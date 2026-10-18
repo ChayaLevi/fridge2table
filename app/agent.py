@@ -104,7 +104,10 @@ In SHOPPING OK mode a passed candidate may list to_buy and check_first: shopping
 the meals you show, check_first = their check_first, and message names no ingredient ("These need a \
 couple of things from the shop; each card says what.").
 4. Mode B (the user names a dish they want, in either cooking mode): call get_recipe; it also returns \
-what is missing (to_buy, check_first), computed by code. Then, before writing the reply, go through each \
+what is missing (to_buy, check_first), computed by code. to_buy also holds items the household has but \
+not enough of (not_enough: "not enough egg (have 4, need 5)"); the app shows how much is missing, so treat \
+them like any to_buy item and do not name them in message either (not "a couple more eggs" but "You \
+need a bit more of one thing; the list is below."). Then, before writing the reply, go through each \
 to_buy ingredient and look in the inventory for a substitute that plays the same role in the dish \
 (cottage cheese for ricotta, greek yogurt for sour cream, butter for oil, one hard cheese for another). \
 Do not swap the ingredient that defines the dish (no chicken in a beef bolognese, no other noodles for \
@@ -357,10 +360,11 @@ async def suggest_meals(
 async def get_recipe(ctx: RunContext[Deps], dish: str) -> MealCandidate:
     """The standard home recipe for a dish the user named (Mode B), with what the household lacks for it.
 
-    dish: the dish name as the user said it ("lasagna", "spaghetti bolognese"). Returns the recipe's id,
-    ingredients and time, and the missing report computed by code against the inventory: to_buy =
-    essential ingredients the household lacks; check_first = pantry-type ones not confirmed because the
-    pantry was not scanned. No need to call compute_missing after it. Put the id in meal_ids when you
+    dish: the dish name as the user said it, with any amount they gave ("lasagna", "spaghetti bolognese",
+    "frittata with 5 eggs"). Returns the recipe's id, ingredients and time, and the missing report
+    computed by code against the inventory: to_buy = essential ingredients the household lacks or has
+    too little of (not_enough says which, with have / need); check_first = pantry-type ones not confirmed
+    because the pantry was not scanned. No need to call compute_missing after it. Put the id in meal_ids when you
     present the dish.
     """
     store = ctx.deps.store

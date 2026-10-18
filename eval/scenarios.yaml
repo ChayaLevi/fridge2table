@@ -6,7 +6,7 @@
 #   id, name
 #   after: <id>   reuse that scenario's store (inventory, preferences) in a new session; seed is applied on top
 #   seed: inventory (a name from inventories, or a list of items), add (a list of items), remove (names),
-#         scanned (places marked scanned), preferences ([{text, avoid}])
+#         scanned (places marked scanned), preferences ([{text, avoid}]), amounts ({name: "4 pcs"}, T6.3)
 #   turns: [{message, photos: [[path, place]], scan: [places], new_session: bool, cook_mode: home|shop
 #            (the page's switch, default home), expect: {...}}]
 #          or {opening: true, expect: {...}}: the proactive greeting (run_opening) instead of a message
@@ -25,6 +25,7 @@
 #   shopping_list_not_empty, meals_fit_shop (Shopping OK: no avoided ingredient, at most 3 to buy per meal),
 #   offer_shop (true/false: the reply offers the "Shopping OK" button)
 #   inventory_amount: {ingredient: "6 pcs"} the item's exact amount after the turn ("" = none), as displayed
+#   not_enough_contains: ingredients the household has too little of (reply.not_enough, "have 4, need 5")
 
 inventories:
   demo:
@@ -296,3 +297,20 @@ scenarios:
           first_tool: update_inventory
           inventory_amount: {egg: 6 pcs, milk: 2 l, cheddar: ""}
           off_topic: false
+
+  - id: 16
+    name: Amount-aware check (4 eggs for a 5-egg frittata -> eggs to buy; 12 eggs -> not)
+    seed: {inventory: demo, scanned: [fridge, pantry], amounts: {egg: 4 pcs}}
+    turns:
+      - message: I want to make a frittata with 5 eggs.
+        expect:
+          tools_called: [get_recipe, output check]
+          shopping_list_contains: [egg]
+          not_enough_contains: [egg]
+      - message: We just bought more, we have 12 eggs now.
+        expect:
+          first_tool: update_inventory
+          inventory_amount: {egg: 12 pcs}
+      - message: I want to make a frittata with 5 eggs.
+        expect:
+          shopping_list_must_not_contain: [egg]

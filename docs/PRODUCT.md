@@ -27,7 +27,7 @@ A kitchen agent that knows what is in your home: photograph the fridge and pantr
 | Inventory correction | Editable side panel with uncertain items highlighted. The agent also asks about up to 3 uncertain items in chat. No separate clarification wizard. |
 | Staples | Default editable list (salt, oil, ...) assumed present unless the user removes them. |
 | Expiry | No expiry tracking. The user marks items "use soon". |
-| Quantities | Coarse levels (plenty / some / low) always; an optional exact amount (g, kg, ml, l, pcs, pack) only when the user enters it (T6.3). Recognition never guesses amounts; the checks stay presence-based. |
+| Quantities | Coarse levels (plenty / some / low) always; an optional exact amount (g, kg, ml, l, pcs, pack) only when the user enters it (T6.3). Recognition never guesses amounts. The checks compare amounts only when both sides are known in compatible units (T6.3b); otherwise they are presence-based. |
 | Coverage | The inventory is built from three places: fridge, freezer, pantry. The user tags each photo with its place. The agent tracks which places were scanned and asks for the missing ones. Until the pantry is scanned, pantry-type ingredients are never reported as definitely missing. |
 | Persistence | Inventory and preferences persist across sessions. Chat history per session. |
 | UI | Mobile web app: chat + inventory side panel (a drawer on a phone). |
@@ -214,9 +214,11 @@ class AgentReply(BaseModel):
 - `format_amount(amount, unit)` for display: 1500 g → "1.5 kg", 0.5 l → "500 ml".
 - `default_unit(category, name)`: egg, fruit, vegetable → pcs; meat, fish, dairy (cheese), grain, pasta, baking → g; drink and milk → l; sauce → ml; otherwise pcs.
 
-The checks stay presence-based: amounts are never compared with recipe amounts. T6.1 "I made it" and T6.4 "Bought it" will use `parse_amount` / `to_base` to subtract or add when the units are compatible, and otherwise move `qty_level` by one step.
+The checks compare amounts only in the case the amount rule below describes (T6.3b). T6.1 "I made it" and T6.4 "Bought it" will use `parse_amount` / `to_base` to subtract or add when the units are compatible, and otherwise move `qty_level` by one step.
 
 **Matching rule (used by `compute_missing` and `validate_suggestion`):** an ingredient counts as available if its canonical name equals an inventory item's canonical name, or both map to the same entry in `data/synonyms.json`, or it is in the staples list (and the user has not removed that staple). Items with `qty_level == "low"` still count as available. Optional ingredients never fail validation.
+
+**Amount rule (T6.3b):** amounts are compared only when the inventory item has a user-entered exact amount, the recipe amount parses with `parse_amount` (an ingredient listed twice is summed), and both are of the same kind after `to_base` (pcs/pcs, mass/mass, volume/volume; never packs). If the household has less than the recipe needs, the ingredient counts as missing: it goes to To buy (or to `check_first` by the unscanned-pantry rule) and to `MissingReport.not_enough` / `AgentReply.not_enough` as `Shortfall {name, have, need}`; `validate_suggestion` fails with "not enough egg (have 4, need 5)", and the page shows "egg · have 4, need 5". A substitute is checked the same way against what the recipe needs of the missing item; one with too little sends the reply back. Every other case (no exact amount, "¾ cup" against grams, "a handful", packs, mass against volume) is presence-only, as before.
 
 **Unscanned pantry rule:** if the pantry has never been scanned, a missing essential ingredient whose `category` is in `PANTRY_CATEGORIES` goes to `check_first`, not `missing_essential`. In Mode A, `validate_suggestion` still fails such a meal (we only suggest from what we know is there), and the failure reason says "pantry not scanned" so the agent can mention it.
 

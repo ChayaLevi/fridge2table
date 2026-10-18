@@ -455,3 +455,129 @@ def test_check_reply_mode_b_short_message_with_substitution_passes():
         shopping_list=["ground beef", "pasta"],
     ), CACHE, INV, KIDS, ALL_SCANNED)
     assert res.ok, res.problems
+
+
+# --- amounts (T6.3b): compared only when both sides are known in units of the same kind ----------------
+
+def amt(name, amount, unit, category="other", location="fridge", qty="some"):
+    return item(name, qty=qty, category=category, location=location).model_copy(update={"amount": amount, "unit": unit})
+
+
+def need(name, amount, category="other", essential=True):
+    return Ingredient(name=name, amount=amount, essential=essential, category=category)
+
+
+@pytest.mark.parametrize("have, unit, want, short", [
+    (4, "pcs", "5", True),           # 4 eggs, need 5
+    (6, "pcs", "5", False),
+    (5, "pcs", "5", False),          # exactly enough
+    (1, "kg", "300 g", False),
+    (200, "g", "300 g", True),
+    (1.5, "l", "500 ml", False),
+    (300, "ml", "0.5 l", True),
+    (4, "pcs", "5 large", True),     # size word: still a count
+])
+def test_amounts_compared_when_both_known(have, unit, want, short):
+    inv = [amt("egg", have, unit, category="egg")]
+    rep = compute_missing(recipe(need("egg", want, "egg")), inv, ALL_SCANNED)
+    assert (rep.missing_essential == ["egg"]) is short
+    assert bool(rep.not_enough) is short
+
+
+def test_shortfall_reads_have_and_need():
+    rep = compute_missing(recipe(need("egg", "5", "egg")), [amt("egg", 4, "pcs", category="egg")], ALL_SCANNED)
+    assert [(s.name, s.have, s.need) for s in rep.not_enough] == [("egg", "4", "5")]
+    assert rep.not_enough[0].text() == "not enough egg (have 4, need 5)"
+    rep = compute_missing(recipe(need("chicken", "1.5 kg", "meat")), [amt("chicken", 500, "g", "meat")], ALL_SCANNED)
+    assert (rep.not_enough[0].have, rep.not_enough[0].need) == ("500 g", "1.5 kg")
+
+
+@pytest.mark.parametrize("inv_item, want", [
+    (item("egg", qty="plenty", category="egg"), "5"),     # no exact amount: presence only
+    (amt("milk", 1, "l", "dairy"), "2 cups"),            # unparsable recipe amount
+    (amt("milk", 1, "l", "dairy"), "a splash"),
+    (amt("butter", 1, "pack", "dairy"), "200 g"),        # pack: presence only
+    (amt("butter", 1, "pack", "dairy"), "2 pack"),
+    (amt("milk", 100, "g", "dairy"), "500 ml"),          # mass vs volume
+    (amt("egg", 2, "pcs", "egg"), "100 g"),              # pcs vs mass
+])
+def test_presence_only_otherwise(inv_item, want):
+    rep = compute_missing(recipe(need(inv_item.name, want)), [inv_item], ALL_SCANNED)
+    assert rep.missing_essential == [] and rep.not_enough == []
+
+
+def test_same_ingredient_twice_adds_up():
+    r = recipe(need("egg", "3", "egg"), need("egg", "2", "egg"))
+    assert compute_missing(r, [amt("egg", 4, "pcs", "egg")], ALL_SCANNED).not_enough[0].need == "5"
+    assert compute_missing(r, [amt("egg", 5, "pcs", "egg")], ALL_SCANNED).not_enough == []
+
+
+def test_short_optional_is_only_optional():
+    rep = compute_missing(recipe(need("parsley", "3", essential=False)), [amt("parsley", 1, "pcs")], ALL_SCANNED)
+    assert rep.missing_optional == ["parsley"] and rep.missing_essential == [] and rep.not_enough == []
+
+
+def test_short_pantry_item_follows_the_unscanned_pantry_rule():
+    inv = [amt("rice", 100, "g", "grain", location="pantry")]
+    rep = compute_missing(recipe(need("rice", "300 g", "grain")), inv, FRIDGE_ONLY)
+    assert rep.check_first == ["rice"] and rep.missing_essential == [] and rep.not_enough[0].name == "rice"
+
+
+def test_validate_suggestion_fails_with_not_enough_reason():
+    res = validate_suggestion(recipe(need("egg", "5", "egg"), ing("cheddar")), [amt("egg", 4, "pcs", "egg")],
+                              [], ALL_SCANNED)
+    assert not res.ok
+    assert res.reason == "missing: cheddar; not enough egg (have 4, need 5)"
+    assert validate_suggestion(recipe(need("egg", "5", "egg")), [amt("egg", 6, "pcs", "egg")], [], ALL_SCANNED).ok
+
+
+def test_check_candidates_home_fails_a_short_meal():
+    res = check_candidates([recipe(need("egg", "5", "egg"), name="Frittata")], [amt("egg", 4, "pcs", "egg")], [],
+                           ALL_SCANNED)
+    assert res.passed == [] and res.failed[0].reason == "not enough egg (have 4, need 5)"
+
+
+def test_check_candidates_shop_lists_the_short_item():
+    res = check_candidates([recipe(need("egg", "5", "egg"), name="Frittata")], [amt("egg", 4, "pcs", "egg")], [],
+                           ALL_SCANNED, cook_mode="shop")
+    assert res.passed[0].to_buy == ["egg"] and res.passed[0].not_enough == ["not enough egg (have 4, need 5)"]
+
+
+def test_check_reply_mode_b_lists_the_shortfall():
+    r = recipe(need("egg", "5", "egg"), need("spinach", "200 g", "vegetable"), name="Frittata", requested=True)
+    res = check_reply(AgentReply(message="Here is the recipe.", meal_ids=[r.id]), {r.id: r},
+                      [amt("egg", 4, "pcs", "egg"), item("spinach", category="vegetable")], [], ALL_SCANNED)
+    assert res.ok, res.problems
+    assert res.reply.shopping_list == ["egg"]
+    assert [(s.name, s.have, s.need) for s in res.reply.not_enough] == [("egg", "4", "5")]
+    res = check_reply(AgentReply(message="Here is the recipe.", meal_ids=[r.id]), {r.id: r},
+                      [amt("egg", 12, "pcs", "egg"), item("spinach", category="vegetable")], [], ALL_SCANNED)
+    assert res.reply.shopping_list == [] and res.reply.not_enough == []
+
+
+def test_check_reply_home_mode_rejects_a_short_suggested_meal():
+    r = recipe(need("egg", "5", "egg"), name="Frittata")
+    res = check_reply(AgentReply(message="Try this.", meal_ids=[r.id]), {r.id: r}, [amt("egg", 4, "pcs", "egg")], [],
+                      ALL_SCANNED)
+    assert not res.ok and "not enough egg (have 4, need 5)" in res.problems[0]
+
+
+def test_substitute_with_too_little_is_sent_back():
+    r = recipe(need("ricotta", "400 g", "dairy"), ing("pasta", "pasta"), name="Lasagna", requested=True)
+    reply = AgentReply(message="Use your cottage cheese instead of ricotta.", meal_ids=[r.id],
+                       substitutions=[Substitution(missing="ricotta", use_instead="cottage cheese")])
+    inv = [amt("cottage cheese", 200, "g", "dairy"), item("pasta", category="pasta")]
+    res = check_reply(reply, {r.id: r}, inv, [], ALL_SCANNED)
+    assert not res.ok
+    assert "not enough cottage cheese (have 200 g, need 400 g)" in res.problems[0]
+    assert res.reply.shopping_list == ["ricotta"]  # not substituted: the missing item stays on the list
+
+
+def test_substitute_with_enough_or_no_amount_is_fine():
+    r = recipe(need("ricotta", "400 g", "dairy"), name="Lasagna", requested=True)
+    reply = AgentReply(message="Use your cottage cheese instead of ricotta.", meal_ids=[r.id],
+                       substitutions=[Substitution(missing="ricotta", use_instead="cottage cheese")])
+    for sub_item in (amt("cottage cheese", 500, "g", "dairy"), item("cottage cheese", category="dairy")):
+        res = check_reply(reply, {r.id: r}, [sub_item], [], ALL_SCANNED)
+        assert res.ok, res.problems
+        assert res.reply.shopping_list == []

@@ -30,6 +30,8 @@ from app.amounts import default_unit, format_amount, parse_amount, same_kind, sp
     ("300 g (2 cups)", (300, "g")),
     ("400 g, drained", (400, "g")),
     ("  250  g  ", (250, "g")),
+    ("5 large", (5, "pcs")),
+    ("2 medium, diced", (2, "pcs")),
 ])
 def test_parse_amount(text, want):
     assert parse_amount(text) == want
@@ -37,7 +39,7 @@ def test_parse_amount(text, want):
 
 @pytest.mark.parametrize("text", [
     "a handful", "to taste", "", "a pinch", "2 tbsp", "1 tsp", "2 cloves", "1 lb", "16 oz", "2 cups",
-    "2 large", "2 lemons", "0", "0 g", "some", "half", "1/0 l",
+    "2 lemons", "0", "0 g", "some", "half", "1/0 l",
 ])
 def test_parse_amount_none(text):
     assert parse_amount(text) is None

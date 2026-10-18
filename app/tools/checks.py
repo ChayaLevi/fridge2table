@@ -7,9 +7,10 @@ removed. A staple counts as available only through that list, so a removed stapl
 import re
 from dataclasses import dataclass, field
 
+from app.amounts import amount_short, parse_amount, sum_base
 from app.models import (
     MAX_TO_BUY, PANTRY_CATEGORIES, AgentReply, CookMode, FailedCandidate, InventoryItem, MealCandidate, MissingReport, Preference, Recipe,
-    ScanState, SuggestResult, ValidationResult,
+    ScanState, Shortfall, SuggestResult, ValidationResult,
 )
 from app.tools.normalize import normalize
 
@@ -18,29 +19,68 @@ def _dedupe(names: list[str]) -> list[str]:
     return list(dict.fromkeys(names))
 
 
+def shortfall(name: str, amounts: list[str], item: InventoryItem) -> Shortfall | None:
+    """The shortfall when `item` has less than the recipe amounts (free text, summed) need, else None.
+
+    Amounts are compared only when the item has a user-entered exact amount, every recipe amount parses
+    (parse_amount) and all are of the same kind in base units (pcs, g, ml; never packs). Any other case is
+    presence-only: None.
+    """
+    if item.amount is None or item.unit is None:
+        return None
+    parsed = [parse_amount(a) for a in amounts]
+    if not parsed or any(p is None for p in parsed):
+        return None
+    need = sum_base(parsed)
+    have = sum_base([(item.amount, item.unit)])
+    if need is None or have is None or need[1] != have[1] or have[1] == "pack":
+        return None
+    if have[0] + 1e-9 >= need[0]:
+        return None
+    return Shortfall(name=name, have=amount_short(item.amount, item.unit), need=amount_short(*need))
+
+
 def compute_missing(recipe: Recipe, inventory: list[InventoryItem], scan_state: ScanState) -> MissingReport:
     """Split the recipe's unavailable ingredients into to-buy, check-the-pantry-first and optional.
 
-    Available = same canonical name as an inventory item (any qty_level, `low` included).
+    Available = same canonical name as an inventory item (any qty_level, `low` included), and, when
+    amounts can be compared (see shortfall), at least as much as the recipe needs; an essential the
+    household has too little of is missing too and listed in `not_enough`.
     If the pantry was never scanned, a missing essential of a pantry-type category goes to
     `check_first` instead of `missing_essential`.
     """
-    have = {normalize(i.name) for i in inventory}
-    pantry_scanned = "pantry" in scan_state.scanned
-    missing, check_first, optional = [], [], []
+    items: dict[str, InventoryItem] = {}
+    for i in inventory:
+        items.setdefault(normalize(i.name), i)
+    # one entry per name: an ingredient listed twice (egg 2 for the batter, egg 1 to glaze) adds up
+    wanted: dict[str, list] = {}
     for ing in recipe.ingredients:
         name = normalize(ing.name)
-        if not name or name in have:
+        if not name:
             continue
-        if not ing.essential:
+        if name in wanted:
+            wanted[name][0] = wanted[name][0] or ing.essential
+            wanted[name][2].append(ing.amount)
+        else:
+            wanted[name] = [ing.essential, ing.category, [ing.amount]]
+    pantry_scanned = "pantry" in scan_state.scanned
+    missing, check_first, optional, short = [], [], [], []
+    for name, (essential, category, amounts) in wanted.items():
+        gap = None
+        if name in items:
+            gap = shortfall(name, amounts, items[name])
+            if gap is None:
+                continue
+        if not essential:
             optional.append(name)
-        elif not pantry_scanned and ing.category in PANTRY_CATEGORIES:
+            continue
+        if gap is not None:
+            short.append(gap)
+        if not pantry_scanned and category in PANTRY_CATEGORIES:
             check_first.append(name)
         else:
             missing.append(name)
-    return MissingReport(
-        missing_essential=_dedupe(missing), check_first=_dedupe(check_first), missing_optional=_dedupe(optional),
-    )
+    return MissingReport(missing_essential=missing, check_first=check_first, missing_optional=optional, not_enough=short)
 
 
 def _violations(recipe: Recipe, preferences: list[Preference]) -> list[str]:
@@ -60,11 +100,13 @@ def validate_suggestion(
     """ok only if no essential is missing (check_first counts as missing) and no preference is violated."""
     report = compute_missing(recipe, inventory, scan_state)
     violated = _violations(recipe, preferences)
+    short = {s.name for s in report.not_enough}
     parts = []
-    if report.missing_essential:
-        parts.append(f"missing: {', '.join(report.missing_essential)}")
-    if report.check_first:
-        parts.append(f"pantry not scanned: {', '.join(report.check_first)} not confirmed")
+    if absent := [n for n in report.missing_essential if n not in short]:
+        parts.append(f"missing: {', '.join(absent)}")
+    if unconfirmed := [n for n in report.check_first if n not in short]:
+        parts.append(f"pantry not scanned: {', '.join(unconfirmed)} not confirmed")
+    parts += [s.text() for s in report.not_enough]
     if violated:
         parts.append(f"violates preferences: {', '.join(violated)}")
     return ValidationResult(
@@ -72,6 +114,7 @@ def validate_suggestion(
         missing_essential=report.missing_essential,
         violated_preferences=violated,
         check_first=report.check_first,
+        not_enough=report.not_enough,
         reason="; ".join(parts),
     )
 
@@ -170,12 +213,24 @@ def check_reply(
     if len(reply.questions) > MAX_QUESTIONS:
         problems.append(f"{len(reply.questions)} questions; ask at most {MAX_QUESTIONS}")
 
-    have = {normalize(i.name) for i in inventory}
+    items: dict[str, InventoryItem] = {}
+    for i in inventory:
+        items.setdefault(normalize(i.name), i)
+    substituted_names = []
     for sub in reply.substitutions:
-        if normalize(sub.use_instead) not in have:
+        missing, instead = normalize(sub.missing), normalize(sub.use_instead)
+        if instead not in items:
             problems.append(f"substitute {sub.use_instead!r} (for {sub.missing}) is not in the inventory; "
                             "use an inventory item or put the missing item on the shopping list")
-    substituted = frozenset(normalize(s.missing) for s in reply.substitutions)
+            continue
+        # the substitute must cover what the meals need of the missing item, when amounts can be compared
+        amounts = [i.amount for m in meals for i in m.ingredients if normalize(i.name) == missing]
+        if amounts and (gap := shortfall(instead, amounts, items[instead])) is not None:
+            problems.append(f"substitute {sub.use_instead!r} (for {sub.missing}): {gap.text()}; "
+                            f"put {sub.missing} on the shopping list or use another inventory item")
+            continue
+        substituted_names.append(missing)
+    substituted = frozenset(substituted_names)
 
     for meal in meals:
         if meal.requested:
@@ -194,17 +249,21 @@ def check_reply(
             problems.append(f"{meal.name} {_why(res)}. The user chose \"Only what I have\": show only meals that "
                             "need nothing to buy (passed candidates), or none")
 
-    to_buy, check_first = [], []
+    to_buy, check_first, short = [], [], {}
     for meal in meals:
         report = compute_missing(meal, inventory, scan_state)
         to_buy += [n for n in report.missing_essential if n not in substituted]
         check_first += [n for n in report.check_first if n not in substituted]
+        for gap in report.not_enough:
+            if gap.name not in substituted:
+                short.setdefault(gap.name, gap)
     to_buy, check_first = _dedupe(to_buy), _dedupe(check_first)
     if [normalize(n) for n in reply.shopping_list] != to_buy:
         fixes.append(f"shopping_list {reply.shopping_list} -> {to_buy}")
     if [normalize(n) for n in reply.check_first] != check_first:
         fixes.append(f"check_first {reply.check_first} -> {check_first}")
-    reply = reply.model_copy(update={"shopping_list": to_buy, "check_first": check_first})
+    reply = reply.model_copy(update={"shopping_list": to_buy, "check_first": check_first,
+                                     "not_enough": list(short.values())})
     named = items_named_in(reply.message, to_buy + check_first, [m.name for m in meals])
     if named:
         problems.append(
@@ -238,11 +297,13 @@ def items_named_in(message: str, names: list[str], dish_names: list[str] = ()) -
 
 def _why(res: ValidationResult) -> str:
     """"needs peanut, not in inventory" / "uses eggplant, which the household avoids" for a ModelRetry."""
+    short = {s.name for s in res.not_enough}
     parts = []
-    if res.missing_essential:
-        parts.append(f"needs {', '.join(res.missing_essential)}, not in inventory")
-    if res.check_first:
-        parts.append(f"needs {', '.join(res.check_first)}, not confirmed (pantry not scanned)")
+    if absent := [n for n in res.missing_essential if n not in short]:
+        parts.append(f"needs {', '.join(absent)}, not in inventory")
+    if unconfirmed := [n for n in res.check_first if n not in short]:
+        parts.append(f"needs {', '.join(unconfirmed)}, not confirmed (pantry not scanned)")
+    parts += [s.text() for s in res.not_enough if s.name in res.missing_essential + res.check_first]
     if res.violated_preferences:
         parts.append(f"violates preferences: {', '.join(res.violated_preferences)}")
     return "; ".join(parts)

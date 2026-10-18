@@ -35,17 +35,18 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [ ] T5.3 Real user run #1 + decision point 🧑
 - [ ] P6 Fixes (+ T6.1 if the decision point passed; T6.2 done early, 2026-10-18)
 - [x] T6.3 Exact amount per inventory item (added and built 2026-10-18 at the human's request; the human's browser check is open)
+- [x] T6.3b Amount-aware code checks (added and built 2026-10-18 at the human's request; the human's browser check is open)
 - [ ] T6.4 "Bought it" (planned 2026-10-18, not specified yet)
 - [ ] P7 Freeze 🧑
 
 ## Next up
 
-- **Open: the human checks T6.3** in a phone-size browser (set "500 g" on an item, see it in the row, clear it, add "milk 2 l" from the Add field; see the T6.3 log entry).
+- **Open: the human checks T6.3 and T6.3b** in a phone-size browser (T6.3: set "500 g" on an item, see it in the row, clear it, add "milk 2 l" from the Add field; T6.3b: eggs at 4 pcs, "I want to make a frittata with 5 eggs" → "egg · have 4, need 5"; at 12 pcs → not in To buy; see the log entries).
 - **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing). T5.2 is done (2026-10-15). After T5.1: T5.3, the real user run (🧑).
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 557 tests pass (2026-10-18, after T6.3 exact amounts). Scenario suite: 15 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15; 15 = exact amounts from chat, added 2026-10-18), 15/15 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 588 tests pass (2026-10-18, after T6.3b amount-aware checks). Scenario suite: 16 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15; 15 = exact amounts from chat, 16 = amount-aware check, added 2026-10-18), 16/16 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -67,7 +68,7 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - Extras beyond the plan (small): `.gitignore`, `pytest.ini` (asyncio_mode=auto), `httpx` dev dependency (needed by FastAPI TestClient), `LOG_LEVEL`/`LOGFIRE_TOKEN` in `.env.example` (CLAUDE.md debugging aids).
 - `data/synonyms.json` has 115 entries (112 + 3 added in the T1.1 redo) (flat map, no chains; a test enforces that targets are canonical). Ambiguous keys like bare `pepper` were left out on purpose.
 - `InventoryChange` ops: add | remove | set_qty | set_use_soon | rename | **add_staple** | **confirm** (2026-10-14) (added 2026-10-14 at the human's request: staples of the user's own, table `custom_staples`) | **set_amount** (2026-10-18, T6.3). Fields: `op`, `name`, optional `display_name`, `category`, `location`, `qty_level`, `use_soon`, `new_name`, `amount`, `unit`.
-- **Exact amounts (2026-10-18, T6.3, the human's design):** `qty_level` always; an optional `amount` + `unit` only from the user. Recognition never sets it; the checks never look at it. CLAUDE.md rule 5 was changed accordingly.
+- **Exact amounts (2026-10-18, T6.3, the human's design):** `qty_level` always; an optional `amount` + `unit` only from the user. Recognition never sets it. CLAUDE.md rule 5 was changed accordingly. **Since T6.3b** the checks compare amounts when both sides are known in compatible units (see PRODUCT §7 "Amount rule").
 - 2026-10-12 (later): PLAN/PRODUCT were updated (pantry coverage). T0.2 re-done: added `ScanState`, `PANTRY_CATEGORIES`, `Ingredient.category`, `MissingReport.check_first`, `AgentReply.check_first`, extended category list. Tests now 6 pass. T0.1/T0.3 unaffected. T0.5 now asks for 4–6 sets (≥2 fridge, ≥2 pantry), folders `<household>_<place>`.
 - Order change (user request, 2026-10-12): the human has no API keys/photos yet, so T0.4 is deferred and P1/P2 are built with mocked models. T0.4, the real run of T1.4 and T1.6, and T2.5 wait for keys/photos.
 - Repo was not a git repo; `git init` done in T0.1.
@@ -98,6 +99,38 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-18 — T6.3b Amount-aware code checks (the human's request)
+
+- Built:
+  - `app/models.py`: `Shortfall {name, have, need}` with `text()` = "not enough egg (have 4, need 5)"; `MissingReport.not_enough`, `ValidationResult.not_enough`, `MealCandidate.not_enough` (texts, so the agent sees them), `AgentReply.not_enough` (set by code, hidden from the model's schema).
+  - `app/tools/checks.py`: `shortfall(name, amounts, item)` compares when the item has an exact amount, every recipe amount parses and all have the same base unit (pcs, g, ml; never pack). `compute_missing` now groups an ingredient listed twice and sums its amounts; a short essential goes to `missing_essential` (or `check_first` by the pantry rule) and to `not_enough`; a short optional goes to `missing_optional`. `validate_suggestion` reason: "missing: cheddar; not enough egg (have 4, need 5)". `check_reply`: a substitute is compared with what the meals need of the missing item; too little → a problem (ModelRetry) "substitute 'cottage cheese' (for ricotta): not enough cottage cheese (have 200 g, need 400 g); put ricotta on the shopping list or use another inventory item", and the missing item stays on the list; the reply's `not_enough` is filled for the shown meals (substituted names left out). `_why` names the shortfall.
+  - `app/amounts.py`: `amount_short` ("4" for 4 pcs, "300 g"), `sum_base`; `parse_amount` reads a size word after a count ("5 large" = 5 pcs, "2 medium, diced").
+  - `app/trace.py`: `short_reason` gives "not enough egg", so the collapsed line reads "1 failed check (not enough egg)".
+  - `app/tools/recipes.py`: `INGREDIENT_RULES` asks for amounts the code can compare (number + g/kg/ml/l, or a bare count). `app/agent.py`: rule 4 says to_buy includes short items and the message must not name them ("You need a bit more of one thing; the list is below."); the `get_recipe` docstring says to keep the user's amounts in `dish` ("frittata with 5 eggs").
+  - `app/static/index.html`: `shortFor`, `shopItem`: the shopping block reads "egg · have 4, need 5" (display name from the panel), the copied / downloaded text "- egg (have 4, need 5)", the card's buy line "egg (have 4, need 5)", the recipe window tag "🛒 have 4, need 5"; `replyForMeal` filters `not_enough`.
+  - `eval/run_scenarios.py`: seed key `amounts` ({name: "4 pcs"}), expect key `not_enough_contains`. `eval/scenarios.yaml` scenario 16 (3 turns: 4 eggs → egg to buy; "we have 12 eggs now" → set_amount; ask again → no egg).
+  - Tests: 25 new in `tests/test_checks.py` (every case the human listed, plus exactly-enough, a size word, summed duplicates, a short optional, the pantry rule, check_candidates both modes, check_reply Mode B / home mode / short and fine substitutes), 4 in `tests/test_trace.py`, 2 in `tests/test_amounts.py` ("2 large" moved from None to pcs), updated `tests/test_models.py`, `tests/test_scenarios.py`. 588 pass.
+  - Docs: `CLAUDE.md` rule 5; `docs/PRODUCT.md` §3 Quantities row, §7 the T6.3 paragraph and a new "Amount rule" under the matching rule; `docs/PLAN.md` T6.3b (and T6.3's line marked superseded).
+- Fixed on the way (a T6.3 bug): the panel's new `.amount` class had the same name as the amount span in the shopping list, so since T6.3 every shopping amount ("· 500 g") wrapped onto its own line. The panel class is now `.amountline`.
+- Decisions / deviations:
+  - A substitute with too little is a ModelRetry (like a substitute not in the inventory), not a silent fix: the substitution would otherwise still show while its item sits in To buy.
+  - A short pantry-type item follows the pantry rule (check_first when the pantry was not scanned), as asked, even though the user entered its amount.
+  - `Shortfall.have` / `need` are display strings (`amount_short`); "need" is the summed recipe amount in base units ("1.5 kg" from 1500 g).
+  - The prompt changes (rule 4, `get_recipe` docstring, `INGREDIENT_RULES`) were needed: without them every short-egg reply cost one or two output-check retries (the model wrote "a couple more eggs"), and the agent dropped "with 5 eggs" from the dish.
+- Checked: `uv run pytest -q` 588 passed. Scenario 16 on real models 3/3 with no retry after the prompt changes (turn 1 6-7.5 s: `get_recipe(frittata with 5 eggs)` → "to buy: egg"; message "You need a bit more of one thing; the list is below."); full suite `--jobs 4` 16/16. Headless Edge 390x844 (demo seed, a separate HOUSEHOLD_DIR): the panel set egg to 4 pcs, "I want to make a frittata with 5 eggs" → TO BUY "egg · have 4, need 5" on one line, the recipe window "🛒 have 4, need 5"; egg set to 12 pcs, asked again → "✓ Nothing to buy"; no horizontal scroll, no page errors.
+- Next task must know: `checks.shortfall` is the one place amounts are compared; T6.1 / T6.4 can reuse `sum_base` / `to_base`. Recipe amounts in kitchen measures ("2 cups", "1 tbsp") stay presence-only.
+- Open: the human's browser check. A bare count is read as pieces on both sides, so garlic "2" (cloves) against garlic entered as 1 pcs (a head) would count as short; only if the user enters a garlic amount.
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_checks.py -q -k "amount or shortfall or substitute or presence or short"
+uv run python eval/run_scenarios.py --only 16
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: `588 passed`; then `28 passed, 69 deselected`; then `[PASS] #16 ...` and `1/1 passed`, turn 1 with `get_recipe > output check` and "to buy: egg"; then the server starts.
+Manual check: open http://localhost:8000 in a phone-size window (DevTools, device toolbar). If the inventory is empty, run `POST /admin/seed` on http://localhost:8000/docs and reload. Open Inventory, tap Egg, type 4, tap pcs: the row reads "egg · 4 pcs". Close the panel and ask "I want to make a frittata with 5 eggs": under TO BUY the line reads "egg · have 4, need 5". Set eggs to 12 pcs the same way and ask again: "✓ Nothing to buy" (egg is not in To buy).
 
 ### 2026-10-18 — T6.3 Exact amount per inventory item (the human's request)
 

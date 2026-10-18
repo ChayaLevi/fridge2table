@@ -139,7 +139,9 @@ def short_reason(reason: str) -> str:
         part = part.strip().removeprefix("output check failed:").strip()
         if not part:
             continue
-        if m := re.match(r"(?:.*? )?needs (.+?), not in inventory", part):
+        if m := re.match(r"(?:.*? )?(not enough [^(]+?) \(", part):  # "not enough egg (have 4, need 5)"
+            out.append(m.group(1))
+        elif m := re.match(r"(?:.*? )?needs (.+?), not in inventory", part):
             out.append(f"no {_or(m.group(1))}")
         elif m := re.match(r"(?:.*? )?needs (.+?), not confirmed", part):
             out.append(f"{m.group(1)} not confirmed")

@@ -35,6 +35,8 @@ _UNIT_RX = "|".join(sorted(map(re.escape, _UNIT_WORDS), key=len, reverse=True))
 # number, optional unit; the unit must end at a word boundary ("2 large" has no unit, "2 lemons" is not litres)
 _AMOUNT = re.compile(rf"(?P<num>{_NUM})\s*(?:(?P<unit>{_UNIT_RX})\b\.?)?", re.I)
 _ARTICLE = re.compile(rf"(?:a|an|one)\s+(?P<unit>{_UNIT_RX})\b\.?", re.I)
+# size words after a bare count still mean pieces: "5 large" = 5 pcs
+_SIZE = re.compile(r"^(?:large|medium|small|big|whole|extra[- ]large)\b", re.I)
 _HEDGE = re.compile(r"^(?:about|approx\.?|approximately|around|roughly|~)\s*", re.I)
 
 
@@ -69,7 +71,8 @@ def parse_amount(text: str) -> tuple[float, Unit] | None:
     """Free-text amount -> (amount, unit), or None when it is not a plain amount in our units.
 
     "300 g" -> (300, "g"); "1.5 kg"; "500ml"; "2 l"; "2" -> (2, "pcs"); "1/2 l" -> (0.5, "l");
-    "about 300 g"; "300 g (2 cups)" -> (300, "g"). "a handful", "2 tbsp", "1 lb", "to taste" -> None.
+    "about 300 g"; "300 g (2 cups)" -> (300, "g"); "5 large" -> (5, "pcs").
+    "a handful", "2 tbsp", "1 lb", "to taste" -> None.
     """
     text = _HEDGE.sub("", (text or "").strip())
     found = _match_amount(text)
@@ -77,6 +80,8 @@ def parse_amount(text: str) -> tuple[float, Unit] | None:
         return None
     m, value, unit = found
     rest = text[m.end():].strip()
+    if unit == "pcs" and (size := _SIZE.match(rest)):
+        rest = rest[size.end():].strip()
     if rest and rest[0] not in "(,;":  # "2 tbsp", "2 cloves": a unit we do not track
         return None
     return value, unit
@@ -109,6 +114,23 @@ def format_amount(amount: float | None, unit: Unit | None) -> str:
     if base == "pack":
         return f"{_num_text(value)} pack" + ("" if value == 1 else "s")
     return f"{_num_text(value)} pcs"
+
+
+def amount_short(amount: float, unit: Unit) -> str:
+    """Like format_amount, but a count is a bare number: "4" for 4 pcs, "300 g", "1.5 kg" (for have / need)."""
+    text = format_amount(amount, unit)
+    return text.removesuffix(" pcs")
+
+
+def sum_base(amounts: list[tuple[float, Unit]]) -> tuple[float, BaseUnit] | None:
+    """The amounts added up in their base unit ("3" + "2" eggs -> (5, "pcs")); None if empty or of mixed kinds."""
+    total, base = 0.0, None
+    for amount, unit in amounts:
+        value, b = to_base(amount, unit)
+        if base is not None and b != base:
+            return None
+        total, base = total + value, b
+    return (total, base) if base is not None else None
 
 
 def default_unit(category: str, name: str = "") -> Unit:

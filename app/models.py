@@ -109,6 +109,7 @@ class MealCandidate(BaseModel):
     # what the household lacks for it (code): shop-mode suggestions and get_recipe; the lists are built by code
     to_buy: list[str] = []
     check_first: list[str] = []
+    not_enough: list[str] = []  # "not enough egg (have 4, need 5)" for items in to_buy / check_first
 
     @classmethod
     def from_recipe(cls, recipe: Recipe, report: "MissingReport | None" = None) -> "MealCandidate":
@@ -117,6 +118,7 @@ class MealCandidate(BaseModel):
             ingredients=[f"{i.name}: {i.amount}" + ("" if i.essential else " (optional)") for i in recipe.ingredients],
             uses_from_inventory=recipe.uses_from_inventory,
             to_buy=report.missing_essential if report else [], check_first=report.check_first if report else [],
+            not_enough=[s.text() for s in report.not_enough] if report else [],
         )
 
 
@@ -147,10 +149,23 @@ class Preference(BaseModel):
     created_at: datetime
 
 
+class Shortfall(BaseModel):
+    """An ingredient the household has, but less of than the recipe needs (T6.3b): only when the user
+    entered an exact amount and the recipe amount parses in a unit of the same kind."""
+
+    name: str  # canonical
+    have: str  # "4", "200 g" (amount_short)
+    need: str  # "5", "300 g"
+
+    def text(self) -> str:
+        return f"not enough {self.name} (have {self.have}, need {self.need})"
+
+
 class MissingReport(BaseModel):
-    missing_essential: list[str]  # definitely missing ("To buy")
+    missing_essential: list[str]  # definitely missing ("To buy"); includes the names in not_enough
     check_first: list[str]  # pantry-type, pantry not scanned ("Check your pantry first")
     missing_optional: list[str]
+    not_enough: list[Shortfall] = []  # essentials there but short (also listed in missing_essential or check_first)
 
     def summary(self) -> str:
         parts = []
@@ -160,6 +175,7 @@ class MissingReport(BaseModel):
             parts.append(f"check first: {', '.join(self.check_first)}")
         if self.missing_optional:
             parts.append(f"optional: {', '.join(self.missing_optional)}")
+        parts += [s.text() for s in self.not_enough]
         return "; ".join(parts) or "nothing missing"
 
 
@@ -168,6 +184,7 @@ class ValidationResult(BaseModel):
     missing_essential: list[str]
     violated_preferences: list[str]
     check_first: list[str] = []  # pantry-type essentials not confirmed because the pantry was not scanned
+    not_enough: list[Shortfall] = []  # essentials there but short (also in missing_essential / check_first)
     reason: str = ""  # one line for the agent, e.g. "pantry not scanned: pasta not confirmed"
 
 
@@ -216,6 +233,8 @@ class AgentReply(BaseModel):
     substitutions: list[Substitution] = []
     shopping_list: list[str] = []  # "To buy"
     check_first: list[str] = []  # "Check your pantry first"
+    # items of shopping_list / check_first the household has too little of ("egg: have 4, need 5"); set by code
+    not_enough: SkipJsonSchema[list[Shortfall]] = []
     questions: list[str] = []  # clarifying questions about uncertain items (max 3)
     # True when the message is not about food or the kitchen; code then replaces message with a fixed reply
     off_topic: bool = False

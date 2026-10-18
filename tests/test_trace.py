@@ -226,6 +226,11 @@ def test_trace_from_stored_history_has_no_seconds():
     ("output check failed: substitute 'mascarpone' (for ricotta) is not in the inventory", "mascarpone not in the inventory"),
     ("output check failed: message names items of the shopping lists (ground beef): the app", "message listed the shopping items"),
     ("output check failed: 4 meals; show at most 3", "too many meals"),
+    ("not enough egg (have 4, need 5)", "not enough egg"),
+    ("missing: cheddar; not enough egg (have 4, need 5)", "no cheddar, not enough egg"),
+    ("output check failed: Frittata not enough egg (have 4, need 5). The user chose", "not enough egg"),
+    ("output check failed: substitute 'cottage cheese' (for ricotta): not enough cottage cheese (have 200 g, need 400 g); put",
+     "not enough cottage cheese"),
 ])
 def test_short_reason(reason, expected):
     assert short_reason(reason) == expected

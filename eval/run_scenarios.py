@@ -47,7 +47,7 @@ EXPECT_KEYS = {
     "shopping_list_empty", "check_first_contains", "check_first_must_not_contain", "check_first_empty",
     "substitution_for", "preference_saved", "inventory_lacks", "max_questions", "message_matches", "asks_for_photo",
     "message_must_not_match", "off_topic", "shopping_list_not_empty", "meals_fit_shop", "offer_shop",
-    "inventory_amount",
+    "inventory_amount", "not_enough_contains",
 }
 
 
@@ -91,8 +91,10 @@ def seed_store(store: Store, seed: dict, inventories: dict[str, list]) -> None:
     items = inventories[inv] if isinstance(inv, str) else (inv or [])
     adds = [parse_item(i) for i in [*items, *(seed.get("add") or [])]]
     removes = [InventoryChange(op="remove", name=n) for n in seed.get("remove") or []]
-    if adds or removes:
-        update_inventory(store, adds + removes, source="manual")
+    amounts = [InventoryChange(op="set_amount", name=n, amount=a[0], unit=a[1])
+               for n, text in (seed.get("amounts") or {}).items() if (a := parse_amount(str(text)))]
+    if adds or removes or amounts:
+        update_inventory(store, adds + removes + amounts, source="manual")
     for place in seed.get("scanned") or []:
         store.mark_scanned(place)
     for p in seed.get("preferences") or []:
@@ -203,6 +205,10 @@ def check_turn(expect: dict[str, Any], reply: AgentReply, trace: list[ToolTraceI
         if got != want_text:
             fail(f"{w} amount is {got!r}, expected {want_text!r}")
 
+    short = [s.name for s in reply.not_enough]
+    for w in expect.get("not_enough_contains") or []:  # shown as "eggs · have 4, need 5"
+        if not _has(short, w):
+            fail(f"{w} not in not_enough (not_enough: {[s.text() for s in reply.not_enough]})")
     if (n := expect.get("max_questions")) is not None and len(reply.questions) > n:
         fail(f"{len(reply.questions)} questions > {n}")
     if (rx := expect.get("message_matches")) and not re.search(rx, text, re.I):
