@@ -33,7 +33,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [ ] T5.1 Vision model comparison
 - [x] T5.2 Latency (numbers in `eval/RESULTS.md`)
 - [ ] T5.3 Real user run #1 + decision point 🧑
-- [ ] P6 Fixes (+ T6.1, T6.2 if the decision point passed)
+- [ ] P6 Fixes (+ T6.1 if the decision point passed; T6.2 done early, 2026-10-18)
 - [ ] P7 Freeze 🧑
 
 ## Next up
@@ -42,7 +42,7 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
 - **Blocked on the human:** eval photos in `eval/fridges/<household>_<place>/` (4-6 sets, >=2 fridge, >=2 pantry, each with `labels.json`) for T0.5 and the open part of T1.4. The folders `home1_fridge` and `home1_pantry` exist locally but are empty. When they arrive: run `eval/run_vision_eval.py` for tiles 1, 2 and 4, set `VISION_TILES` in `.env.example` to the best one, report the numbers, tick T1.4.
 - The DeepSeek key is in `.env` (since 2026-10-12), so real-model steps are not blocked by keys.
-- State: 449 tests pass (2026-10-18, after one household per browser). Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
+- State: 449 tests pass (2026-10-18, after T6.2 Copy list / Download .txt). Scenario suite: 14 scenarios (11 = scope, 12 = opening, added 2026-10-14; 13 = Shopping OK, 14 = bare kitchen and the Shopping OK button, added 2026-10-15), 14/14 on real models. The FastAPI app (`app/api.py`) serves all T3.1 routes, the proactive opening (T4.1) and the chat page (`app/static/index.html`, T3.2).
 
 ## Current model settings
 
@@ -94,6 +94,25 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-18 — T6.2 Share shopping list (done early, the human's request)
+
+- Why: the human wants the shopping list to leave the app. Options and effort (copy, WhatsApp, SMS/email, share sheet, .txt, QR, link, Todoist, WeChat) were written up for the team lead in a proposal outside the repo; the human chose copy + download now.
+- Built: `app/static/index.html` only. Under the shopping-list block (in the chat and in the recipe window), when there is something to buy or check: **📋 Copy list** (shows "✓ Copied" for 2 s, or "Couldn't copy") and **⬇️ Download .txt** (`shopping-list-<dish>.txt`). Text: `Shopping list: <dish>`, then "To buy:" and "Check your pantry first:", one `- item (amount)` per line; substitutions are left out (nothing to buy). Functions `shopText`, `shopActions`, `copyText`, `downloadText`.
+- Deviation from the plan: T6.2 asked for Copy list only and was a P6 stretch; done now, plus the download.
+- Next task must know: `navigator.clipboard` exists only on HTTPS and localhost. Over the home network's `http://<IP>:8000` the copy uses the old `execCommand("copy")` on a hidden text field. Both paths were checked.
+- Not covered: in Shopping OK with several cards there is no combined block, so no buttons under the chat message; each card's recipe window has its own list and buttons.
+- Checked in headless Edge 390x844 with a rendered Mode B reply (ricotta to buy, pasta to check): on `localhost` the clipboard got the list; on `http://192.168.0.100:8765` (not a secure context) the fallback copied the same text; the label went "✓ Copied" and back; the download saved `shopping-list-lasagna.txt` with the same text. No page errors. No JS tests (the page has none); `uv run pytest -q` 449 passed.
+
+**How to verify**
+```
+uv run pytest -q
+```
+Expected: `449 passed`.
+```
+uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
+```
+Manual check: open `http://localhost:8000` (and on the phone `http://<computer IP>:8000`), ask "I want to make lasagna". Under "To buy" / "Check your pantry first" tap **📋 Copy list**: the button reads "✓ Copied"; paste in a chat or notes app and the list appears, one item per line. Tap **⬇️ Download .txt**: a file `shopping-list-<dish>.txt` with the same text is saved. Open the recipe: the same two buttons sit under its list.
 
 ### 2026-10-18 — One household per browser (the human's request, for a public link)
 

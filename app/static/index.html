@@ -96,6 +96,9 @@
   .shop ul { margin: 0; padding-left: 18px; }
   .shop .check { color: var(--muted); }
   .shop .empty { color: var(--accent); }
+  .shop .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .shop .actions button { border: 1px solid #cfe3d6; background: var(--surface); color: var(--accent);
+                          border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
 
   details.trace { margin-top: 6px; font-size: 12px; color: var(--muted); }
   details.trace summary { cursor: pointer; list-style: none; }
@@ -735,7 +738,58 @@ function renderShop(reply) {
       el("ul", { class: "check" }, check.map((x) => shopLine(x, amountFor(x, meals)))));
   }
   if (!buy.length && !check.length) box.append(el("div", { class: "empty" }, "✓ Nothing to buy: you have everything."));
+  else box.append(shopActions(reply));
   return box;
+}
+
+// T6.2: the list as plain text, one item per line, to copy or save as a .txt file.
+function shopText(reply) {
+  const meals = reply.meals || [];
+  const item = (x) => { const a = amountFor(x, meals); return `- ${x}${a ? ` (${a})` : ""}`; };
+  const lines = [`Shopping list${meals.length ? `: ${meals.map((m) => m.name).join(", ")}` : ""}`];
+  if ((reply.shopping_list || []).length) lines.push("", "To buy:", ...reply.shopping_list.map(item));
+  if ((reply.check_first || []).length) lines.push("", "Check your pantry first:", ...reply.check_first.map(item));
+  return lines.join("\n") + "\n";
+}
+
+function shopActions(reply) {
+  const copy = el("button", { type: "button", onclick: async () => {
+    const ok = await copyText(shopText(reply));
+    copy.textContent = ok ? "✓ Copied" : "Couldn't copy";
+    setTimeout(() => { copy.textContent = "📋 Copy list"; }, 2000);
+  } }, "📋 Copy list");
+  const save = el("button", { type: "button", onclick: () => {
+    const meals = reply.meals || [];
+    const slug = meals.length ? meals[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
+    downloadText(shopText(reply), `shopping-list${slug ? "-" + slug : ""}.txt`);
+  } }, "⬇️ Download .txt");
+  return el("div", { class: "actions" }, copy, save);
+}
+
+// The clipboard API exists only on HTTPS (and localhost); on the home network's plain http the old
+// execCommand("copy") on a hidden text field still works.
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back */ }
+  }
+  const area = el("textarea", { readonly: true, style: "position:fixed;top:0;left:0;opacity:0" });
+  area.value = text;
+  document.body.append(area);
+  area.select();
+  area.setSelectionRange(0, text.length);  // iOS ignores select() alone
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  area.remove();
+  return ok;
+}
+
+function downloadText(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const link = el("a", { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Collapsed: one sentence from the steps' plain labels ("3 steps · updated the inventory (removed egg) →

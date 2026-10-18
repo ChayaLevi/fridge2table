@@ -240,7 +240,7 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 - Fix the top issues from T5.3 first. Rerun `eval/run_scenarios.py` after each fix.
 - Only if the decision point passed:
   - **T6.1 "We cooked it":** a button on each meal card ("We cooked this") and a chat intent. Lowers each used non-staple ingredient one level (`plenty → some → low → removed`) via `update_inventory`. Add a scenario.
-  - **T6.2 Share shopping list:** a "Copy list" button on the shopping-list block (plain text, one item per line).
+  - **T6.2 Share shopping list:** a "Copy list" button on the shopping-list block (plain text, one item per line). Done early on 2026-10-18 at the human's request, with a "Download .txt" button next to it.
 - **Done when:** issues fixed or consciously deferred; scenarios ≥ 9/10 pass.
 
 ## P7 — Freeze (Thu Oct 22) 🧑
