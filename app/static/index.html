@@ -177,7 +177,6 @@
   /* the shopping list: a card with a cart title, checkboxes, a picture of each item, round action buttons */
   .shop { container-type: inline-size; background: #FFFEFA; border-radius: 28px; padding: 16px 18px 18px;
           box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
-  .sheet .shop { box-shadow: none; border: 1px solid var(--line); }
   .shop-head { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #EFE7DA; }
   .shop-head .cart { color: var(--teal); }
   .shop-head .cart svg { width: 32px; height: 32px; display: block; }
@@ -192,7 +191,7 @@
   .shop li::before { content: ""; position: absolute; left: 4px; top: 14px; width: 6px; height: 6px; border-radius: 50%; background: var(--carrot); }
   .shop li.item-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 5px 0; }
   .shop li.item-line::before { display: none; }
-  .shop .cbox { flex: none; width: 26px; height: 26px; border-radius: 8px; border: 2px solid #D3CABC; background: #fff;
+  .shop .cbox { flex: none; padding: 0; width: 26px; height: 26px; border-radius: 8px; border: 2px solid #D3CABC; background: #fff;
                 display: grid; place-items: center; cursor: pointer; }
   .shop .cbox.on { background: var(--teal); border-color: var(--teal); color: #fff; cursor: default; }
   .shop .cbox svg { width: 17px; height: 17px; display: block; }
@@ -393,63 +392,94 @@
                  background-attachment: local, local, scroll, scroll; }
   .sheet .meta { color: var(--muted); margin-bottom: 8px; }
   /* The recipe window: the photo with the title on it, coloured pills, ingredients and steps on tinted panels. */
-  #sheet { overflow: hidden; }
-  #sheet .float { position: absolute; right: 28px; top: 26px; z-index: 2; border: 0; background: rgba(255,253,249,.95);
-                  box-shadow: 0 2px 8px rgba(0,0,0,.22); font-weight: 700; }
-  #sheet .body { padding-top: 14px; }
-  #sheet .cover { position: relative; height: 220px; border-radius: 20px; overflow: hidden; box-shadow: var(--paper-2); }
-  #sheet .cover.nophoto { height: 120px; }
+  /* The recipe (mockup): a full page on the paper background; the photo with the title and Close on it,
+     coloured pills, a big "I made it", then white cards for the shopping list, ingredients and steps. */
+  #sheet { left: 0; top: 0; right: 0; bottom: 0; transform: none; width: 100%; max-height: none; border-radius: 0;
+           box-shadow: none; overflow: hidden; background-color: #FDF8EC;
+           background-image: url("/static/leaf-tl.png"), url("/static/leaf-r.png"), url("/static/leaf-br.png");
+           background-position: left top 4px, right top 14%, right bottom;
+           background-size: clamp(56px, 7vw, 110px) auto, clamp(40px, 5vw, 78px) auto, clamp(66px, 8vw, 128px) auto;
+           background-repeat: no-repeat; }
+  #sheet .body { flex: 1; background: none;
+                 padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px)); }
+  #sheet .body > * { max-width: 600px; margin-left: auto; margin-right: auto; }
+  #sheet .float { position: absolute; z-index: 2; top: calc(28px + env(safe-area-inset-top, 0px));
+                  right: calc((100% - min(600px, 100% - 32px)) / 2 + 12px);
+                  border: 0; background: #FFFDF8; color: #0E5F58; font-size: 16px; font-weight: 700; padding: 9px 18px;
+                  box-shadow: 0 2px 10px rgba(0,0,0,.22); }
+  #sheet .float::before { content: "×"; font-size: 20px; line-height: 1; margin-right: 2px; }
+  #sheet .cover { position: relative; height: 210px; border-radius: 26px; overflow: hidden; box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
+  #sheet .cover.nophoto { height: 130px; }
   #sheet .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  #sheet .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 35%, rgba(10,40,36,.7)); }
-  #sheet .cover h2 { position: absolute; left: 18px; right: 18px; bottom: 14px; margin: 0; z-index: 1; color: #fff;
-                    font-size: 24px; font-weight: 800; line-height: 1.2; text-shadow: 0 1px 4px rgba(0,0,0,.4); }
-  #sheet .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
-  #sheet .pill { padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; }
-  #sheet .p-time { background: #FEEBD6; color: #A6510C; }
-  #sheet .p-serve { background: #FDF3CC; color: #7A5E00; }
-  #sheet .p-have { background: var(--accent-soft); color: var(--teal-dark); }
-  #sheet .panel { margin-top: 16px; border-radius: 18px; padding: 14px 14px 10px; box-shadow: 0 1px 0 rgba(110,80,40,.05); }
-  .madebar { margin-top: 14px; }
-  .madebar .madebtn { width: 100%; height: 48px; border: 0; border-radius: 16px; color: #fff;
-                      background: linear-gradient(160deg, #14897F, var(--teal) 55%, var(--teal-dark));
-                      font-family: var(--head); font-size: 16px; font-weight: 800;
-                      box-shadow: 0 2px 0 rgba(8,60,55,.35), 0 5px 14px rgba(15,118,110,.28); }
+  #sheet .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 40%, rgba(10,30,28,.72)); }
+  #sheet .cover h2 { position: absolute; left: 20px; right: 20px; bottom: 16px; margin: 0; z-index: 1; color: #fff;
+                     font-size: 26px; font-weight: 800; line-height: 1.15; text-shadow: 0 1px 6px rgba(0,0,0,.45); }
+  #sheet .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  #sheet .pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+                 font-size: 14px; font-weight: 700; }
+  #sheet .pill svg { width: 16px; height: 16px; display: block; }
+  #sheet .p-time { background: #FDE9D9; color: #7A3410; }
+  #sheet .p-serve { background: #FCF0C9; color: #5C4A00; }
+  #sheet .p-have { background: #E1F1E9; color: #0E5F58; }
+  .madebar { margin-top: 16px; }
+  .madebar .madebtn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 58px;
+                      border: 0; border-radius: 18px; color: #fff; background: #0E7A70;
+                      font-family: var(--head); font-size: 18px; font-weight: 700;
+                      box-shadow: 0 2px 0 rgba(8,60,55,.3), 0 6px 16px rgba(15,118,110,.25); }
+  .madebar .madebtn svg { width: 22px; height: 22px; display: block; }
   .madebar .madebtn:disabled { opacity: .6; }
-  .madebar .madeline { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 10px 13px;
-                       background: var(--accent-soft); border-radius: 14px; font-size: 13px; }
+  .madebar .madeline { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 12px 14px;
+                       background: #E1F1E9; border-radius: 16px; font-size: 14px; }
   .madebar .madeline span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .madebar .madeline button { flex: none; border: 1px solid var(--accent-line); background: var(--surface); color: var(--teal);
-                              border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
-  #sheet .panel h3 { margin: 0 0 6px; font-size: 16px; font-weight: 800; display: flex; align-items: baseline; gap: 6px; }
-  #sheet .panel h3 .n { margin-left: auto; font-family: var(--body); font-size: 12px; font-weight: 600; color: var(--muted); }
-  #sheet .ingredients { background: #EEF6F1; }
-  #sheet .ingredients h3 { color: var(--teal-dark); }
+  .madebar .madeline button { flex: none; border: 1px solid var(--accent-line); background: #fff; color: var(--teal);
+                              border-radius: 999px; padding: 5px 13px; font-size: 13px; font-weight: 600; }
+  /* the shopping list here: the same card, the boxes tick items (no Bought pills, no count) */
+  #sheet .shop { margin-top: 18px; border: 0; border-radius: 26px; padding: 18px 18px 18px; box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
+  #sheet .shop-head { border-bottom: 0; padding-bottom: 0; margin-bottom: 12px; }
+  #sheet .shop-title { font-size: 22px; color: #0E5F58; }
+  #sheet .shop-count, #sheet .shop li .boughtbtn { display: none; }
+  #sheet .shop ul { padding: 0; margin: 0; }
+  #sheet .shop li { margin: 0; }
+  #sheet .shop h3 { margin: 12px 0 4px; font-size: 14px; }
+  #sheet .shop-head + h3 { margin-top: 0; }
+  #sheet .shop ul + h3 { border-top: 0; padding-top: 6px; }
+  #sheet .shop li .what { font-size: 16.5px; }
+  #sheet .shop li .need { font-size: 14px; }
+  #sheet .panel { position: relative; margin-top: 18px; background: #FFFEFA; border-radius: 26px; padding: 18px 18px 6px;
+                  box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
+  #sheet .panel h3 { margin: 0 0 6px; font-size: 22px; font-weight: 800; color: #0E5F58; display: flex; align-items: baseline; gap: 8px; }
+  #sheet .panel h3 .n { margin-left: auto; font-family: var(--body); font-size: 14px; font-weight: 400; color: #6B7571; }
+  /* a paper leaf on the ingredients card's corner */
+  #sheet .ingredients::before { content: ""; position: absolute; right: 22px; top: -26px; width: 30px; height: 48px; pointer-events: none;
+                                background: url("/static/leaf-r.png") center / contain no-repeat; transform: rotate(14deg); }
   #sheet .ingredients ul { list-style: none; margin: 0; padding: 0; }
-  #sheet .ingredients li { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 0;
-                           border-top: 1px solid rgba(15,118,110,.12); }
+  #sheet .ingredients li { display: flex; align-items: center; gap: 10px; margin: 0; padding: 13px 0; border-top: 1px solid #EFE7DA; }
   #sheet .ingredients li:first-child { border-top: 0; }
-  #sheet .ingredients li.tobuy { background: var(--warn-soft); margin: 0 -14px; padding: 8px 14px; }
   #sheet .ingredients .what { flex: 1; min-width: 0; }
-  #sheet .ingredients .nm { font-weight: 700; }
-  #sheet .ingredients .amt { color: var(--text); }
+  #sheet .ingredients .nm { font-size: 16.5px; font-weight: 700; color: #1D2B28; }
+  #sheet .ingredients .amt { font-size: 14px; color: #6B7571; }
   #sheet .ingredients .optnote { color: var(--muted); font-size: 12px; }
-  #sheet .tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
-  #sheet .t-have { background: #D3EBDF; color: var(--teal-dark); }
-  #sheet .t-sub { background: #D3EBDF; color: var(--teal-dark); white-space: normal; text-align: right; }
-  #sheet .t-buy { background: #FEDDC2; color: var(--warn); }
-  #sheet .t-check { background: #FDF3CC; color: #7A5E00; }
-  #sheet .t-none { background: #EFEBE4; color: var(--muted); }
-  #sheet .steps { background: #FEF8EC; }
-  #sheet .steps h3 { color: #8A4B0B; }
+  #sheet .tag { font-size: 13px; font-weight: 700; padding: 5px 12px; border-radius: 999px; white-space: nowrap; }
+  #sheet .t-have { background: #E1F1E9; color: #0E5F58; }
+  #sheet .t-sub { background: #E1F1E9; color: #0E5F58; white-space: normal; text-align: right; }
+  #sheet .t-buy { background: #FDE5D8; color: #C2410C; }
+  #sheet .t-check { background: #FCF0C9; color: #7A5E00; }
+  #sheet .t-none { background: #EFEBE4; color: #6B7571; }
   #sheet .steps ol { list-style: none; margin: 0; padding: 0; }
-  #sheet .steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; margin: 0; padding: 7px 0; }
-  #sheet .steps .num { width: 30px; height: 30px; border-radius: 50%; background: var(--carrot); color: #fff; font-weight: 800;
-                       font-family: var(--head); display: grid; place-items: center; font-size: 14px;
-                       box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 2px 5px rgba(60,45,25,.15); }
-  #sheet .steps li:nth-child(3n+2) .num { background: var(--tomato); }
-  #sheet .steps li:nth-child(3n) .num { background: var(--teal); }
-  #sheet .steps .txt { align-self: center; }
-  #sheet .steps b { color: #8A4B0B; }
+  #sheet .steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; margin: 0; padding: 14px 0;
+                     border-top: 1px solid #EFE7DA; }
+  #sheet .steps li:first-child { border-top: 0; }
+  #sheet .steps .num { width: 34px; height: 34px; border-radius: 50%; background: #0E7A70; color: #fff; font-weight: 800;
+                       font-family: var(--head); display: grid; place-items: center; font-size: 15px; }
+  #sheet .steps li:nth-child(even) .num { background: #F28C38; }
+  #sheet .steps .txt { align-self: center; font-size: 16px; line-height: 1.45; color: #1D2B28; }
+  #sheet .steps b { font-weight: inherit; color: inherit; }
+  @media (max-width: 480px) {
+    #sheet .cover { height: 190px; }
+    #sheet .cover h2 { font-size: 24px; }
+    #sheet .pill { font-size: 13px; padding: 7px 12px; }
+    #sheet .panel, #sheet .shop { padding-left: 16px; padding-right: 16px; }
+  }
   .sheet h3 { font-size: 14px; margin: 14px 0 6px; }
   .sheet ul, .sheet ol { margin: 0; padding-left: 20px; }
   .sheet li { margin: 3px 0; }
@@ -719,6 +749,7 @@ const ICON = {
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"/></svg>',
   cart: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 10h16.5l-2.6 9.2H12.9z" fill="currentColor" fill-opacity=".16" stroke="none"/><path d="M3 5h4l3.4 15.5h14.4L28 10H9"/><circle cx="13" cy="26" r="2"/><circle cx="23" cy="26" r="2"/><path d="M15.5 13.5v3M19.5 13.5v3"/></svg>',
+  person: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7.6" r="3.9"/><path d="M5 20.5c0-4.2 3.1-7.2 7-7.2s7 3 7 7.2z"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4.5" stroke-linecap="round"/></svg>',
   truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5h11v10h-11zM13.5 9.5h4l3.5 3.5v3.5h-7.5"/><circle cx="6.5" cy="17.5" r="1.8" fill="#FFFDF8"/><circle cx="17" cy="17.5" r="1.8" fill="#FFFDF8"/></svg>',
@@ -1155,9 +1186,13 @@ async function buyAll(names, reply) {
 
 // A To buy / Check first line: the name, "need …", and a Bought button; once bought: ✓, greyed, and the
 // amount now in the inventory if the user picked one. The size question opens right under it.
-function boughtLine(name, reply) {
+function boughtLine(name, reply, inSheet = false) {
   const bought = boughtOf(reply);
-  const [text, note] = shopItem(name, reply);
+  let [text, note] = shopItem(name, reply);
+  if (inSheet) {
+    text = cap(text);
+    if (note.startsWith("need ")) note = note.slice(5);
+  }
   if (bought.includes(name)) {
     const item = itemsByName().get(name);
     const line = el("li", { class: "item-line bought" },
@@ -1173,9 +1208,9 @@ function boughtLine(name, reply) {
         el("button", { class: "skip", type: "button", onclick: () => { bought.ask = null; redrawShops(); } }, "Skip"))));
     return line;
   }
-  // The box ticks it like the Bought button (which is the one for the keyboard and screen readers).
+  // The box ticks it, like the Bought button.
   return el("li", { class: "item-line" },
-    el("span", { class: "cbox", "aria-hidden": "true", onclick: () => buyOne(name, reply) }),
+    el("button", { class: "cbox", type: "button", "aria-label": `Bought ${text}`, onclick: () => buyOne(name, reply) }),
     el("span", { class: "lt" }, el("span", { class: "what" }, text),
       note ? el("span", { class: "need" }, ` · ${note}`) : null,
       el("button", { class: "boughtbtn", type: "button", "aria-label": `Bought ${text}`,
@@ -1235,7 +1270,7 @@ function shopLine(text, amount) {
   return el("li", {}, text, amount ? el("span", { class: "amount" }, ` · ${amount}`) : null);
 }
 
-function renderShop(reply) {
+function renderShop(reply, inSheet = false) {
   const box = el("div", { class: "shop" });
   const subs = reply.substitutions || [];
   const buy = reply.shopping_list || [];
@@ -1248,14 +1283,14 @@ function renderShop(reply) {
     box.append(el("h3", {}, "Use instead"), el("ul", {}, subs.map((s) =>
       shopLine(`${displayName(s.use_instead)} instead of ${s.missing}`, amountFor(s.missing, meals)))));
   }
-  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => boughtLine(x, reply))));
+  if (buy.length) box.append(el("h3", {}, "To buy"), el("ul", {}, buy.map((x) => boughtLine(x, reply, inSheet))));
   if (check.length) {
     box.append(el("h3", {}, "Check your pantry first"),
-      el("ul", { class: "check" }, check.map((x) => boughtLine(x, reply))));
+      el("ul", { class: "check" }, check.map((x) => boughtLine(x, reply, inSheet))));
   }
   if (!buy.length && !check.length) box.append(el("div", { class: "empty" }, "✓ Nothing to buy: you have everything."));
   else box.append(shopActions(reply));
-  box._redraw = () => renderShop(reply);
+  box._redraw = () => renderShop(reply, inSheet);
   return box;
 }
 
@@ -1340,12 +1375,12 @@ function ingredientStatus(ing, reply) {
   const low = (x) => String(x).toLowerCase();
   const sub = (reply.substitutions || []).find((s) => low(s.missing) === low(ing.name));
   const short = !boughtOf(reply).includes(ing.name) && shortFor(ing.name, reply);
-  if (short) return ["buy", `🛒 have ${short.have}, need ${short.need}`];
-  if (itemsByName().has(ing.name)) return ["have", "✓ have"];
-  if (sub) return ["sub", `use your ${displayName(sub.use_instead)}`];
-  if ((reply.shopping_list || []).some((x) => low(x) === low(ing.name))) return ["buy", "🛒 to buy"];
-  if ((reply.check_first || []).some((x) => low(x) === low(ing.name))) return ["check", "check pantry"];
-  return ["none", ing.essential ? "not at home" : "optional"];
+  if (short) return ["buy", `Have ${short.have}, need ${short.need}`];
+  if (itemsByName().has(ing.name)) return ["have", "✓ Have"];
+  if (sub) return ["sub", `Use your ${displayName(sub.use_instead)}`];
+  if ((reply.shopping_list || []).some((x) => low(x) === low(ing.name))) return ["buy", "To buy"];
+  if ((reply.check_first || []).some((x) => low(x) === low(ing.name))) return ["check", "Check pantry"];
+  return ["none", ing.essential ? "Not at home" : "Optional"];
 }
 
 function ingredientRow(ing, reply) {
@@ -1385,7 +1420,7 @@ function stepList(steps, ingredients) {
 // instead of what they replace). One line says what changed, with Undo (restores the touched items).
 function madeBar(meal, reply) {
   const line = el("div", { class: "madeline", hidden: true });
-  const btn = el("button", { class: "madebtn", type: "button" }, "🍳 I made it");
+  const btn = el("button", { class: "madebtn", type: "button" }, icon(ICON.check, "mi"), "I made it");
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     try {
@@ -1436,13 +1471,13 @@ async function openRecipe(meal, data) {
   body.replaceChildren(...[
     cover,
     el("div", { class: "pills" },
-      el("span", { class: "pill p-time" }, `⏱ ${meal.time_minutes} min`),
-      el("span", { class: "pill p-serve" }, `👥 serves ${meal.servings}`),
+      el("span", { class: "pill p-time" }, icon(ICON.clock, "pi"), `${meal.time_minutes} min`),
+      el("span", { class: "pill p-serve" }, icon(ICON.person, "pi"), `Serves ${meal.servings}`),
       el("span", { class: "pill p-have" }, `✓ ${have} of ${ings.length} at home`)),
     madeBar(meal, reply),
-    modeB ? renderShop(reply) : null,
+    modeB ? renderShop(reply, true) : null,
     el("div", { class: "panel ingredients" },
-      el("h3", {}, "🧺 Ingredients", el("span", { class: "n" }, `${ings.length} item${ings.length === 1 ? "" : "s"}`)),
+      el("h3", {}, "🥣 Ingredients", el("span", { class: "n" }, `${ings.length} item${ings.length === 1 ? "" : "s"}`)),
       el("ul", {}, ings.map((i) => ingredientRow(i, reply)))),
     el("div", { class: "panel steps" }, el("h3", {}, "👩‍🍳 Steps"), steps),
   ].filter(Boolean));
