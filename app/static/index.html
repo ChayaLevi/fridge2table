@@ -31,7 +31,11 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; background: #FBF5EA url("/static/app-bg.jpg") center / cover no-repeat; color: var(--text);
+  body { margin: 0; color: var(--text); background-color: #FDF8EC;
+         background-image: url("/static/leaf-tl.png"), url("/static/leaf-r.png"), url("/static/leaf-br.png");
+         background-position: left top 4px, right top 14%, right bottom;
+         background-size: clamp(56px, 7vw, 110px) auto, clamp(40px, 5vw, 78px) auto, clamp(66px, 8vw, 128px) auto;
+         background-repeat: no-repeat;
          font: 15px/1.45 var(--body); -webkit-font-smoothing: antialiased; }
   h1, h2, h3 { font-family: var(--head); }
   button { font: inherit; color: inherit; cursor: pointer; }
@@ -46,7 +50,8 @@
                   box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 6px 22px rgba(60,45,25,.10); }
   header h1 { font-size: 23px; font-weight: 800; letter-spacing: -.015em; color: #174A4A; margin: 0; flex: 1;
               white-space: nowrap; display: flex; align-items: center; gap: 8px; min-width: 0; }
-  header h1 .logo { width: 40px; height: 40px; flex: none; display: block; }
+  header h1 .logo { width: 42px; height: 42px; flex: none; display: block; border-radius: 11px;
+                    box-shadow: 0 1px 0 rgba(110,80,40,.08), 0 2px 8px rgba(60,45,25,.16); }
   header h1 .name { overflow: hidden; text-overflow: ellipsis; }
   .hbtn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #EEE6D9; background: #FFFDF8; border-radius: 999px;
           padding: 9px 17px; color: #174A4A; font-weight: 600; font-size: 15.5px; white-space: nowrap;
@@ -65,9 +70,6 @@
          display: flex; align-items: center; gap: 10px; color: #fff;
          background: linear-gradient(160deg, #14897F, var(--teal) 50%, #0B5C55);
          box-shadow: 0 2px 0 rgba(8,60,55,.35), 0 10px 24px rgba(15,118,110,.35), inset 0 1px 0 rgba(255,255,255,.2); }
-  /* a paper leaf resting on the button */
-  .fab::before { content: ""; position: absolute; right: -4px; top: -44px; width: 56px; height: 54px; pointer-events: none;
-                 background: url("/static/leaf.png") center / contain no-repeat; transform: scaleX(-1) rotate(-18deg); }
   .fab:active { transform: scale(.96); }
   .fab-icon { font-size: 28px; line-height: 1; }
   .fab-label { font-family: var(--head); font-size: 18px; font-weight: 700; letter-spacing: .1px; }
@@ -288,7 +290,7 @@
   @media (max-width: 480px) {
     .app > header { margin-left: 8px; margin-right: 8px; padding: 6px 6px 6px 10px; gap: 6px; }
     header h1 { font-size: 18px; gap: 6px; }
-    header h1 .logo { width: 32px; height: 32px; }
+    header h1 .logo { width: 36px; height: 36px; border-radius: 9px; }
     .hbtn { padding: 7px 11px; font-size: 14px; gap: 5px; }
     .hbtn svg { width: 18px; height: 18px; }
     #newChat { padding: 8px 13px; font-size: 14px; }
@@ -319,7 +321,7 @@
   }
   @media (max-width: 420px) {
     header h1 { font-size: 16px; }
-    header h1 .logo { width: 28px; height: 28px; }
+    header h1 .logo { width: 32px; height: 32px; border-radius: 8px; }
     .hbtn { padding: 6px 9px; font-size: 13px; gap: 4px; }
     .hbtn svg { width: 16px; height: 16px; }
     #newChat { padding: 7px 11px; font-size: 13px; }
@@ -349,12 +351,17 @@
   .shop .amount { color: var(--text); font-size: 13px; }
   .sheet .chats { list-style: none; margin: 0; padding: 0; }
   .hbtn { white-space: nowrap; }
+  #history .head { align-items: center; padding: 16px 16px 12px 20px; }
+  #history .body { padding: 12px 14px 16px; }
+  .sheet .chats { display: flex; flex-direction: column; gap: 8px; }
   .chats li { margin: 0; }
-  .chat-row { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none;
-              padding: 12px 6px; display: block; border-radius: 0; }
+  .chat-row { width: 100%; text-align: left; border: 1px solid #F0E8DB; background: #FBF7F0; border-radius: 18px;
+              padding: 12px 16px; display: block; box-shadow: 0 1px 0 rgba(110,80,40,.04); }
+  .chat-row:hover { background: #F6F0E6; }
   .chat-row:active { background: var(--accent-soft); }
-  .chat-row .title { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chat-row .when { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .chat-row .title { display: block; font-size: 15.5px; font-weight: 600; color: #173F45; overflow: hidden;
+                     text-overflow: ellipsis; white-space: nowrap; }
+  .chat-row .when { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; }
   .chat-row .here { color: var(--teal); font-weight: 600; }
   .restart { margin: 20px 0 6px; text-align: center; }
   .restart .startbtn { width: 100%; height: 46px; border: 1px dashed #F1B9B2; border-radius: 16px; background: transparent;
@@ -372,7 +379,7 @@
      bottom edges appear when there is more to scroll (background-attachment: local). */
   .sheet { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 11;
            width: min(560px, calc(100vw - 24px)); max-height: min(85dvh, 800px); background: var(--surface);
-           border-radius: 26px; display: flex; flex-direction: column; box-shadow: var(--paper-3); }
+           border-radius: 26px; display: flex; flex-direction: column; box-shadow: var(--paper-3); overflow: hidden; }
   .sheet .grip { display: none; }
   .sheet .head { display: flex; align-items: flex-start; gap: 8px; padding: 16px 18px 8px;
                  border-bottom: 1px solid var(--line); }
@@ -621,7 +628,7 @@
 <body>
 <div class="app">
   <header>
-    <h1><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M19 38c0-9-.5-17-4.5-25" stroke="#2E7D4F" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M18 28C9 28 3 22 2 12.5c9 0 15 6 16 15.5z" fill="#4CAF50"/><path d="M16.5 17.5c-3.4-5-2.4-12 3.6-16.5 3.2 6.2 2 12.4-3.6 16.5z" fill="#2E8B57"/><path d="M20 30c1-9.5 7.5-15.5 18-16.5-1 9.5-7.5 15.5-18 16.5z" fill="#3E9B5F"/><path d="M17.5 27.5C12 23 7 18 2.5 13M16.6 17.2c.8-5 1.8-10.6 3.4-15.6M20.2 29.6c5-5 11-11.4 17.4-15.8" stroke="#fff" stroke-opacity=".35" stroke-width="1" fill="none"/></svg><span class="name">Fridge-to-Table</span></h1>
+    <h1><img class="logo" src="/static/icon-192.png" alt=""><span class="name">Fridge-to-Table</span></h1>
     <button class="hbtn" id="openHistory" type="button" title="Past chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.1 2"/></svg>History</button>
     <button class="hbtn" id="newChat" type="button">New chat</button>
   </header>
