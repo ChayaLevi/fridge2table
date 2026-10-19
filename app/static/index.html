@@ -31,7 +31,7 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--grain), var(--bg); color: var(--text);
+  body { margin: 0; background: #FBF5EA url("/static/app-bg.jpg") center / cover no-repeat; color: var(--text);
          font: 15px/1.45 var(--body); -webkit-font-smoothing: antialiased; }
   h1, h2, h3 { font-family: var(--head); }
   button { font: inherit; color: inherit; cursor: pointer; }
@@ -39,62 +39,85 @@
   [hidden] { display: none !important; }
 
   .app { display: flex; flex-direction: column; height: 100dvh; max-width: 720px; margin: 0 auto; }
-  header { display: flex; align-items: center; gap: 8px; padding: 8px 14px; position: relative; z-index: 2;
-           padding-top: calc(8px + env(safe-area-inset-top, 0px));
-           background: var(--grain), var(--surface); box-shadow: 0 1px 0 var(--line), 0 4px 14px rgba(60,45,25,.06); }
-  header h1 { font-size: 19px; font-weight: 800; letter-spacing: -.01em; color: var(--teal-dark); margin: 0; flex: 1;
-              white-space: nowrap; display: flex; align-items: center; gap: 10px; min-width: 0; }
-  header h1 .logo { width: 46px; height: 46px; border-radius: 13px; flex: none; display: block;
-                    box-shadow: 0 1px 0 rgba(110,80,40,.1), 0 3px 8px rgba(15,118,110,.25); }
-  .hbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 13px;
-          color: var(--teal-dark); font-weight: 600; font-size: 14px; box-shadow: 0 1px 0 rgba(110,80,40,.06); }
+  header { display: flex; align-items: center; gap: 8px; }
+  /* the page header: a floating paper pill */
+  .app > header { position: relative; z-index: 3; margin: calc(8px + env(safe-area-inset-top, 0px)) 12px 0; padding: 7px 8px 7px 14px;
+                  border-radius: 32px; background: rgba(255,253,248,.97);
+                  box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 6px 22px rgba(60,45,25,.10); }
+  header h1 { font-size: 23px; font-weight: 800; letter-spacing: -.015em; color: #174A4A; margin: 0; flex: 1;
+              white-space: nowrap; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  header h1 .logo { width: 40px; height: 40px; flex: none; display: block; }
+  header h1 .name { overflow: hidden; text-overflow: ellipsis; }
+  .hbtn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #EEE6D9; background: #FFFDF8; border-radius: 999px;
+          padding: 9px 17px; color: #174A4A; font-weight: 600; font-size: 15.5px; white-space: nowrap;
+          box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 2px 7px rgba(60,45,25,.07); }
+  .hbtn svg { width: 21px; height: 21px; display: block; }
   .hbtn:active { background: var(--accent-soft); }
-  #newChat { background: var(--teal); border-color: var(--teal); color: #fff; box-shadow: 0 2px 6px rgba(15,118,110,.28); }
+  #newChat { border-color: transparent; color: #fff; padding: 10px 20px; font-size: 16px;
+             background: linear-gradient(160deg, #138479, #0E6B63);
+             box-shadow: 0 2px 0 rgba(8,60,55,.3), 0 4px 12px rgba(15,118,110,.28); }
   .badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px;
            background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
 
   /* chat; .stage holds the scrolling messages and the floating inventory button */
   .stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
-  .fab { position: absolute; right: 16px; bottom: 16px; height: 60px; padding: 0 14px 0 16px; border: 0;
-         border-radius: 22px; display: flex; align-items: center; gap: 8px; color: #fff;
-         background: linear-gradient(160deg, #14897F, var(--teal) 55%, var(--teal-dark));
-         box-shadow: 0 2px 0 rgba(8,60,55,.35), 0 8px 22px rgba(15,118,110,.38), inset 0 1px 0 rgba(255,255,255,.2); }
+  .fab { position: absolute; right: 16px; bottom: 14px; height: 60px; padding: 0 9px 0 18px; border: 0; border-radius: 999px;
+         display: flex; align-items: center; gap: 10px; color: #fff;
+         background: linear-gradient(160deg, #14897F, var(--teal) 50%, #0B5C55);
+         box-shadow: 0 2px 0 rgba(8,60,55,.35), 0 10px 24px rgba(15,118,110,.35), inset 0 1px 0 rgba(255,255,255,.2); }
+  /* a paper leaf resting on the button */
+  .fab::before { content: ""; position: absolute; right: -4px; top: -44px; width: 56px; height: 54px; pointer-events: none;
+                 background: url("/static/leaf.png") center / contain no-repeat; transform: scaleX(-1) rotate(-18deg); }
   .fab:active { transform: scale(.96); }
-  .fab-icon { font-size: 26px; line-height: 1; }
-  .fab-label { font-family: var(--head); font-size: 17px; font-weight: 800; letter-spacing: .1px; }
-  .fab .badge { margin: 0; min-width: 28px; line-height: 28px; padding: 0 8px; font-size: 15px; font-weight: 800;
-                background: var(--lemon); color: #3D3200; }
+  .fab-icon { font-size: 28px; line-height: 1; }
+  .fab-label { font-family: var(--head); font-size: 18px; font-weight: 700; letter-spacing: .1px; }
+  .fab .badge { margin: 0; min-width: 42px; height: 42px; line-height: 42px; padding: 0 6px; border-radius: 999px;
+                font-size: 18px; font-weight: 800; background: var(--lemon); color: #2B2400;
+                box-shadow: inset 0 -2px 0 rgba(160,120,0,.15); }
   /* the count changed (photo recognised, item added or used up): the button bumps once so the eye goes there */
   .fab.bump { animation: bump .5s ease; }
   @keyframes bump { 30% { transform: scale(1.12); } 60% { transform: scale(.97); } }
   /* bottom padding: the last message must scroll clear of the floating button */
-  #messages { flex: 1; overflow-y: auto; padding: 18px 14px 100px; display: flex; flex-direction: column; gap: 16px; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px 16px 110px; display: flex; flex-direction: column; gap: 20px; }
   .msg { max-width: 92%; }
-  .msg.agent { display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 8px; max-width: 96%; }
-  /* the assistant: the brand's smiling teal chat bubble on a mint paper disc */
-  .msg.agent .avatar { width: 34px; height: 34px; border-radius: 50%; align-self: start; font-size: 0;
-                       background: var(--accent-soft) center / 24px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M12 4h8a9 9 0 0 1 0 18h-6l-6 5 1-6.2A9 9 0 0 1 12 4z' fill='%230F766E'/%3E%3Cpath d='M10.6 13.4q2-2.6 4 0M17.4 13.4q2-2.6 4 0' stroke='%23FDF8F1' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-                       box-shadow: 0 1px 0 rgba(110,80,40,.08), 0 2px 6px rgba(15,118,110,.15); }
-  .msg.agent .content { min-width: 0; }
-  .msg.user { align-self: flex-end; }
+  /* The agent: avatar and bubble on the first row; cards, lists and the trace below, across the width. */
+  .msg.agent { display: grid; grid-template-columns: 54px minmax(0, 1fr); column-gap: 12px; row-gap: 14px;
+               width: 100%; max-width: 100%; align-self: stretch; }
+  .msg.agent .avatar { grid-column: 1; grid-row: 1; align-self: center; width: 54px; height: 54px; border-radius: 50%; font-size: 0;
+                       background: #DCEFE8 center / 36px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='4' y='7' width='32' height='26' rx='11' fill='%230F766E'/%3E%3Cpath d='M11.5 19.5q2.6-3.4 5.2 0M23.3 19.5q2.6-3.4 5.2 0' stroke='%23FDF8F1' stroke-width='2.3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M17.4 23.6q2.6 2.2 5.2 0' stroke='%23FDF8F1' stroke-width='2.1' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+                       box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 4px 12px rgba(15,118,110,.16); }
+  .msg.agent .content { display: contents; }
+  .msg.agent .content > * { grid-column: 1 / -1; margin-left: 14px; margin-top: 0; }
+  .msg.agent .content > .bubble { grid-column: 2; grid-row: 1; margin-left: 0; justify-self: start; align-self: center; }
+  .msg.agent .content > .questions { grid-column: 2; margin-left: 0; }
+  .msg.user { align-self: flex-end; display: grid; grid-template-columns: minmax(0, 1fr) 46px; column-gap: 10px; align-items: center; }
+  .msg.user .content { min-width: 0; display: flex; flex-direction: column; align-items: flex-end; }
+  .uavatar { width: 46px; height: 46px; border-radius: 50%; background: #DCEFE8 center / 26px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230F766E'%3E%3Ccircle cx='12' cy='8.2' r='4.2'/%3E%3Cpath d='M4.2 20.5a7.8 7.8 0 0 1 15.6 0z'/%3E%3C/svg%3E");
+             box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 3px 10px rgba(15,118,110,.14); }
   .msg.agent, .msg.system { align-self: flex-start; }
-  .bubble { padding: 10px 14px; border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .user .bubble { background: linear-gradient(160deg, #14897F, var(--teal)); color: var(--user-text);
-                  border-bottom-right-radius: 6px; box-shadow: 0 1px 0 rgba(8,60,55,.25), 0 4px 12px rgba(15,118,110,.2); }
-  .agent .bubble { background: var(--surface); border-top-left-radius: 6px; box-shadow: var(--paper-1); }
+  .bubble { position: relative; padding: 12px 18px; border-radius: 24px; white-space: pre-wrap; overflow-wrap: anywhere;
+            font-size: 16px; line-height: 1.45; }
+  .user .bubble { background: linear-gradient(160deg, #138479, #0E6B63); color: #fff; border-bottom-right-radius: 6px;
+                  box-shadow: 0 2px 0 rgba(8,60,55,.2), 0 6px 14px rgba(15,118,110,.22); }
+  .user .bubble::after { content: ""; position: absolute; right: -9px; bottom: 0; width: 16px; height: 14px; background: #0E6B63;
+                         clip-path: polygon(0 0, 100% 100%, 0 100%); }
+  .agent .bubble { background: #FFFEFA; color: var(--text);
+                   box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 4px 14px rgba(60,45,25,.08); }
+  .agent .bubble::before { content: ""; position: absolute; left: -10px; top: 50%; width: 14px; height: 14px; background: #FFFEFA;
+                           clip-path: polygon(100% 0, 100% 100%, 0 70%); }
   .system .bubble { background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-line); }
   .user .photos { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 6px; flex-wrap: wrap; }
   .user .photos figure { margin: 0; position: relative; }
-  .user .photos img { width: 64px; height: 64px; object-fit: cover; border-radius: 12px; display: block;
-                      border: 2px solid var(--surface); box-shadow: var(--paper-1); }
+  .user .photos img { width: 68px; height: 68px; object-fit: cover; border-radius: 14px; display: block;
+                      border: 2px solid #FFFEFA; box-shadow: var(--paper-1); }
   .user .photos figcaption { position: absolute; left: 4px; bottom: 4px; font-size: 10px; font-weight: 600; padding: 0 5px;
                              background: rgba(11,92,85,.85); color: #fff; border-radius: 6px; }
 
-  .questions { margin: 8px 0 0; padding-left: 20px; color: var(--text); }
+  .questions { margin: 0; padding-left: 20px; color: var(--text); }
   .questions li::marker { color: var(--carrot); }
   /* the empty-kitchen welcome: a paper card with two soft cut-out shapes behind its content */
-  .hero { position: relative; overflow: hidden; isolation: isolate; text-align: center; padding: 26px 20px 20px;
-          background: var(--grain), var(--surface); border-radius: 26px; box-shadow: var(--paper-2); }
+  .hero { position: relative; overflow: hidden; isolation: isolate; text-align: center; padding: 26px 20px 20px; flex: none;
+          background: #FFFEFA; border-radius: 28px; box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
   .hero::before, .hero::after { content: ""; position: absolute; z-index: -1; border-radius: 50%; }
   .hero::before { width: 220px; height: 160px; right: -70px; top: -60px; background: var(--accent-soft);
                   box-shadow: 0 2px 0 rgba(15,118,110,.06), 0 6px 14px rgba(15,118,110,.08); transform: rotate(-12deg); }
@@ -104,79 +127,101 @@
                font-size: 42px; background: var(--accent-soft); overflow: hidden;
                box-shadow: 0 2px 0 rgba(110,80,40,.08), 0 10px 24px rgba(15,118,110,.25); }
   .hero .big img { width: 100%; height: 100%; display: block; }
-  .hero h2 { margin: 0 0 6px; font-size: 23px; font-weight: 800; line-height: 1.2; color: var(--teal-dark); letter-spacing: -.01em; }
+  .hero h2 { margin: 0 0 6px; font-size: 23px; font-weight: 800; line-height: 1.2; color: #173F45; letter-spacing: -.01em; }
   .hero p { margin: 0 auto 18px; color: var(--muted); max-width: 30em; }
-  .hero .go { display: block; width: 100%; border: 0; border-radius: 18px; height: 52px; color: #fff;
-              background: linear-gradient(160deg, #14897F, var(--teal) 55%, var(--teal-dark));
+  .hero .go { display: block; width: 100%; border: 0; border-radius: 999px; height: 52px; color: #fff;
+              background: linear-gradient(160deg, #138479, #0E6B63);
               font-family: var(--head); font-weight: 800; font-size: 16px;
               box-shadow: 0 2px 0 rgba(8,60,55,.35), 0 6px 16px rgba(15,118,110,.3); }
   .hero .go:active { transform: translateY(1px); }
   .hero .alt { margin-top: 8px; border: 0; background: none; color: var(--teal); font-weight: 600; padding: 8px; }
-  .cards { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
-  .card { text-align: left; background: var(--surface); border: 0; border-radius: 20px; padding: 0; width: 100%;
-          overflow: hidden; display: block; box-shadow: var(--paper-2); }
+
+  /* meal cards: the photo inset with round corners, a dark-teal title, coloured chips, a round "Open recipe" */
+  .cards { display: flex; flex-direction: column; gap: 18px; }
+  .card { text-align: left; background: #FFFEFA; border: 0; border-radius: 28px; padding: 9px; width: 100%;
+          overflow: hidden; display: block; color: var(--text);
+          box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
   .card:active { transform: scale(.99); }
   /* The dish photo (GET /recipe/{id}/photo). The colour shows while it loads; with no photo it stays a
      thin coloured band. */
-  .card .pic { height: 150px; margin: 8px 8px 0; border-radius: 14px; overflow: hidden; transition: height .2s;
-               box-shadow: inset 0 0 0 1px rgba(60,45,25,.05); }
+  .card .pic { height: 190px; border-radius: 20px; overflow: hidden; transition: height .2s; }
   .card .pic img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .3s; }
   .card .pic img.loaded { opacity: 1; }
-  .card .pic.none { height: 10px; margin: 0; border-radius: 0; }
+  .card .pic.none { height: 10px; border-radius: 8px; }
   .band0 { background: linear-gradient(135deg, #B9DCC6, var(--sage) 50%, var(--herb)); }
   .band1 { background: linear-gradient(135deg, #FBE6A6, var(--lemon) 45%, var(--carrot)); }
   .band2 { background: linear-gradient(135deg, #FFC9A3, var(--carrot) 50%, var(--tomato)); }
   .band3 { background: linear-gradient(135deg, #A8D5C9, #3E9A8F 55%, var(--teal)); }
-  .card .txt { padding: 12px 16px 14px; }
-  .card .title { font-family: var(--head); font-weight: 800; font-size: 18px; line-height: 1.25; color: var(--text); }
-  .card .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
-  .card .soonline { color: var(--warn); font-size: 13px; font-weight: 600; margin-top: 3px; }
-  .card .buyline { font-size: 13px; margin-top: 3px; }
+  .card .txt { padding: 12px 10px 8px; }
+  .card .title { font-family: var(--head); font-weight: 800; font-size: 21px; line-height: 1.22; color: #173F45; letter-spacing: -.01em; }
+  .card .meta { display: flex; align-items: center; gap: 7px; color: #56615D; font-size: 15px; margin-top: 6px; }
+  .card .meta .mi svg, .card .open svg { width: 18px; height: 18px; display: block; }
+  .card .soonline { color: var(--warn); font-size: 14px; font-weight: 600; margin-top: 6px; }
+  .card .buyline { font-size: 14px; margin-top: 6px; }
   .card .buyline .none { color: var(--teal); font-weight: 600; }
-  .offer { margin-top: 10px; border: 1px solid var(--warn-line); background: var(--surface); color: var(--warn);
-           border-radius: 999px; padding: 8px 15px; font-size: 14px; font-weight: 600; box-shadow: var(--paper-1); }
-  .card .open { display: inline-block; margin-top: 12px; padding: 6px 15px; border-radius: 999px;
-                background: var(--teal); color: #fff; font-size: 13px; font-weight: 700;
-                box-shadow: 0 1px 0 rgba(8,60,55,.3), 0 3px 8px rgba(15,118,110,.22); }
-  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--teal-dark); }
-  .card .chip:nth-child(4n+2) { background: #FDE6E3; color: #B33A2E; }
-  .card .chip:nth-child(4n+3) { background: #FDF3CC; color: #7A5E00; }
-  .card .chip:nth-child(4n+4) { background: #E7F4E4; color: #2E7D32; }
+  .offer { justify-self: start; border: 1px solid var(--warn-line); background: #FFFDF8; color: var(--warn);
+           border-radius: 999px; padding: 10px 18px; font-size: 15px; font-weight: 600; box-shadow: var(--paper-1); }
+  .card .open { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; height: 46px; padding: 0 18px 0 24px;
+                border-radius: 999px; background: linear-gradient(160deg, #138479, #0E6B63); color: #fff;
+                font-family: var(--head); font-size: 17px; font-weight: 700;
+                box-shadow: 0 2px 0 rgba(8,60,55,.3), 0 6px 14px rgba(15,118,110,.25); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { font-size: 14px; font-weight: 500; padding: 5px 14px; border-radius: 999px; background: #DFF0E7; color: #1E4A3F; }
+  .card .chip:nth-child(4n+2) { background: #FCE2DF; color: #A8352B; }
+  .card .chip:nth-child(4n+3) { background: #FCF0C9; color: #6B5A1E; }
+  .card .chip:nth-child(4n+4) { background: #E6F2DD; color: #2E6B32; }
   .chip.soon { background: var(--warn-soft); color: var(--warn); font-weight: 700; }
 
-  .shop { margin-top: 10px; background: var(--surface); border-radius: var(--radius); padding: 12px 14px;
-          box-shadow: var(--paper-1); }
+  /* the shopping list: a card with a cart title, checkboxes, a picture of each item, round action buttons */
+  .shop { background: #FFFEFA; border-radius: 28px; padding: 16px 18px 18px;
+          box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
   .sheet .shop { box-shadow: none; border: 1px solid var(--line); }
-  .shop h3 { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 4px; color: var(--teal); }
-  .shop h3:first-child { margin-top: 0; }
-  .shop ul { margin: 0; padding-left: 18px; }
-  .shop li::marker { color: var(--carrot); }
-  .shop .check { color: var(--muted); }
+  .shop-head { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #EFE7DA; }
+  .shop-head .cart { color: var(--teal); }
+  .shop-head .cart svg { width: 32px; height: 32px; display: block; }
+  .shop-title { flex: 1; font-family: var(--head); font-size: 21px; font-weight: 800; color: #173F45; }
+  .shop-count { font-size: 14px; color: #56615D; }
+  .shop h3 { font-family: var(--head); font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em;
+             margin: 14px 0 6px; color: var(--teal); }
+  .shop-head + h3 { margin-top: 0; }
+  .shop ul + h3 { border-top: 1px solid #EFE7DA; padding-top: 14px; }
+  .shop ul { list-style: none; margin: 0; padding: 0; }
+  .shop li { position: relative; margin: 0; padding: 4px 0 4px 18px; font-size: 16px; }
+  .shop li::before { content: ""; position: absolute; left: 4px; top: 14px; width: 6px; height: 6px; border-radius: 50%; background: var(--carrot); }
+  .shop li.item-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 5px 0; }
+  .shop li.item-line::before { display: none; }
+  .shop .cbox { flex: none; width: 26px; height: 26px; border-radius: 8px; border: 2px solid #D3CABC; background: #fff;
+                display: grid; place-items: center; cursor: pointer; }
+  .shop .cbox.on { background: var(--teal); border-color: var(--teal); color: #fff; cursor: default; }
+  .shop .cbox svg { width: 17px; height: 17px; display: block; }
+  .shop li .lt { flex: 1; min-width: 0; line-height: 1.6; }
+  .shop li .what { font-size: 17px; color: var(--text); }
+  .shop li .need { color: #6B7571; font-size: 15px; }
+  .shop li .boughtbtn { margin-left: 10px; border: 1.5px solid #A9D3C6; background: #fff; color: var(--teal-dark); border-radius: 999px;
+                        padding: 2px 14px; font-size: 14px; font-weight: 600; vertical-align: 1px; white-space: nowrap; }
+  .shop li .ill { margin-left: auto; font-size: 30px; line-height: 1; flex: none; filter: drop-shadow(0 2px 2px rgba(60,45,25,.18)); }
+  .shop li.bought .what { text-decoration: line-through; color: #6B7571; }
   .shop .empty { color: var(--teal); font-weight: 600; }
-  .shop li.item-line { margin: 5px 0; }
-  .shop li .need { color: var(--muted); font-size: 13px; }
-  .shop li .boughtbtn { margin-left: 8px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--teal);
-                        border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; vertical-align: 1px; }
-  .shop li.bought { color: var(--muted); list-style: none; margin-left: -14px; }
-  .shop li.bought .what { text-decoration: line-through; }
-  .shop .boughtask { margin: 4px 0 8px; padding: 9px 11px; background: var(--accent-soft); border-radius: 12px;
-                     font-size: 13px; color: var(--text); }
-  .shop .boughtask .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .shop .boughtask button { border: 1px solid var(--accent-line); background: var(--surface); color: var(--teal);
-                            border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
+  .shop .boughtask { flex-basis: 100%; margin: 2px 0 6px 36px; padding: 10px 12px; background: var(--accent-soft); border-radius: 14px;
+                     font-size: 14px; color: var(--text); }
+  .shop .boughtask .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .shop .boughtask button { border: 1px solid var(--accent-line); background: #fff; color: var(--teal); border-radius: 999px;
+                            padding: 5px 13px; font-size: 14px; font-weight: 600; }
   .shop .boughtask button.skip { color: var(--muted); border-color: var(--line); font-weight: 400; }
-  .shop .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .shop .actions button { border: 1px solid var(--accent-line); background: var(--surface); color: var(--teal);
-                          border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 600;
-                          box-shadow: 0 1px 0 rgba(110,80,40,.05); }
+  .shop .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .shop .actions button { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 18px; border: 1px solid #EEE6D9;
+                          background: #FFFDF8; color: #173F45; border-radius: 999px; font-size: 16px; font-weight: 600;
+                          box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 3px 8px rgba(60,45,25,.07); }
+  .shop .actions button.all { background: #E3F1EC; border-color: transparent; }
+  .shop .actions .ai { color: var(--teal); }
+  .shop .actions svg { width: 21px; height: 21px; display: block; }
 
-  details.trace { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  details.trace { font-size: 12px; color: var(--muted); }
   details.trace summary { cursor: pointer; list-style: none; }
   details.trace summary::-webkit-details-marker { display: none; }
   details.trace summary::before { content: "▸ "; color: var(--teal); }
   details.trace[open] summary::before { content: "▾ "; }
-  details.trace ol { margin: 6px 0 0; padding: 8px 10px 8px 28px; background: rgba(255,253,249,.7);
+  details.trace ol { margin: 6px 0 0; padding: 8px 10px 8px 28px; background: rgba(255,253,249,.8);
                      border: 1px dashed var(--line); border-radius: 12px; }
   details.trace li { margin: 4px 0; overflow-wrap: anywhere; }
   details.trace .step { display: block; color: var(--text); }
@@ -193,24 +238,25 @@
   @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-4px); opacity: 1; } }
 
   /* composer */
-  .composer { background: var(--grain), var(--surface); padding: 10px 10px; border-radius: 22px 22px 0 0;
-              box-shadow: 0 -1px 0 var(--line), 0 -6px 18px rgba(60,45,25,.06); position: relative; z-index: 1;
-              padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .composer { position: relative; z-index: 1; padding: 12px 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+              background: rgba(253,249,242,.92); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+              border-radius: 28px 28px 0 0; box-shadow: 0 -1px 0 rgba(110,80,40,.06), 0 -8px 24px rgba(60,45,25,.07); }
   .pending { display: flex; gap: 8px; padding: 8px 8px 8px 0; overflow-x: auto; }  /* room for the × */
-  .quick { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 8px; scrollbar-width: none; }
+  .quick { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 12px; scrollbar-width: none; }
   .quick::-webkit-scrollbar { display: none; }
-  .qchip { flex: none; white-space: nowrap; border: 1px solid var(--line); background: var(--surface);
-           color: var(--teal-dark); border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600;
-           box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 2px 5px rgba(60,45,25,.05); }
+  .qchip { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px 0 12px; white-space: nowrap;
+           border: 1px solid #EEE6D9; background: #FFFDF8; color: #1D3B37; border-radius: 999px; font-size: 15px; font-weight: 500;
+           box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 2px 6px rgba(60,45,25,.06); }
+  .qchip .qi svg { width: 22px; height: 22px; display: block; }
   .qchip:active { background: var(--accent-soft); }
   .qchip:disabled { opacity: .5; }
   /* the cooking mode switch (T4.5): two halves, the chosen one filled */
-  .cookmode { display: flex; background: var(--accent-soft); border-radius: 999px; padding: 4px; margin: 0 0 8px;
-              box-shadow: inset 0 1px 2px rgba(15,118,110,.12); }
-  .cookmode button { flex: 1; border: 0; background: none; border-radius: 999px; padding: 7px 8px;
-                     font-size: 13px; font-weight: 600; color: var(--teal); white-space: nowrap; }
-  .cookmode button[aria-checked="true"] { background: var(--teal); color: #fff;
-                                          box-shadow: 0 1px 0 rgba(8,60,55,.3), 0 2px 6px rgba(15,118,110,.25); }
+  .cookmode { display: flex; background: #DDEFE8; border-radius: 999px; margin: 0 0 12px; box-shadow: inset 0 1px 2px rgba(15,118,110,.1); }
+  .cookmode button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; border: 0;
+                     background: none; border-radius: 999px; padding: 0 10px; font-size: 16px; font-weight: 600; color: #174A4A;
+                     white-space: nowrap; }
+  .cookmode button[aria-checked="true"] { background: linear-gradient(160deg, #138479, #0E6B63); color: #fff;
+                                          box-shadow: 0 2px 0 rgba(8,60,55,.3), 0 4px 12px rgba(15,118,110,.28); }
   .cookmode button:disabled { opacity: .5; }
   .thumb { position: relative; flex: none; }
   .thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 14px; display: block; box-shadow: var(--paper-1); }
@@ -219,22 +265,69 @@
   .thumb .rm { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%;
                border: 0; background: var(--tomato); color: #fff; font-size: 13px; line-height: 22px; padding: 0;
                box-shadow: 0 1px 3px rgba(0,0,0,.2); }
-  .row { display: flex; gap: 6px; align-items: flex-end; }
-  .iconbtn { flex: none; width: 44px; height: 44px; border-radius: 14px; border: 0; padding: 0; font-size: 0;
-             background: var(--accent-soft) center / 24px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5A2.5 2.5 0 0 1 6 6h1.9l1.5-2.2h5.2L16.1 6H18a2.5 2.5 0 0 1 2.5 2.5v8.5A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z'/%3E%3Ccircle cx='12' cy='12.6' r='3.6'/%3E%3C/svg%3E");
-             box-shadow: 0 1px 0 rgba(15,118,110,.12), 0 2px 6px rgba(15,118,110,.12), inset 0 0 0 1px rgba(15,118,110,.08); }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .iconbtn { flex: none; width: 52px; height: 52px; border-radius: 16px; border: 0; padding: 0; font-size: 0;
+             background: var(--accent-soft) center / 27px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5A2.5 2.5 0 0 1 6 6h1.9l1.5-2.2h5.2L16.1 6H18a2.5 2.5 0 0 1 2.5 2.5v8.5A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z'/%3E%3Ccircle cx='12' cy='12.6' r='3.6'/%3E%3C/svg%3E");
+             box-shadow: 0 1px 0 rgba(15,118,110,.12), 0 3px 8px rgba(15,118,110,.12), inset 0 0 0 1px rgba(15,118,110,.08); }
   #gallery { background-color: #FDF3CC; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='3'/%3E%3Ccircle cx='9' cy='9.7' r='1.7'/%3E%3Cpath d='M4 17.5l5.2-4.6 3.6 3.1 2.9-2.4 4.3 3.9'/%3E%3C/svg%3E");
-             box-shadow: 0 1px 0 rgba(160,120,0,.12), 0 2px 6px rgba(160,120,0,.12), inset 0 0 0 1px rgba(160,120,0,.08); }
+             box-shadow: 0 1px 0 rgba(160,120,0,.12), 0 3px 8px rgba(160,120,0,.12), inset 0 0 0 1px rgba(160,120,0,.08); }
   .iconbtn:active { transform: translateY(1px); }
   .iconbtn:disabled { opacity: .5; }
-  #input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); border-radius: 22px; padding: 11px 15px;
-           font: inherit; max-height: 120px; background: var(--bg); color: var(--text); }
-  #input::placeholder { color: #9AA19D; }
+  #input { flex: 1; min-width: 0; min-height: 52px; resize: none; border: 1px solid #EAE1D3; border-radius: 26px; padding: 14px 20px;
+           font: inherit; font-size: 16px; max-height: 120px; background: #FFFDF8; color: var(--text);
+           box-shadow: inset 0 1px 2px rgba(60,45,25,.04); }
+  #input::placeholder { color: #8A928E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #input:focus, .add input:focus, .item.editing input:focus { outline: 3px solid var(--accent-soft); border-color: var(--teal); }
-  #send { flex: none; height: 44px; border: 0; border-radius: 22px; padding: 0 18px; color: #fff;
-          background: linear-gradient(160deg, #14897F, var(--teal)); font-family: var(--head); font-weight: 800;
-          box-shadow: 0 1px 0 rgba(8,60,55,.3), 0 3px 8px rgba(15,118,110,.25); }
+  #send { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 52px; border: 0; border-radius: 999px; padding: 0 22px 0 18px;
+          color: #fff; background: linear-gradient(160deg, #138479, #0E6B63); font-family: var(--head); font-weight: 700; font-size: 17px;
+          box-shadow: 0 2px 0 rgba(8,60,55,.3), 0 4px 12px rgba(15,118,110,.28); }
+  #send svg { width: 22px; height: 22px; display: block; }
   #send:disabled { opacity: .45; box-shadow: none; }
+
+  /* Narrow phones: the header items must fit on one line, and the composer row too. */
+  @media (max-width: 480px) {
+    .app > header { margin-left: 8px; margin-right: 8px; padding: 6px 6px 6px 10px; gap: 6px; }
+    header h1 { font-size: 18px; gap: 6px; }
+    header h1 .logo { width: 32px; height: 32px; }
+    .hbtn { padding: 7px 11px; font-size: 14px; gap: 5px; }
+    .hbtn svg { width: 18px; height: 18px; }
+    #newChat { padding: 8px 13px; font-size: 14px; }
+    #messages { padding-left: 12px; padding-right: 12px; }
+    .msg.agent { grid-template-columns: 46px minmax(0, 1fr); column-gap: 10px; }
+    .msg.agent .avatar { width: 46px; height: 46px; background-size: 31px; }
+    .msg.agent .content > * { margin-left: 6px; }
+    .msg.agent .content > .bubble, .msg.agent .content > .questions { margin-left: 0; }
+    .msg.user { grid-template-columns: minmax(0, 1fr) 40px; }
+    .uavatar { width: 40px; height: 40px; background-size: 22px; }
+    .bubble { font-size: 15.5px; padding: 11px 16px; }
+    .card .pic { height: 170px; }
+    .card .title, .shop-title { font-size: 19px; }
+    .card .open { height: 42px; font-size: 16px; }
+    .shop { padding: 14px 14px 16px; }
+    .shop li .what { font-size: 16px; }
+    .shop li .need { font-size: 14px; }
+    .shop li .ill { font-size: 26px; }
+    .shop .actions button { height: 42px; padding: 0 14px; font-size: 15px; }
+    .composer { padding-left: 10px; padding-right: 10px; }
+    .cookmode button { height: 46px; font-size: 15px; }
+    .qchip { height: 40px; font-size: 14px; }
+    .row { gap: 7px; }
+    .iconbtn { width: 46px; height: 46px; border-radius: 15px; background-size: 24px; }
+    #input { min-height: 46px; padding: 12px 15px; }
+    #send { height: 46px; padding: 0 15px 0 13px; font-size: 16px; gap: 6px; }
+    #send svg { width: 20px; height: 20px; }
+  }
+  @media (max-width: 420px) {
+    header h1 { font-size: 16px; }
+    header h1 .logo { width: 28px; height: 28px; }
+    .hbtn { padding: 6px 9px; font-size: 13px; gap: 4px; }
+    .hbtn svg { width: 16px; height: 16px; }
+    #newChat { padding: 7px 11px; font-size: 13px; }
+  }
+  /* Very narrow: the leaf stands for the name. */
+  @media (max-width: 350px) {
+    header h1 .name { display: none; }
+  }
 
   /* overlays: inventory drawer and recipe sheet */
   .scrim { position: fixed; inset: 0; background: rgba(20,40,36,.42); z-index: 10; backdrop-filter: blur(2px); }
@@ -256,23 +349,6 @@
   .shop .amount { color: var(--text); font-size: 13px; }
   .sheet .chats { list-style: none; margin: 0; padding: 0; }
   .hbtn { white-space: nowrap; }
-  /* Narrow phones: the header items must fit on one line. */
-  @media (max-width: 400px) {
-    header { gap: 6px; }
-    header h1 { font-size: 17px; gap: 8px; }
-    header h1 .logo { width: 42px; height: 42px; border-radius: 12px; }
-    .hbtn { padding: 6px 10px; font-size: 13px; }
-  }
-  @media (max-width: 380px) {
-    header { padding-left: 10px; padding-right: 10px; }
-    header h1 { font-size: 15px; gap: 7px; }
-    header h1 .logo { width: 38px; height: 38px; border-radius: 11px; }
-    .hbtn { padding: 5px 8px; }
-  }
-  /* Very narrow: the icon stands for the name. */
-  @media (max-width: 340px) {
-    header h1 .name { display: none; }
-  }
   .chats li { margin: 0; }
   .chat-row { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none;
               padding: 12px 6px; display: block; border-radius: 0; }
@@ -545,8 +621,8 @@
 <body>
 <div class="app">
   <header>
-    <h1><img class="logo" src="/static/icon-192.png" alt=""><span class="name">Fridge-to-Table</span></h1>
-    <button class="hbtn" id="openHistory" type="button" title="Past chats">🕘 History</button>
+    <h1><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path d="M19 38c0-9-.5-17-4.5-25" stroke="#2E7D4F" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M18 28C9 28 3 22 2 12.5c9 0 15 6 16 15.5z" fill="#4CAF50"/><path d="M16.5 17.5c-3.4-5-2.4-12 3.6-16.5 3.2 6.2 2 12.4-3.6 16.5z" fill="#2E8B57"/><path d="M20 30c1-9.5 7.5-15.5 18-16.5-1 9.5-7.5 15.5-18 16.5z" fill="#3E9B5F"/><path d="M17.5 27.5C12 23 7 18 2.5 13M16.6 17.2c.8-5 1.8-10.6 3.4-15.6M20.2 29.6c5-5 11-11.4 17.4-15.8" stroke="#fff" stroke-opacity=".35" stroke-width="1" fill="none"/></svg><span class="name">Fridge-to-Table</span></h1>
+    <button class="hbtn" id="openHistory" type="button" title="Past chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.1 2"/></svg>History</button>
     <button class="hbtn" id="newChat" type="button">New chat</button>
   </header>
 
@@ -570,7 +646,7 @@
       <input id="file" type="file" accept="image/*" multiple capture="environment" hidden>
       <input id="galleryFile" type="file" accept="image/*" multiple hidden>
       <textarea id="input" rows="1" placeholder="Ask what to cook, or say what you want to make…"></textarea>
-      <button id="send" type="submit">Send</button>
+      <button id="send" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M21 3 3.5 10.5l7 2.5 2.5 7z"/><path d="M21 3 10.5 13"/></svg>Send</button>
     </div>
   </form>
 </div>
@@ -622,6 +698,24 @@ function defaultUnit(item) {
   if (item.category === "sauce") return "ml";
   return ["meat", "fish", "dairy", "grain", "pasta", "baking"].includes(item.category) ? "g" : "pcs";
 }
+// Small line icons of the page (the mockup's): constant markup, inserted with icon().
+const ICON = {
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"/></svg>',
+  cart: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 10h16.5l-2.6 9.2H12.9z" fill="currentColor" fill-opacity=".16" stroke="none"/><path d="M3 5h4l3.4 15.5h14.4L28 10H9"/><circle cx="13" cy="26" r="2"/><circle cx="23" cy="26" r="2"/><path d="M15.5 13.5v3M19.5 13.5v3"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4.5" stroke-linecap="round"/></svg>',
+  download: '<svg viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="#2F7BEA"/><path d="M12 6.5v8.5M8.2 11.5l3.8 3.8 3.8-3.8M7.5 18h9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  leaf: '<svg viewBox="0 0 24 24"><path d="M20.5 3C10.5 3 4 8.5 4 15.5c0 1.6.4 3 1 4.2C7 12.2 11.8 9.2 16 8.2c-4.6 2.3-8 6-9.6 12.3 1 .5 2.3.8 3.6.8 7 0 11.3-8.2 10.5-18.3z" fill="#3E9B5F"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24"><path d="M13.5 2 4.5 13.5h6.2L9.5 22l10-12.5h-6.2z" fill="#F6C33C" stroke="#E5A01A" stroke-width="1" stroke-linejoin="round"/></svg>',
+  chef: '<svg viewBox="0 0 24 24"><path d="M7 14.6c-2.3-.5-4-2.5-4-4.8C3 7.2 5.2 5 7.8 5c.6 0 1.1.1 1.6.3A4.9 4.9 0 0 1 12 4.3c1.1 0 2 .4 2.6 1A4.6 4.6 0 0 1 21 9.8c0 2.3-1.7 4.3-4 4.8V18H7z" fill="#5DBB63"/><rect x="7" y="18.7" width="10" height="2.6" rx="1" fill="#3E9B5F"/></svg>',
+  barcode: '<svg viewBox="0 0 24 24" fill="#E3473D"><rect x="3" y="5" width="1.7" height="14" rx=".3"/><rect x="6" y="5" width="1" height="14"/><rect x="8.3" y="5" width="2.1" height="14" rx=".3"/><rect x="11.7" y="5" width="1" height="14"/><rect x="14" y="5" width="1.7" height="14" rx=".3"/><rect x="17" y="5" width="1" height="14"/><rect x="19.3" y="5" width="1.7" height="14" rx=".3"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="1.9" stroke-linejoin="round"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h1.9l1.5-2.2h5.2L16.1 6H18a2.5 2.5 0 0 1 2.5 2.5v8.5A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z"/><circle cx="12" cy="12.6" r="3.6"/></svg>',
+};
+// The quick replies' icons, by label.
+const QUICK_ICON = { "What can I cook tonight?": "leaf", "Something quick": "bolt", "I want to make…": "chef",
+                     "Scan my pantry": "barcode", "Scan my fridge": "camera" };
+
 // Line icons for the place tabs, and filled ones for the place card's tile.
 const TAB_ICON = {
   fridge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="2.5" width="13" height="19" rx="2.6"/><path d="M5.5 10h13M9 5.4v2M9 12.8v3.4"/></svg>',
@@ -891,14 +985,14 @@ function renderEntry(entry) {
 }
 
 function renderUser(entry) {
-  const node = el("div", { class: "msg user" });
+  const content = el("div", { class: "content" });
   if (entry.photos && entry.photos.length) {
-    node.append(el("div", { class: "photos" }, entry.photos.map((p) =>
+    content.append(el("div", { class: "photos" }, entry.photos.map((p) =>
       el("figure", {}, p.url ? el("img", { src: p.url, alt: "" }) : el("div", { class: "bubble" }, "📷"),
          el("figcaption", {}, cap(p.place))))));
   }
-  if (entry.text) node.append(el("div", { class: "bubble" }, entry.text));
-  return node;
+  if (entry.text) content.append(el("div", { class: "bubble" }, entry.text));
+  return el("div", { class: "msg user" }, content, el("div", { class: "uavatar", "aria-hidden": "true" }));
 }
 
 function agentShell(...children) {
@@ -1047,10 +1141,13 @@ async function buyAll(names, reply) {
 function boughtLine(name, reply) {
   const bought = boughtOf(reply);
   const [text, note] = shopItem(name, reply);
+  const ill = el("span", { class: "ill", "aria-hidden": "true" }, itemEmoji({ name, category: categoryFor(name, reply.meals) }));
   if (bought.includes(name)) {
     const item = itemsByName().get(name);
-    const line = el("li", { class: "item-line bought" }, "✓ ", el("span", { class: "what" }, text),
-      item && item.amount_text ? el("span", { class: "need" }, ` · ${item.amount_text}`) : null);
+    const line = el("li", { class: "item-line bought" },
+      el("span", { class: "cbox on", "aria-hidden": "true" }, icon(ICON.check, "ck")),
+      el("span", { class: "lt" }, el("span", { class: "what" }, text),
+        item && item.amount_text ? el("span", { class: "need" }, ` · ${item.amount_text}`) : null), ill);
     const ask = bought.ask && bought.ask.name === name ? bought.ask : null;
     if (!ask) return line;
     const what = item ? item.display_name : name;
@@ -1060,10 +1157,13 @@ function boughtLine(name, reply) {
         el("button", { class: "skip", type: "button", onclick: () => { bought.ask = null; redrawShops(); } }, "Skip"))));
     return line;
   }
-  return el("li", { class: "item-line" }, el("span", { class: "what" }, text),
-    note ? el("span", { class: "need" }, ` · ${note}`) : null,
-    el("button", { class: "boughtbtn", type: "button", "aria-label": `Bought ${text}`,
-                   onclick: () => buyOne(name, reply) }, "Bought"));
+  // The box ticks it like the Bought button (which is the one for the keyboard and screen readers).
+  return el("li", { class: "item-line" },
+    el("span", { class: "cbox", "aria-hidden": "true", onclick: () => buyOne(name, reply) }),
+    el("span", { class: "lt" }, el("span", { class: "what" }, text),
+      note ? el("span", { class: "need" }, ` · ${note}`) : null,
+      el("button", { class: "boughtbtn", type: "button", "aria-label": `Bought ${text}`,
+                     onclick: () => buyOne(name, reply) }, "Bought")), ill);
 }
 
 // "🛒 To buy: cream · check pantry: pasta" under a card, or that it needs nothing.
@@ -1093,11 +1193,11 @@ function renderCard(meal, data, perCard = false) {
     pic,
     el("div", { class: "txt" },
       el("div", { class: "title" }, meal.name),
-      el("div", { class: "meta" }, `⏱ ${meal.time_minutes} min` + (meta ? ` · ${meta}` : "")),
+      el("div", { class: "meta" }, icon(ICON.clock, "mi"), `${meal.time_minutes} min` + (meta ? ` • ${meta}` : "")),
       perCard ? buyLine(meal, data.reply) : null,
       soon.length ? el("div", { class: "soonline" }, `⏰ uses your ${soon.join(", ")}: needs using`) : null,
       shown.length ? el("div", { class: "chips" }, shown) : null,
-      el("div", { class: "open" }, "Open recipe ›")));
+      el("div", { class: "open" }, "Open recipe", icon(ICON.chev, "oi"))));
 }
 
 // The dish photo; `done(true)` once it shows, `done(false)` if there is none (404) or it fails to load.
@@ -1125,6 +1225,9 @@ function renderShop(reply) {
   const buy = reply.shopping_list || [];
   const check = reply.check_first || [];
   const meals = reply.meals || [];
+  const n = buy.length + check.length;
+  box.append(el("div", { class: "shop-head" }, icon(ICON.cart, "cart"), el("span", { class: "shop-title" }, "Shopping List"),
+    n ? el("span", { class: "shop-count" }, `${n} item${n === 1 ? "" : "s"}`) : null));
   if (subs.length) {
     box.append(el("h3", {}, "Use instead"), el("ul", {}, subs.map((s) =>
       shopLine(`${displayName(s.use_instead)} instead of ${s.missing}`, amountFor(s.missing, meals)))));
@@ -1151,19 +1254,21 @@ function shopText(reply) {
 }
 
 function shopActions(reply) {
+  const copyLabel = el("span", {}, "Copy list");
   const copy = el("button", { type: "button", onclick: async () => {
     const ok = await copyText(shopText(reply));
-    copy.textContent = ok ? "✓ Copied" : "Couldn't copy";
-    setTimeout(() => { copy.textContent = "📋 Copy list"; }, 2000);
-  } }, "📋 Copy list");
+    copyLabel.textContent = ok ? "Copied" : "Couldn't copy";
+    setTimeout(() => { copyLabel.textContent = "Copy list"; }, 2000);
+  } }, icon(ICON.doc, "ai"), copyLabel);
   const save = el("button", { type: "button", onclick: () => {
     const meals = reply.meals || [];
     const slug = meals.length ? meals[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "";
     downloadText(shopText(reply), `shopping-list${slug ? "-" + slug : ""}.txt`);
-  } }, "⬇️ Download .txt");
+  } }, icon(ICON.download, "dl"), "Download .txt");
   const names = [...(reply.shopping_list || []), ...(reply.check_first || [])];
   const left = names.filter((n) => !boughtOf(reply).includes(n));
-  const all = left.length ? el("button", { type: "button", onclick: () => buyAll(names, reply) }, "✓ Bought all") : null;
+  const all = left.length ? el("button", { class: "all", type: "button", onclick: () => buyAll(names, reply) },
+    icon(ICON.check, "ai"), "Bought all") : null;
   return el("div", { class: "actions" }, all, copy, save);
 }
 
@@ -1704,16 +1809,17 @@ function renderQuick() {
   const say = (text) => () => { $("input").value = text; updateSend(); $("composer").requestSubmit(); };
   const chips = [];
   if (!ownItems().length) {
-    chips.push(["📷 Scan my fridge", () => pickPhotos("fridge")], ["🥫 Scan my pantry", () => pickPhotos("pantry")]);
+    chips.push(["Scan my fridge", () => pickPhotos("fridge")], ["Scan my pantry", () => pickPhotos("pantry")]);
   } else {
     chips.push(["What can I cook tonight?", say("What can I cook tonight?")],
       ["Something quick", say("Something quick for dinner, under 30 minutes.")],
       ["I want to make…", () => { const i = $("input"); i.value = "I want to make "; updateSend(); i.focus(); }]);
-    if (!state.scanState.scanned.pantry) chips.push(["🥫 Scan my pantry", () => pickPhotos("pantry")]);
-    else chips.push(["📷 Scan my fridge", () => pickPhotos("fridge")]);
+    if (!state.scanState.scanned.pantry) chips.push(["Scan my pantry", () => pickPhotos("pantry")]);
+    else chips.push(["Scan my fridge", () => pickPhotos("fridge")]);
   }
   box.replaceChildren(...chips.map(([label, act]) =>
-    el("button", { class: "qchip", type: "button", onclick: act, disabled: state.busy }, label)));
+    el("button", { class: "qchip", type: "button", onclick: act, disabled: state.busy },
+      QUICK_ICON[label] ? icon(ICON[QUICK_ICON[label]], "qi") : null, label)));
   box.hidden = Boolean($("input").value.trim() || state.pending.length);
 }
 
