@@ -109,9 +109,42 @@ Built:
 - `app/static/index.html`: a ticked box on the shopping list is a button; unticking calls the undo and the item goes back to what it was (level and amount; a new item is removed). Tokens are kept on the reply (`bought_undo`), so a reloaded chat can still untick. The size chip's second post keeps the first token, so unticking goes back to before the first "Bought".
 - Tests: 3 in `tests/test_inventory.py`, 1 in `tests/test_api.py`.
 
-Also on 2026-10-19 (design only, no behaviour change): the page, inventory panel and recipe window were redesigned after the human's brand board and mockups (commits "UI: …"); `/static` is mounted for the icon and images; the shopping list got a disabled "Order" button as a placeholder for ordering later.
-
 Open: items bought before this change (no token) are only unticked; the inventory is not changed for them.
+
+### 2026-10-19 — Visual redesign "Smart Paper Kitchen" (the human's request; no task in PLAN)
+
+The human gave a brand board (palette, fonts, paper-cut style) and mockups for the main page, the inventory panel and the recipe page, and asked for them "exactly". Commits "UI: …" from `de9b673` to `52eea03`. Texts and behaviour stay unless listed under "Behaviour changes".
+
+Built:
+- `app/api.py`: `/static` is mounted (`StaticFiles`) for the page's images. New files in `app/static/`: `icon-192.png` + `apple-touch-icon.png` (the human's app icon, cropped; header, favicon, welcome card), `leaf-tl.png`, `leaf-r.png`, `leaf-br.png` (leaves cut out of the human's background, placed in the screen corners of the page and the recipe page), `inventory-bg.jpg` (inventory panel background), `leaf.png` (leaf over the inventory place card).
+- `app/static/index.html`, design: palette (deep teal `#0F766E`, sage, cream, tomato, carrot, lemon, herb), Nunito Sans headings, DM Sans body, Fraunces (serif) for the inventory panel titles, from Google Fonts with system fallbacks. Small line icons are constant SVG strings in `ICON`/`TAB_ICON`/`TILE_ICON`, inserted with `icon()`.
+  - Main page: dark teal header bar across the screen (icon, white name, History, lighter New chat); agent avatar (smiling bubble) and tailed bubbles; user avatar; meal cards with an inset rounded photo, clock icon, coloured chips; "Shopping List" card (cart icon, count, checkboxes, Bought, action buttons with icons); quick replies with icons; Send with a paper plane.
+  - Shopping-list actions stay on one row: a container query on `.shop` turns them into equal tiles when the list is narrower than 600px.
+  - Inventory panel: leaves background, Fridge / Freezer / Pantry tabs, one place card (big tile, "N items • scanned …", camera, add field), each item on its own card (emoji tile tinted by name then category, amount under the name, quantity pill, chevron), staples folded.
+  - Recipe window (`#sheet`): now a full page on the paper background (content column max 600px), photo with the title and a "× Close" that stays visible, pills with icons, big "✓ I made it", shopping list / ingredients / steps as white cards.
+  - History window: rounded on all sides (`.sheet { overflow: hidden }`), rows as rounded cards.
+
+Behaviour changes (all asked or accepted by the human):
+- Inventory panel shows one place at a time (tabs, remembered in `state.invTab`); a dot on a tab whose place has uncertain / not-seen items; search still shows all places. Item count per place is new.
+- Wording: "Add an item to fridge…", "Serves N", ingredient tags capitalized ("✓ Have", "To buy", "Check pantry", "Optional", "Not at home", "Use your …"), "Shopping List" title + count, time line "20 min • uses …".
+- The shopping-list checkbox is a real button (ticks = Bought; ticked = untick, see above). In the recipe window the Bought pills and the count are hidden there, names are capitalized and the amount is shown without "need" (`renderShop(reply, inSheet)`).
+- A disabled "Order" button (truck icon, "Ordering online is coming soon") next to Copy list / Download .txt: placeholder for ordering later. To enable it: remove `disabled` in `shopActions()` and attach the action.
+- Ingredient names in recipe steps are no longer bold (CSS only; `stepText` still wraps them in `<b>`).
+- New emoji/tint rules by item name (`NAME_EMOJI`, `NAME_TINT`).
+
+Next task must know:
+- The CSS is ordered: base and main page first, then overlays, then the inventory block, then the recipe block and the shopping-list container query at the end. Later blocks override earlier ones on purpose.
+- Visual checks were done with headless Chrome on a temporary page in `app/static/_preview.html` (seeded `localStorage` transcript + `/inventory` PATCH, iframes at phone width). Seed a transcript, otherwise the page calls the model for the opening and the screenshot hangs. Delete the preview page and the test household DB afterwards.
+- `body` has `overflow-x: clip` (the header's full-width colour layer is 100vw).
+
+Open: the human's own check on a phone; the name in the header is cut ("Fridge-to-Ta…") below about 360px width.
+
+How to verify:
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: all tests pass. Manual check: open the page on a phone (hard refresh for the new icon), open the inventory and switch tabs, open a recipe.
 
 How to verify:
 ```
