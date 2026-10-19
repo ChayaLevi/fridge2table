@@ -201,7 +201,6 @@
   .shop li .need { color: #6B7571; font-size: 15px; }
   .shop li .boughtbtn { margin-left: 10px; border: 1.5px solid #A9D3C6; background: #fff; color: var(--teal-dark); border-radius: 999px;
                         padding: 2px 14px; font-size: 14px; font-weight: 600; vertical-align: 1px; white-space: nowrap; }
-  .shop li .ill { margin-left: auto; font-size: 30px; line-height: 1; flex: none; filter: drop-shadow(0 2px 2px rgba(60,45,25,.18)); }
   .shop li.bought .what { text-decoration: line-through; color: #6B7571; }
   .shop .empty { color: var(--teal); font-weight: 600; }
   .shop .boughtask { flex-basis: 100%; margin: 2px 0 6px 36px; padding: 10px 12px; background: var(--accent-soft); border-radius: 14px;
@@ -217,6 +216,7 @@
   .shop .actions button.all { background: #E3F1EC; border-color: transparent; }
   .shop .actions .ai { color: var(--teal); }
   .shop .actions svg { width: 21px; height: 21px; display: block; }
+  .shop .actions button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
 
   details.trace { font-size: 12px; color: var(--muted); }
   details.trace summary { cursor: pointer; list-style: none; }
@@ -308,7 +308,6 @@
     .shop { padding: 14px 14px 16px; }
     .shop li .what { font-size: 16px; }
     .shop li .need { font-size: 14px; }
-    .shop li .ill { font-size: 26px; }
     .shop .actions button { height: 42px; padding: 0 14px; font-size: 15px; }
     .composer { padding-left: 10px; padding-right: 10px; }
     .cookmode button { height: 46px; font-size: 15px; }
@@ -712,6 +711,7 @@ const ICON = {
   cart: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 10h16.5l-2.6 9.2H12.9z" fill="currentColor" fill-opacity=".16" stroke="none"/><path d="M3 5h4l3.4 15.5h14.4L28 10H9"/><circle cx="13" cy="26" r="2"/><circle cx="23" cy="26" r="2"/><path d="M15.5 13.5v3M19.5 13.5v3"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4.5" stroke-linecap="round"/></svg>',
+  truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5h11v10h-11zM13.5 9.5h4l3.5 3.5v3.5h-7.5"/><circle cx="6.5" cy="17.5" r="1.8" fill="#FFFDF8"/><circle cx="17" cy="17.5" r="1.8" fill="#FFFDF8"/></svg>',
   download: '<svg viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="#2F7BEA"/><path d="M12 6.5v8.5M8.2 11.5l3.8 3.8 3.8-3.8M7.5 18h9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   leaf: '<svg viewBox="0 0 24 24"><path d="M20.5 3C10.5 3 4 8.5 4 15.5c0 1.6.4 3 1 4.2C7 12.2 11.8 9.2 16 8.2c-4.6 2.3-8 6-9.6 12.3 1 .5 2.3.8 3.6.8 7 0 11.3-8.2 10.5-18.3z" fill="#3E9B5F"/></svg>',
   bolt: '<svg viewBox="0 0 24 24"><path d="M13.5 2 4.5 13.5h6.2L9.5 22l10-12.5h-6.2z" fill="#F6C33C" stroke="#E5A01A" stroke-width="1" stroke-linejoin="round"/></svg>',
@@ -1148,13 +1148,12 @@ async function buyAll(names, reply) {
 function boughtLine(name, reply) {
   const bought = boughtOf(reply);
   const [text, note] = shopItem(name, reply);
-  const ill = el("span", { class: "ill", "aria-hidden": "true" }, itemEmoji({ name, category: categoryFor(name, reply.meals) }));
   if (bought.includes(name)) {
     const item = itemsByName().get(name);
     const line = el("li", { class: "item-line bought" },
       el("span", { class: "cbox on", "aria-hidden": "true" }, icon(ICON.check, "ck")),
       el("span", { class: "lt" }, el("span", { class: "what" }, text),
-        item && item.amount_text ? el("span", { class: "need" }, ` · ${item.amount_text}`) : null), ill);
+        item && item.amount_text ? el("span", { class: "need" }, ` · ${item.amount_text}`) : null));
     const ask = bought.ask && bought.ask.name === name ? bought.ask : null;
     if (!ask) return line;
     const what = item ? item.display_name : name;
@@ -1170,7 +1169,7 @@ function boughtLine(name, reply) {
     el("span", { class: "lt" }, el("span", { class: "what" }, text),
       note ? el("span", { class: "need" }, ` · ${note}`) : null,
       el("button", { class: "boughtbtn", type: "button", "aria-label": `Bought ${text}`,
-                     onclick: () => buyOne(name, reply) }, "Bought")), ill);
+                     onclick: () => buyOne(name, reply) }, "Bought")));
 }
 
 // "🛒 To buy: cream · check pantry: pasta" under a card, or that it needs nothing.
@@ -1276,7 +1275,10 @@ function shopActions(reply) {
   const left = names.filter((n) => !boughtOf(reply).includes(n));
   const all = left.length ? el("button", { class: "all", type: "button", onclick: () => buyAll(names, reply) },
     icon(ICON.check, "ai"), "Bought all") : null;
-  return el("div", { class: "actions" }, all, copy, save);
+  // Ordering the list from a shop is a later feature: the button is here, disabled, until it exists.
+  const order = el("button", { class: "order", type: "button", disabled: true, title: "Ordering online is coming soon" },
+    icon(ICON.truck, "ai"), "Order");
+  return el("div", { class: "actions" }, all, copy, save, order);
 }
 
 // The clipboard API exists only on HTTPS (and localhost); on the home network's plain http the old
