@@ -26,8 +26,22 @@
   .badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px;
            background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
 
-  /* chat */
-  #messages { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+  /* chat; .stage holds the scrolling messages and the floating inventory button */
+  .stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+  .fab { position: absolute; right: 16px; bottom: 16px; height: 60px; padding: 0 14px 0 16px; border: 0;
+         border-radius: 20px; display: flex; align-items: center; gap: 8px; color: #fff;
+         background: linear-gradient(135deg, #3c9c64, #24683f);
+         box-shadow: 0 6px 18px rgba(36,104,63,.38), 0 1px 3px rgba(31,36,33,.2), inset 0 1px 0 rgba(255,255,255,.18); }
+  .fab:active { transform: scale(.96); }
+  .fab-icon { font-size: 28px; line-height: 1; }
+  .fab-label { font-size: 17px; font-weight: 700; letter-spacing: .2px; }
+  .fab .badge { margin: 0; min-width: 28px; line-height: 28px; padding: 0 8px; font-size: 15px; font-weight: 800;
+                background: #fff; color: #24683f; }
+  /* the count changed (photo recognised, item added or used up): the button bumps once so the eye goes there */
+  .fab.bump { animation: bump .5s ease; }
+  @keyframes bump { 30% { transform: scale(1.12); } 60% { transform: scale(.97); } }
+  /* bottom padding: the last message must scroll clear of the floating button */
+  #messages { flex: 1; overflow-y: auto; padding: 16px 14px 100px; display: flex; flex-direction: column; gap: 14px; }
   .msg { max-width: 92%; }
   .msg.agent { display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 8px; max-width: 96%; }
   .msg.agent .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft);
@@ -241,10 +255,9 @@
   .add button { border: 0; border-radius: 8px; background: var(--accent-soft); color: var(--accent); padding: 0 12px; }
   .empty-loc { padding: 8px 12px; color: var(--muted); font-size: 13px; }
   .shop .amount { color: var(--text); font-size: 13px; }
-  .hbtn.icon { padding: 6px 10px; }
   .sheet .chats { list-style: none; margin: 0; padding: 0; }
   .hbtn { white-space: nowrap; }
-  /* Narrow phones: the four header items must fit on one line. */
+  /* Narrow phones: the header items must fit on one line. */
   @media (max-width: 400px) {
     header { gap: 6px; }
     .hbtn { padding: 6px 9px; font-size: 14px; }
@@ -366,12 +379,18 @@
 <div class="app">
   <header>
     <h1>Fridge-to-Table</h1>
-    <button class="hbtn icon" id="openHistory" type="button" title="Past chats" aria-label="Past chats">🕘</button>
+    <button class="hbtn" id="openHistory" type="button" title="Past chats">🕘 History</button>
     <button class="hbtn" id="newChat" type="button">New chat</button>
-    <button class="hbtn" id="openInv" type="button">Inventory<span class="badge" id="invCount">0</span></button>
   </header>
 
-  <main id="messages" aria-live="polite"></main>
+  <div class="stage">
+    <main id="messages" aria-live="polite"></main>
+    <!-- The inventory is the heart of the app, so it gets a big floating button over the chat, not a header pill. -->
+    <button class="fab" id="openInv" type="button" aria-label="Inventory">
+      <span class="fab-icon" aria-hidden="true">🧺</span><span class="fab-label">Inventory</span>
+      <span class="badge" id="invCount"></span>
+    </button>
+  </div>
 
   <form class="composer" id="composer">
     <div class="cookmode" id="cookMode" role="radiogroup" aria-label="Cooking mode" hidden></div>
@@ -1307,7 +1326,14 @@ function renderAdd(place) {
 function renderInventory() {
   const own = state.inventory.filter((i) => i.source !== "staple");
   const staples = state.inventory.filter((i) => i.source === "staple");
-  $("invCount").textContent = own.length;
+  const count = $("invCount");
+  if (count.textContent !== String(own.length)) {
+    count.textContent = own.length;
+    const fab = $("openInv");
+    fab.classList.remove("bump");
+    void fab.offsetWidth;  // restart the animation if it is still running
+    fab.classList.add("bump");
+  }
 
   const body = $("invBody");
   const wasOpen = body.querySelector("details.staples")?.open || false;
@@ -1448,7 +1474,7 @@ function renderCookMode() {
     disabled: state.busy, onclick: () => setCookMode(mode) }, label);
   box.replaceChildren(
     opt("home", "🏠 Only what I have", "Ideas use only what is in your kitchen"),
-    opt("shop", "🛒 Shopping OK", "Ideas may need up to 3 things from the shop"));
+    opt("shop", "🛒 Can also buy", "Ideas may need up to 3 things from the shop"));
   box.hidden = !ownItems().length;
 }
 
