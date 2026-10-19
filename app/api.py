@@ -139,6 +139,9 @@ class BoughtState(InventoryState):
 
     sizes: dict[str, list[PackSize]]
     previous: dict[str, AmountValue | None]
+    # Per item, a token for POST /inventory/undo/{token}: unticking it puts the item back as it was before
+    # this "Bought" (a new item is removed again). Staples have none.
+    undo: dict[str, str]
 
 
 class MadeRequest(BaseModel):
@@ -252,11 +255,13 @@ def post_bought(store: StoreDep, items: list[BoughtItem]) -> BoughtState:
     """Shopping-list items the user bought (T6.4): each becomes plenty (a new one goes to its place by
     category). An amount comes only from a package-size chip; the recipe amount is never used. Staples
     are ignored. Keys of `sizes` / `previous` are canonical names."""
+    undo = inventory.bought_undo_points(store, [b.name for b in items])
     previous = inventory.mark_bought(store, items, source="manual")
     sizes = {normalize(b.name): inventory.package_sizes(b.name, b.category) for b in items if normalize(b.name)}
     return BoughtState(
         **_state(store), sizes=sizes,
         previous={n: AmountValue(amount=p[0], unit=p[1]) if p else None for n, p in previous.items()},
+        undo=undo,
     )
 
 
@@ -273,7 +278,8 @@ def recipe_made(recipe_id: str, store: StoreDep, body: MadeRequest | None = None
 
 @app.post("/inventory/undo/{token}")
 def inventory_undo(token: str, store: StoreDep) -> InventoryState:
-    """Undo an "I made it": the touched items come back exactly as they were. Works once per token."""
+    """Undo an "I made it", or one item's "Bought" (unticked on the shopping list): the touched items come
+    back exactly as they were, an item the "Bought" added is removed. Works once per token."""
     if not inventory.undo_made(store, token):
         raise HTTPException(404, "Nothing to undo (unknown or already used)")
     return InventoryState(**_state(store))

@@ -696,3 +696,32 @@ def test_undo_restores_the_exact_previous_state(store):
 
 def test_undo_with_an_unknown_token(store):
     assert undo_made(store, "nope") is False
+
+
+# --- unticking a "Bought" item ---------------------------------------------------------------------------
+
+from app.tools.inventory import bought_undo_points  # noqa: E402
+
+
+def test_untick_bought_restores_an_existing_item(store):
+    update_inventory(store, [add("egg", category="egg", qty_level="low", amount=4, unit="pcs")])
+    before = by_name(store.load_inventory())["egg"].model_dump()
+    tokens = bought_undo_points(store, ["eggs"])
+    mark_bought(store, [bought("eggs", category="egg")])
+    mark_bought(store, [bought("egg", amount=12, unit="pcs", had_amount=4, had_unit="pcs")])  # a size chip
+    assert by_name(get_inventory(store))["egg"].amount == 16
+    assert undo_made(store, tokens["egg"]) is True
+    assert by_name(store.load_inventory())["egg"].model_dump() == before  # low, 4 pcs again
+    assert undo_made(store, tokens["egg"]) is False  # works once
+
+
+def test_untick_bought_removes_a_new_item_and_leaves_the_others(store):
+    tokens = bought_undo_points(store, ["butter", "ground beef"])
+    mark_bought(store, [bought("butter", category="dairy"), bought("ground beef", category="meat")])
+    assert undo_made(store, tokens["butter"]) is True
+    inv = by_name(get_inventory(store))
+    assert "butter" not in inv and inv["ground beef"].qty_level == "plenty"
+
+
+def test_bought_staples_get_no_undo_token(store):
+    assert bought_undo_points(store, ["salt", "salt", "butter"]).keys() == {"butter"}

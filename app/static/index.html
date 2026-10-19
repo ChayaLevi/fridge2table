@@ -193,7 +193,7 @@
   .shop li.item-line::before { display: none; }
   .shop .cbox { flex: none; padding: 0; width: 26px; height: 26px; border-radius: 8px; border: 2px solid #D3CABC; background: #fff;
                 display: grid; place-items: center; cursor: pointer; }
-  .shop .cbox.on { background: var(--teal); border-color: var(--teal); color: #fff; cursor: default; }
+  .shop .cbox.on { background: var(--teal); border-color: var(--teal); color: #fff; }
   .shop .cbox svg { width: 17px; height: 17px; display: block; }
   .shop li .lt { flex: 1; min-width: 0; line-height: 1.6; }
   .shop li .what { font-size: 17px; color: var(--text); }
@@ -1120,6 +1120,40 @@ function boughtOf(reply) {
   return reply.bought;
 }
 
+// Per bought name, the token that puts the item back as it was before (POST /inventory/undo/{token});
+// kept on the reply with `bought`, so a reloaded chat can still untick.
+function undoTokensOf(reply) {
+  if (!reply.bought_undo || typeof reply.bought_undo !== "object") reply.bought_undo = {};
+  return reply.bought_undo;
+}
+
+function keepUndo(reply, names, data) {
+  const tokens = undoTokensOf(reply);
+  for (const name of names) {
+    const token = (data.undo || {})[String(name).toLowerCase()];
+    if (token) tokens[name] = token;
+  }
+}
+
+// Untick a bought item: the inventory goes back to what it was before (a new item is removed again).
+// An item bought before unticking existed (no token) is only unticked.
+async function unbuy(name, reply) {
+  const bought = boughtOf(reply);
+  const tokens = undoTokensOf(reply);
+  const token = tokens[name];
+  try {
+    if (token) setInventory(await api(`/inventory/undo/${encodeURIComponent(token)}`, { method: "POST" }));
+  } catch (err) {
+    // 404: already undone elsewhere; anything else: say so and keep the tick
+    if (!/Nothing to undo/.test(err.message)) { addEntry({ role: "system", text: err.message }); return; }
+  }
+  bought.splice(bought.indexOf(name), 1);
+  delete tokens[name];
+  if (bought.ask && bought.ask.name === name) bought.ask = null;
+  saveTranscript();
+  redrawShops();
+}
+
 function categoryFor(name, meals) {
   const low = String(name).toLowerCase();
   for (const m of meals || []) {
@@ -1147,6 +1181,7 @@ async function buyOne(name, reply) {
   try {
     const data = await postBought([{ name, category: categoryFor(name, reply.meals) }]);
     if (!bought.includes(name)) bought.push(name);
+    keepUndo(reply, [name], data);
     bought.ask = { name, sizes: data.sizes[name] || [], had: data.previous[name] || null };
     saveTranscript();
   } catch (err) {
@@ -1174,8 +1209,9 @@ async function buyAll(names, reply) {
   const todo = names.filter((n) => !bought.includes(n));
   if (!todo.length) return;
   try {
-    await postBought(todo.map((name) => ({ name, category: categoryFor(name, reply.meals) })));
+    const data = await postBought(todo.map((name) => ({ name, category: categoryFor(name, reply.meals) })));
     bought.push(...todo);
+    keepUndo(reply, todo, data);
     bought.ask = null;
     saveTranscript();
   } catch (err) {
@@ -1196,7 +1232,8 @@ function boughtLine(name, reply, inSheet = false) {
   if (bought.includes(name)) {
     const item = itemsByName().get(name);
     const line = el("li", { class: "item-line bought" },
-      el("span", { class: "cbox on", "aria-hidden": "true" }, icon(ICON.check, "ck")),
+      el("button", { class: "cbox on", type: "button", "aria-label": `Not bought ${text}`, title: "Untick: not bought",
+                     onclick: () => unbuy(name, reply) }, icon(ICON.check, "ck")),
       el("span", { class: "lt" }, el("span", { class: "what" }, text),
         item && item.amount_text ? el("span", { class: "need" }, ` · ${item.amount_text}`) : null));
     const ask = bought.ask && bought.ask.name === name ? bought.ask : null;

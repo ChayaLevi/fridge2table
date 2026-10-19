@@ -396,6 +396,17 @@ def test_bought_returns_the_previous_amount_for_the_chip(client, store):
     assert {i["name"]: i for i in r.json()["inventory"]}["egg"]["amount_text"] == "16 pcs"
 
 
+def test_bought_item_can_be_unticked(client, store):
+    client.patch("/inventory", json=[{"op": "add", "name": "milk", "category": "dairy", "qty_level": "low"}])
+    body = client.post("/inventory/bought", json=[{"name": "milk", "category": "dairy"},
+                                                  {"name": "butter", "category": "dairy"}]).json()
+    assert body["undo"].keys() == {"milk", "butter"}
+    items = {i["name"]: i for i in client.post(f"/inventory/undo/{body['undo']['milk']}").json()["inventory"]}
+    assert items["milk"]["qty_level"] == "low" and items["butter"]["qty_level"] == "plenty"
+    items = {i["name"]: i for i in client.post(f"/inventory/undo/{body['undo']['butter']}").json()["inventory"]}
+    assert "butter" not in items
+
+
 def test_bought_rejects_a_bad_amount(client):
     assert client.post("/inventory/bought", json=[{"name": "egg", "amount": 0}]).status_code == 422
 

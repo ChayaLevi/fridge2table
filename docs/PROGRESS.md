@@ -101,6 +101,25 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Log
 
+### 2026-10-19 — Untick a bought item (T6.4 follow-up, the human's request)
+
+Built:
+- `app/tools/inventory.py`: `bought_undo_points(store, names)` saves, before a "Bought", one undo snapshot per item (the item as it was, or its name if it is new; staples none). `undo_made` now restores both kinds of snapshot ("I made it": a list of items; "Bought": `{"items", "added"}` — added names are removed again).
+- `app/api.py`: `POST /inventory/bought` returns `undo: {name: token}`; `POST /inventory/undo/{token}` undoes it.
+- `app/static/index.html`: a ticked box on the shopping list is a button; unticking calls the undo and the item goes back to what it was (level and amount; a new item is removed). Tokens are kept on the reply (`bought_undo`), so a reloaded chat can still untick. The size chip's second post keeps the first token, so unticking goes back to before the first "Bought".
+- Tests: 3 in `tests/test_inventory.py`, 1 in `tests/test_api.py`.
+
+Also on 2026-10-19 (design only, no behaviour change): the page, inventory panel and recipe window were redesigned after the human's brand board and mockups (commits "UI: …"); `/static` is mounted for the icon and images; the shopping list got a disabled "Order" button as a placeholder for ordering later.
+
+Open: items bought before this change (no token) are only unticked; the inventory is not changed for them.
+
+How to verify:
+```
+uv run pytest -q
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: all tests pass. Manual check: ask for a dish you are missing things for, tick an item on the shopping list (the inventory count goes up), then untick it: the inventory is as before.
+
 ### 2026-10-18 — T6.1 "I made it" (the human's request)
 
 - Built:

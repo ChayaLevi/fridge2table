@@ -457,13 +457,39 @@ def mark_made(
     return MadeResult(changes=changes, token=token)
 
 
+def bought_undo_points(store: Store, names: Iterable[str]) -> dict[str, str]:
+    """Before "Bought": one undo token per item, so unticking one item puts it back as it was.
+
+    The token's snapshot holds the item as it is now (it will become plenty), or, for an item not in the
+    inventory yet, its name to remove again. Staples (assumed always there) get no token. Keys are
+    canonical names.
+    """
+    stored = {i.name: i for i in store.load_inventory()}
+    staples = set(all_staples(store))
+    tokens: dict[str, str] = {}
+    for raw in names:
+        name = normalize(raw)
+        if not name or name in tokens or name in staples:
+            continue
+        item = stored.get(name)
+        data = {"items": [item.model_dump(mode="json", exclude={"amount_text"})] if item else [],
+                "added": [] if item else [name]}
+        tokens[name] = uuid.uuid4().hex
+        store.save_undo(tokens[name], json.dumps(data))
+    return tokens
+
+
 def undo_made(store: Store, token: str) -> bool:
-    """Put back the items an "I made it" touched, exactly as they were (False if the token is unknown or used)."""
+    """Put back the items an "I made it" or a "Bought" touched, exactly as they were; items the "Bought"
+    added are removed again. False if the token is unknown or already used."""
     data = store.pop_undo(token)
     if data is None:
         return False
-    snapshot = [InventoryItem.model_validate(d) for d in json.loads(data)]
-    stored = store.load_inventory()
+    raw = json.loads(data)
+    # "I made it" saves a list of items; "Bought" saves {"items": [...], "added": [names]}.
+    items, added = (raw, []) if isinstance(raw, list) else (raw["items"], raw["added"])
+    snapshot = [InventoryItem.model_validate(d) for d in items]
+    stored = [i for i in store.load_inventory() if i.name not in added]
     for old in snapshot:
         k = next((n for n, i in enumerate(stored) if i.id == old.id or i.name == old.name), None)
         if k is None:
