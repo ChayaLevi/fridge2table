@@ -38,12 +38,12 @@
   [hidden] { display: none !important; }
 
   .app { display: flex; flex-direction: column; height: 100dvh; max-width: 720px; margin: 0 auto; }
-  header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; position: relative; z-index: 2;
-           padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 14px; position: relative; z-index: 2;
+           padding-top: calc(8px + env(safe-area-inset-top, 0px));
            background: var(--grain), var(--surface); box-shadow: 0 1px 0 var(--line), 0 4px 14px rgba(60,45,25,.06); }
   header h1 { font-size: 19px; font-weight: 800; letter-spacing: -.01em; color: var(--teal-dark); margin: 0; flex: 1;
               white-space: nowrap; display: flex; align-items: center; gap: 10px; min-width: 0; }
-  header h1 .logo { width: 36px; height: 36px; border-radius: 10px; flex: none; display: block;
+  header h1 .logo { width: 46px; height: 46px; border-radius: 13px; flex: none; display: block;
                     box-shadow: 0 1px 0 rgba(110,80,40,.1), 0 3px 8px rgba(15,118,110,.25); }
   .hbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 13px;
           color: var(--teal-dark); font-weight: 600; font-size: 14px; box-shadow: 0 1px 0 rgba(110,80,40,.06); }
@@ -117,10 +117,11 @@
   .card:active { transform: scale(.99); }
   /* The dish photo (GET /recipe/{id}/photo). The colour shows while it loads; with no photo it stays a
      thin coloured band. */
-  .card .pic { height: 150px; transition: height .2s; }
+  .card .pic { height: 150px; margin: 8px 8px 0; border-radius: 14px; overflow: hidden; transition: height .2s;
+               box-shadow: inset 0 0 0 1px rgba(60,45,25,.05); }
   .card .pic img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .3s; }
   .card .pic img.loaded { opacity: 1; }
-  .card .pic.none { height: 10px; }
+  .card .pic.none { height: 10px; margin: 0; border-radius: 0; }
   .band0 { background: linear-gradient(135deg, #B9DCC6, var(--sage) 50%, var(--herb)); }
   .band1 { background: linear-gradient(135deg, #FBE6A6, var(--lemon) 45%, var(--carrot)); }
   .band2 { background: linear-gradient(135deg, #FFC9A3, var(--carrot) 50%, var(--tomato)); }
@@ -218,9 +219,13 @@
                border: 0; background: var(--tomato); color: #fff; font-size: 13px; line-height: 22px; padding: 0;
                box-shadow: 0 1px 3px rgba(0,0,0,.2); }
   .row { display: flex; gap: 6px; align-items: flex-end; }
-  .iconbtn { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
-             background: var(--surface); font-size: 19px; padding: 0; box-shadow: 0 1px 0 rgba(110,80,40,.06); }
-  .iconbtn:active { background: var(--accent-soft); }
+  .iconbtn { flex: none; width: 44px; height: 44px; border-radius: 14px; border: 0; padding: 0; font-size: 0;
+             background: var(--accent-soft) center / 24px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5A2.5 2.5 0 0 1 6 6h1.9l1.5-2.2h5.2L16.1 6H18a2.5 2.5 0 0 1 2.5 2.5v8.5A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z'/%3E%3Ccircle cx='12' cy='12.6' r='3.6'/%3E%3C/svg%3E");
+             box-shadow: 0 1px 0 rgba(15,118,110,.12), 0 2px 6px rgba(15,118,110,.12), inset 0 0 0 1px rgba(15,118,110,.08); }
+  #gallery { background-color: #FDF3CC; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='4.5' width='17' height='15' rx='3'/%3E%3Ccircle cx='9' cy='9.7' r='1.7'/%3E%3Cpath d='M4 17.5l5.2-4.6 3.6 3.1 2.9-2.4 4.3 3.9'/%3E%3C/svg%3E");
+             box-shadow: 0 1px 0 rgba(160,120,0,.12), 0 2px 6px rgba(160,120,0,.12), inset 0 0 0 1px rgba(160,120,0,.08); }
+  .iconbtn:active { transform: translateY(1px); }
+  .iconbtn:disabled { opacity: .5; }
   #input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); border-radius: 22px; padding: 11px 15px;
            font: inherit; max-height: 120px; background: var(--bg); color: var(--text); }
   #input::placeholder { color: #9AA19D; }
@@ -236,55 +241,75 @@
             display: flex; flex-direction: column; box-shadow: -6px 0 28px rgba(40,30,15,.2);
             border-radius: 24px 0 0 24px; overflow: hidden; }
   .drawer header { position: sticky; top: 0; }
-  .drawer header h1 { font-size: 20px; }
+  .drawer header h1 { font-size: 21px; }
+  .drawer header h1::before { content: "🧺"; width: 38px; height: 38px; border-radius: 12px; display: grid;
+                              place-items: center; font-size: 20px; background: var(--accent-soft);
+                              box-shadow: 0 1px 0 rgba(15,118,110,.12), 0 2px 6px rgba(15,118,110,.12); }
   .drawer .body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
-  .loc { background: var(--surface); border: 0; border-radius: var(--radius); margin-bottom: 14px; box-shadow: var(--paper-1);
-         overflow: hidden; }
-  .loc-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); }
-  .loc-head h2 { font-size: 16px; font-weight: 800; margin: 0; color: var(--teal-dark); }
-  .loc-head .when { flex: 1; font-size: 12px; color: var(--muted); }
+  /* Each place is a paper card on a coloured paper layer: fridge teal, freezer sage, pantry carrot, staples lemon. */
+  .loc { --tone: var(--teal); --tone-soft: var(--accent-soft);
+         background: var(--surface); border: 0; border-radius: 20px; margin-bottom: 16px; overflow: hidden;
+         box-shadow: 0 -4px 0 var(--tone) inset, var(--paper-2); padding-bottom: 4px; }
+  .loc-freezer { --tone: var(--sage); --tone-soft: #E5F1EA; }
+  .loc-pantry { --tone: var(--carrot); --tone-soft: #FEEBD6; }
+  .loc-staples, .staples { --tone: var(--lemon); --tone-soft: #FDF3CC; }
+  .loc-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px;
+              background: linear-gradient(var(--tone-soft), rgba(255,255,255,0)); }
+  .loc-head h2 { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; margin: 0; color: var(--teal-dark); }
+  .ptile { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 19px;
+           background: var(--surface); box-shadow: 0 1px 0 rgba(60,45,25,.08), 0 2px 6px rgba(60,45,25,.1); }
+  .loc-head .when { flex: 1; text-align: right; font-size: 11px; font-weight: 600; color: var(--teal-dark); }
   .loc-head .when.no { color: var(--warn); }
-  .loc-head .iconbtn { width: 36px; height: 36px; font-size: 16px; }
+  .loc-head .iconbtn { width: 38px; height: 38px; border-radius: 12px; background-size: 21px; background-color: var(--surface); }
   .items { list-style: none; margin: 0; padding: 0; }
-  .item { border-bottom: 1px solid var(--line); }
-  .item:last-child { border-bottom: 0; }
-  .item .line { display: flex; align-items: center; gap: 4px; padding-right: 6px; }
-  .item .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: none;
-                text-align: left; padding: 10px 6px 10px 14px; }
-  .item .emo { width: 26px; text-align: center; font-size: 19px; flex: none; }
-  .item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .item { position: relative; }
+  .item + .item::before { content: ""; position: absolute; left: 62px; right: 14px; top: 0; border-top: 1px solid var(--line); }
+  .item .line { display: flex; align-items: center; gap: 4px; padding-right: 8px; }
+  .item .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: none;
+                text-align: left; padding: 8px 6px 8px 14px; }
+  .item .emo { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 19px; flex: none;
+               background: #F6F0E6; box-shadow: inset 0 -2px 0 rgba(60,45,25,.06); }
+  .tint-green { background: #E7F4E4 !important; } .tint-red { background: #FDE6E3 !important; }
+  .tint-yellow { background: #FDF3CC !important; } .tint-orange { background: #FEEBD6 !important; }
+  .tint-teal { background: var(--accent-soft) !important; }
+  .item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
   .item .flag { font-size: 12px; font-weight: 600; flex: none; }
-  .item .flag.soonflag { color: var(--warn); }
-  .item .lvl { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); flex: none; }
-  .item .lvl i { width: 9px; height: 9px; border-radius: 50%; }
-  .lvl.plenty i { background: var(--herb); } .lvl.some i { background: #E5B92A; } .lvl.low i { background: var(--tomato); }
-  .item.open { background: #FBF6EE; }
-  .item .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 12px 12px 50px; }
-  .actions .act { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 12px;
-                  font-size: 13px; }
-  .actions .act.on { background: var(--carrot); border-color: var(--carrot); color: #fff; }
-  .actions .act.danger { color: #B33A2E; }
-  .item .name .amt { color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .amountline { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .amountline label { font-size: 13px; color: var(--muted); }
-  .amountline input { width: 72px; border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; font-size: 16px;
+  .item .flag.soonflag { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--warn-soft); }
+  .item .lvl { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; flex: none;
+               padding: 3px 10px 3px 8px; border-radius: 999px; }
+  .item .lvl i { width: 7px; height: 7px; border-radius: 50%; }
+  .lvl.plenty { background: #E7F4E4; color: #2E7D32; } .lvl.plenty i { background: var(--herb); }
+  .lvl.some { background: #FDF3CC; color: #7A5E00; } .lvl.some i { background: #E5B92A; }
+  .lvl.low { background: #FDE6E3; color: #B33A2E; } .lvl.low i { background: var(--tomato); }
+  .item.open { background: #F3F9F6; box-shadow: inset 4px 0 0 var(--teal); }
+  .item.open::before, .item.open + .item::before { display: none; }
+  .item .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 2px 14px 14px 62px; }
+  .actions .act { border: 0; background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+                  color: var(--teal-dark); box-shadow: 0 1px 0 rgba(60,45,25,.06), 0 1px 4px rgba(60,45,25,.1); }
+  .actions .act.on { background: var(--carrot); color: #fff; }
+  .actions .act.danger { color: #B33A2E; background: #FFF6F4; }
+  .item .name .amt { color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
+  .amountline { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+  .amountline label { font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .05em; }
+  .amountline input { width: 72px; border: 1px solid var(--line); border-radius: 12px; padding: 5px 9px; font-size: 16px;
                       background: var(--surface); }
   .amountline input.bad { border-color: var(--warn); }
   .amountline .seg button { padding: 5px 9px; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-  .seg button { border: 0; background: var(--surface); padding: 5px 10px; font-size: 13px; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.on { background: var(--teal); color: #fff; }
-  .item.uncertain { background: var(--warn-soft); }
-  .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 700; }
-  .item.notseen { background: #F3EFE7; }
-  .item.notseen .name { color: var(--muted); font-style: italic; }
+  .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface);
+         box-shadow: inset 0 0 0 1px var(--line); }
+  .seg button { border: 0; background: none; border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .seg button.on { background: var(--teal); color: #fff; box-shadow: 0 1px 3px rgba(15,118,110,.3); }
+  .item.uncertain { background: var(--warn-soft); box-shadow: inset 4px 0 0 var(--carrot); }
+  .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 800; }
+  .item.notseen { background: #F5F1EA; box-shadow: inset 4px 0 0 #D8CFC0; }
+  .item.notseen .emo { opacity: .6; }
+  .item.notseen .name { color: var(--muted); font-style: italic; font-weight: 400; }
   .item.notseen .name::after { content: " · not seen"; font-size: 12px; font-style: normal; }
-  .review-group .item.notseen .name::after { content: ""; }
   .review-group h3 { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--teal);
                      margin: 16px 0 4px; }
   .review-group .why { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .sheet .review-group .items { padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .sheet .review-group .items { padding: 2px 0; background: var(--surface); border: 0; border-radius: 16px; overflow: hidden;
+                               box-shadow: var(--paper-1), inset 0 0 0 1px var(--line); }
   .sheet .foot { display: flex; gap: 8px; padding: 12px 16px 14px;
                  border-top: 1px solid var(--line); }
   .sheet .foot button { flex: 1; height: 46px; border-radius: 16px; font-weight: 700; font-family: var(--head); }
@@ -297,21 +322,26 @@
   .soon { border: 1px dashed var(--line); background: none; border-radius: 999px; padding: 3px 8px; font-size: 12px;
           color: #A3A8A4; }
   .soon.on { background: var(--carrot); border-color: var(--carrot); color: #fff; }
-  .del, .edit, .ok { border: 0; background: none; color: var(--muted); font-size: 18px; width: 28px; padding: 0; flex: none; }
+  .del, .edit, .ok { border: 0; background: none; color: var(--muted); font-size: 18px; width: 30px; height: 30px; padding: 0;
+                    flex: none; border-radius: 50%; }
   .edit { font-size: 15px; }
-  .ok { color: var(--teal); font-weight: 700; }
+  .ok { color: #fff; background: var(--teal); font-size: 15px; font-weight: 800; box-shadow: 0 1px 3px rgba(15,118,110,.3); }
+  .item.uncertain .del, .item.notseen .del { color: #B33A2E; background: var(--surface); box-shadow: 0 1px 3px rgba(60,45,25,.12); }
+  .line .ok + .del { margin-left: 2px; }
   .item.editing { display: flex; gap: 6px; align-items: center; padding: 8px 10px 8px 14px; }
   .item.editing input { flex: 1; min-width: 0; border: 1px solid var(--teal); border-radius: 10px; padding: 5px 8px;
                         font: inherit; background: var(--surface); color: var(--text); }
   .item.editing .save { border: 0; border-radius: 10px; background: var(--teal); color: #fff; padding: 5px 11px; font-weight: 600; }
   .item.editing .cancel { border: 0; background: none; color: var(--muted); padding: 5px 4px; }
-  .hint { padding: 7px 14px; font-size: 12px; color: var(--warn); background: var(--warn-soft);
-          border-bottom: 1px solid var(--line); }
-  .add { display: flex; gap: 6px; padding: 10px 12px; }
-  .add input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 7px 11px; font: inherit;
-               background: var(--bg); color: var(--text); }
-  .add button { border: 0; border-radius: 12px; background: var(--accent-soft); color: var(--teal); padding: 0 14px; font-weight: 700; }
-  .empty-loc { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+  .hint { margin: 0 12px 8px; padding: 8px 12px; font-size: 12px; color: var(--warn); background: var(--warn-soft);
+          border-radius: 12px; }
+  .add { display: flex; gap: 6px; padding: 4px 12px 10px; }
+  .add input { flex: 1; min-width: 0; border: 1.5px dashed #DCCFBC; border-radius: 14px; padding: 8px 11px 8px 34px; font: inherit;
+               background: var(--bg) 10px center / 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E"); color: var(--text); }
+  .add input:focus { border-style: solid; }
+  .add button { border: 0; border-radius: 14px; background: var(--teal); color: #fff; padding: 0 16px; font-weight: 700;
+                box-shadow: 0 1px 0 rgba(8,60,55,.3), 0 2px 6px rgba(15,118,110,.22); }
+  .empty-loc { padding: 10px 14px 12px; color: var(--muted); font-size: 13px; font-style: italic; }
   .shop .amount { color: var(--text); font-size: 13px; }
   .sheet .chats { list-style: none; margin: 0; padding: 0; }
   .hbtn { white-space: nowrap; }
@@ -319,13 +349,13 @@
   @media (max-width: 400px) {
     header { gap: 6px; }
     header h1 { font-size: 17px; gap: 8px; }
-    header h1 .logo { width: 32px; height: 32px; }
+    header h1 .logo { width: 42px; height: 42px; border-radius: 12px; }
     .hbtn { padding: 6px 10px; font-size: 13px; }
   }
   @media (max-width: 380px) {
     header { padding-left: 10px; padding-right: 10px; }
     header h1 { font-size: 15px; gap: 7px; }
-    header h1 .logo { width: 28px; height: 28px; border-radius: 8px; }
+    header h1 .logo { width: 38px; height: 38px; border-radius: 11px; }
     .hbtn { padding: 5px 8px; }
   }
   /* Very narrow: the icon stands for the name. */
@@ -347,11 +377,10 @@
   .restart .startbtn { width: 100%; height: 46px; border: 1px dashed #F1B9B2; border-radius: 16px; background: transparent;
                        color: #B33A2E; font-weight: 600; }
   .restart .startbtn:active { background: #FDE6E3; }
-  .invsearch { flex: none; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
-  .invsearch input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 999px;
-                     padding: 9px 15px; font: inherit; background: var(--bg); color: var(--text); }
-  .invsearch input:focus { outline: 3px solid var(--accent-soft); border-color: var(--teal); }
-  .add + .items, .add + .empty-loc { border-top: 1px solid var(--line); }
+  .invsearch { flex: none; padding: 12px 14px; background: transparent; }
+  .invsearch input { width: 100%; box-sizing: border-box; border: 0; border-radius: 16px; padding: 11px 15px 11px 42px; font: inherit;
+                     background: var(--surface) 14px center / 20px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='M15 15l5 5'/%3E%3C/svg%3E"); color: var(--text); box-shadow: var(--paper-1); }
+  .invsearch input:focus { outline: 3px solid var(--accent-soft); }
   .restart .confirm { background: #FDE6E3; border: 1px solid #F1B9B2; border-radius: var(--radius);
                       padding: 14px; text-align: left; }
   .restart .confirm p { margin: 0 0 10px; }
@@ -359,7 +388,16 @@
   .restart .row2 button { flex: 1; height: 42px; border-radius: 14px; font-weight: 700; }
   .restart .danger { border: 0; background: var(--tomato); color: #fff; box-shadow: 0 2px 6px rgba(239,91,78,.3); }
   .restart .keep { border: 1px solid var(--line); background: var(--surface); }
-  details.staples summary { padding: 12px 14px; cursor: pointer; font-weight: 700; font-family: var(--head); color: var(--teal-dark); }
+  details.staples summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none;
+                            font-weight: 800; font-family: var(--head); color: var(--teal-dark);
+                            background: linear-gradient(var(--tone-soft), rgba(255,255,255,0)); }
+  details.staples summary::-webkit-details-marker { display: none; }
+  details.staples summary::before { content: "🧂"; width: 36px; height: 36px; border-radius: 12px; flex: none; display: grid;
+                                    place-items: center; font-size: 19px; background: var(--surface);
+                                    box-shadow: 0 1px 0 rgba(60,45,25,.08), 0 2px 6px rgba(60,45,25,.1); }
+  details.staples summary::after { content: "›"; margin-left: auto; font-size: 22px; line-height: 1; color: var(--teal);
+                                   transition: transform .2s; }
+  details.staples[open] summary::after { transform: rotate(90deg); }
 
   /* A centered window (recipe, review after a scan). Only its body scrolls; the shadows at its top and
      bottom edges appear when there is more to scroll (background-attachment: local). */
@@ -381,10 +419,10 @@
   .sheet .meta { color: var(--muted); margin-bottom: 8px; }
   /* The recipe window: the photo with the title on it, coloured pills, ingredients and steps on tinted panels. */
   #sheet { overflow: hidden; }
-  #sheet .float { position: absolute; right: 12px; top: 12px; z-index: 2; border: 0; background: rgba(255,253,249,.95);
+  #sheet .float { position: absolute; right: 28px; top: 26px; z-index: 2; border: 0; background: rgba(255,253,249,.95);
                   box-shadow: 0 2px 8px rgba(0,0,0,.22); font-weight: 700; }
-  #sheet .body { padding-top: 0; }
-  #sheet .cover { position: relative; height: 220px; margin: 0 -18px; }
+  #sheet .body { padding-top: 14px; }
+  #sheet .cover { position: relative; height: 220px; border-radius: 20px; overflow: hidden; box-shadow: var(--paper-2); }
   #sheet .cover.nophoto { height: 120px; }
   #sheet .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
   #sheet .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 35%, rgba(10,40,36,.7)); }
@@ -530,7 +568,11 @@ function defaultUnit(item) {
   if (item.category === "sauce") return "ml";
   return ["meat", "fish", "dairy", "grain", "pasta", "baking"].includes(item.category) ? "g" : "pcs";
 }
-const PLACE_LABEL = { fridge: "🧊 Fridge", freezer: "❄️ Freezer", pantry: "🥫 Pantry" };
+const PLACE_ICON = { fridge: "🧊", freezer: "❄️", pantry: "🥫", staples: "🧂" };
+// A card title: the emoji on its own paper tile, then the name.
+function placeTitle(place) {
+  return el("h2", {}, el("span", { class: "ptile", "aria-hidden": "true" }, PLACE_ICON[place]), cap(place));
+}
 const MAX_PHOTOS = 4;
 
 const $ = (id) => document.getElementById(id);
@@ -589,6 +631,12 @@ const NAME_EMOJI = [
   [/corn/, "🌽"], [/broccoli/, "🥦"], [/honey/, "🍯"], [/oil/, "🫒"], [/salt/, "🧂"], [/sugar/, "🍬"], [/flour/, "🌾"],
   [/water/, "💧"], [/pepper|chili|paprika|cumin|oregano/, "🌶️"], [/soy sauce|vinegar/, "🍶"], [/baking/, "🧁"],
 ];
+// The emoji tile's colour, by category.
+const CATEGORY_TINT = {
+  vegetable: "green", fruit: "red", meat: "red", fish: "teal", dairy: "yellow", egg: "yellow", grain: "orange",
+  pasta: "orange", canned: "orange", baking: "orange", sauce: "red", spice: "orange", snack: "yellow", drink: "teal", frozen: "teal",
+};
+function emoClass(item) { return "emo" + (CATEGORY_TINT[item.category] ? ` tint-${CATEGORY_TINT[item.category]}` : ""); }
 const CATEGORY_EMOJI = {
   vegetable: "🥬", fruit: "🍎", meat: "🥩", fish: "🐟", dairy: "🧀", egg: "🥚", grain: "🍚", pasta: "🍝",
   canned: "🥫", baking: "🧁", sauce: "🍅", condiment: "🧂", spice: "🌶️", snack: "🍪", drink: "🥤", frozen: "🧊",
@@ -1289,14 +1337,14 @@ function renderItem(item) {
                              onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×");
   const main = el("button", { class: "main", type: "button", "aria-expanded": open ? "true" : "false",
                               onclick: () => { state.openItem = open ? null : item.name; redrawLists(); } },
-    el("span", { class: "emo", "aria-hidden": "true" }, itemEmoji(item)),
+    el("span", { class: emoClass(item), "aria-hidden": "true" }, itemEmoji(item)),
     el("span", { class: "name" }, item.display_name,
       item.amount_text ? el("span", { class: "amt" }, ` · ${item.amount_text}`) : null),
     item.use_soon ? el("span", { class: "flag soonflag", title: "Use soon" }, "⏰") : null,
     item.is_staple ? null : el("span", { class: `lvl ${item.qty_level}` }, el("i"), item.qty_level));
   if (item.is_staple) {
     row.append(el("div", { class: "line" }, el("span", { class: "main" },
-      el("span", { class: "emo", "aria-hidden": "true" }, itemEmoji(item)), el("span", { class: "name" }, item.display_name)),
+      el("span", { class: emoClass(item), "aria-hidden": "true" }, itemEmoji(item)), el("span", { class: "name" }, item.display_name)),
       del));
     return row;
   }
@@ -1422,13 +1470,13 @@ function renderInventory() {
     if (!hits.length) body.append(el("div", { class: "empty-loc" }, `No items match “${$("invSearch").value.trim()}”.`));
     for (const place of PLACES) {
       const here = hits.filter((i) => i.source !== "staple" && i.location === place);
-      if (here.length) body.append(el("section", { class: "loc" },
-        el("div", { class: "loc-head" }, el("h2", {}, PLACE_LABEL[place])),
+      if (here.length) body.append(el("section", { class: `loc loc-${place}` },
+        el("div", { class: "loc-head" }, placeTitle(place)),
         el("ul", { class: "items" }, here.map(renderItem))));
     }
     const st = hits.filter((i) => i.source === "staple");
-    if (st.length) body.append(el("section", { class: "loc" },
-      el("div", { class: "loc-head" }, el("h2", {}, "Staples")),
+    if (st.length) body.append(el("section", { class: "loc loc-staples" },
+      el("div", { class: "loc-head" }, placeTitle("staples")),
       el("ul", { class: "items" }, st.map(renderItem))));
     return;
   }
@@ -1441,9 +1489,9 @@ function renderInventory() {
     const when = state.scanState.scanned[place];
     const declined = place === "freezer" && state.scanState.freezer_declined;
     const unsure = here.some((i) => i.uncertain || i.not_seen);
-    body.append(el("section", { class: "loc" },
+    body.append(el("section", { class: `loc loc-${place}` },
       el("div", { class: "loc-head" },
-        el("h2", {}, PLACE_LABEL[place]),
+        placeTitle(place),
         el("span", { class: "when" + (when ? "" : " no") },
           when ? ago(when) : declined ? "skipped" : "not scanned yet"),
         el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
