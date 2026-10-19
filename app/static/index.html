@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Fridge-to-Table</title>
-<meta name="theme-color" content="#0F766E">
+<meta name="theme-color" content="#0C5750">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; color: var(--text); background-color: #FDF8EC;
+  body { margin: 0; overflow-x: clip; color: var(--text); background-color: #FDF8EC;
          background-image: url("/static/leaf-tl.png"), url("/static/leaf-r.png"), url("/static/leaf-br.png");
          background-position: left top 4px, right top 14%, right bottom;
          background-size: clamp(56px, 7vw, 110px) auto, clamp(40px, 5vw, 78px) auto, clamp(66px, 8vw, 128px) auto;
@@ -44,13 +44,18 @@
 
   .app { display: flex; flex-direction: column; height: 100dvh; max-width: 720px; margin: 0 auto; }
   header { display: flex; align-items: center; gap: 8px; }
-  /* the page header: a floating paper pill */
-  .app > header { position: relative; z-index: 3; margin: calc(8px + env(safe-area-inset-top, 0px)) 12px 0; padding: 7px 8px 7px 14px;
-                  border-radius: 32px; background: rgba(255,253,248,.97);
-                  box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 6px 22px rgba(60,45,25,.10); }
+  /* the page header: a dark teal bar across the screen */
+  .app > header { position: relative; z-index: 3; margin: 0; padding: 10px 16px 10px 14px;
+                  padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+  .app > header::before { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw;
+                          transform: translateX(-50%); background: linear-gradient(90deg, #0C5750, #0F6A62 55%, #0E5F58);
+                          box-shadow: 0 4px 16px rgba(8,45,41,.25); }
+  .app > header h1 { color: #fff; }
+  .app > header .hbtn { border-color: transparent; background: #FBF5EA; color: #123F3A;
+                        box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.14); }
   header h1 { font-size: 23px; font-weight: 800; letter-spacing: -.015em; color: #174A4A; margin: 0; flex: 1;
               white-space: nowrap; display: flex; align-items: center; gap: 8px; min-width: 0; }
-  header h1 .logo { width: 42px; height: 42px; flex: none; display: block; border-radius: 11px;
+  header h1 .logo { width: 44px; height: 44px; flex: none; display: block; border-radius: 11px;
                     box-shadow: 0 1px 0 rgba(110,80,40,.08), 0 2px 8px rgba(60,45,25,.16); }
   header h1 .name { overflow: hidden; text-overflow: ellipsis; }
   .hbtn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #EEE6D9; background: #FFFDF8; border-radius: 999px;
@@ -58,9 +63,9 @@
           box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 2px 7px rgba(60,45,25,.07); }
   .hbtn svg { width: 21px; height: 21px; display: block; }
   .hbtn:active { background: var(--accent-soft); }
-  #newChat { border-color: transparent; color: #fff; padding: 10px 20px; font-size: 16px;
-             background: linear-gradient(160deg, #138479, #0E6B63);
-             box-shadow: 0 2px 0 rgba(8,60,55,.3), 0 4px 12px rgba(15,118,110,.28); }
+  .app > header #newChat { border-color: transparent; color: #fff; padding: 10px 20px; font-size: 16px;
+                           background: linear-gradient(160deg, #3BB3A3, #22988A);
+                           box-shadow: 0 1px 0 rgba(0,0,0,.1), 0 3px 10px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.18); }
   .badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px;
            background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
 
@@ -287,12 +292,12 @@
 
   /* Narrow phones: the header items must fit on one line, and the composer row too. */
   @media (max-width: 480px) {
-    .app > header { margin-left: 8px; margin-right: 8px; padding: 6px 6px 6px 10px; gap: 6px; }
+    .app > header { padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); gap: 6px; }
     header h1 { font-size: 18px; gap: 6px; }
     header h1 .logo { width: 36px; height: 36px; border-radius: 9px; }
     .hbtn { padding: 7px 11px; font-size: 14px; gap: 5px; }
     .hbtn svg { width: 18px; height: 18px; }
-    #newChat { padding: 8px 13px; font-size: 14px; }
+    .app > header #newChat { padding: 8px 13px; font-size: 14px; }
     #messages { padding-left: 12px; padding-right: 12px; }
     .msg.agent { grid-template-columns: 46px minmax(0, 1fr); column-gap: 10px; }
     .msg.agent .avatar { width: 46px; height: 46px; background-size: 31px; }
@@ -322,7 +327,7 @@
     header h1 .logo { width: 32px; height: 32px; border-radius: 8px; }
     .hbtn { padding: 6px 9px; font-size: 13px; gap: 4px; }
     .hbtn svg { width: 16px; height: 16px; }
-    #newChat { padding: 7px 11px; font-size: 13px; }
+    .app > header #newChat { padding: 7px 11px; font-size: 13px; }
   }
   /* Very narrow: the leaf stands for the name. */
   @media (max-width: 350px) {
@@ -449,9 +454,6 @@
                   box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 8px 24px rgba(60,45,25,.09); }
   #sheet .panel h3 { margin: 0 0 6px; font-size: 22px; font-weight: 800; color: #0E5F58; display: flex; align-items: baseline; gap: 8px; }
   #sheet .panel h3 .n { margin-left: auto; font-family: var(--body); font-size: 14px; font-weight: 400; color: #6B7571; }
-  /* a paper leaf on the ingredients card's corner */
-  #sheet .ingredients::before { content: ""; position: absolute; right: 22px; top: -26px; width: 30px; height: 48px; pointer-events: none;
-                                background: url("/static/leaf-r.png") center / contain no-repeat; transform: rotate(14deg); }
   #sheet .ingredients ul { list-style: none; margin: 0; padding: 0; }
   #sheet .ingredients li { display: flex; align-items: center; gap: 10px; margin: 0; padding: 13px 0; border-top: 1px solid #EFE7DA; }
   #sheet .ingredients li:first-child { border-top: 0; }
