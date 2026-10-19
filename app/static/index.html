@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Nunito+Sans:opsz,wght@6..12,700;6..12,800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Nunito+Sans:opsz,wght@6..12,700;6..12,800&family=Fraunces:opsz,wght@9..144,700&display=swap">
 <style>
   /* Smart Paper Kitchen (docs: brand board): cream paper, deep teal, food accents, layered soft shadows.
      Headings in Nunito Sans, body in DM Sans. */
@@ -21,6 +21,7 @@
     --warn: #C2410C; --warn-soft: #FEF1E4; --warn-line: #F8D3B3;
     --user: var(--teal); --user-text: #fff; --radius: 18px;
     --head: "Nunito Sans", "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --serif: "Fraunces", Georgia, "Times New Roman", serif;
     --body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     /* paper layers: a crisp edge plus a soft lift */
     --paper-1: 0 1px 0 rgba(110,80,40,.06), 0 1px 3px rgba(60,45,25,.07), 0 4px 12px rgba(60,45,25,.05);
@@ -237,79 +238,9 @@
 
   /* overlays: inventory drawer and recipe sheet */
   .scrim { position: fixed; inset: 0; background: rgba(20,40,36,.42); z-index: 10; backdrop-filter: blur(2px); }
-  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--grain), var(--bg); z-index: 11;
-            display: flex; flex-direction: column; box-shadow: -6px 0 28px rgba(40,30,15,.2);
-            border-radius: 24px 0 0 24px; overflow: hidden; }
-  .drawer header { position: sticky; top: 0; }
-  .drawer header h1 { font-size: 21px; }
-  .drawer header h1::before { content: "🧺"; width: 38px; height: 38px; border-radius: 12px; display: grid;
-                              place-items: center; font-size: 20px; background: var(--accent-soft);
-                              box-shadow: 0 1px 0 rgba(15,118,110,.12), 0 2px 6px rgba(15,118,110,.12); }
-  .drawer .body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
-  /* Each place is a paper card on a coloured paper layer: fridge teal, freezer sage, pantry carrot, staples lemon. */
-  .loc { --tone: var(--teal); --tone-soft: var(--accent-soft);
-         background: var(--surface); border: 0; border-radius: 20px; margin-bottom: 16px; overflow: hidden;
-         box-shadow: 0 -4px 0 var(--tone) inset, var(--paper-2); padding-bottom: 4px; }
-  .loc-freezer { --tone: var(--sage); --tone-soft: #E5F1EA; }
-  .loc-pantry { --tone: var(--carrot); --tone-soft: #FEEBD6; }
-  .loc-staples, .staples { --tone: var(--lemon); --tone-soft: #FDF3CC; }
-  .loc-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px;
-              background: linear-gradient(var(--tone-soft), rgba(255,255,255,0)); }
-  .loc-head h2 { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; margin: 0; color: var(--teal-dark); }
-  .ptile { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 19px;
-           background: var(--surface); box-shadow: 0 1px 0 rgba(60,45,25,.08), 0 2px 6px rgba(60,45,25,.1); }
-  .loc-head .when { flex: 1; text-align: right; font-size: 11px; font-weight: 600; color: var(--teal-dark); }
-  .loc-head .when.no { color: var(--warn); }
-  .loc-head .iconbtn { width: 38px; height: 38px; border-radius: 12px; background-size: 21px; background-color: var(--surface); }
-  .items { list-style: none; margin: 0; padding: 0; }
-  .item { position: relative; }
-  .item + .item::before { content: ""; position: absolute; left: 62px; right: 14px; top: 0; border-top: 1px solid var(--line); }
-  .item .line { display: flex; align-items: center; gap: 4px; padding-right: 8px; }
-  .item .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: none;
-                text-align: left; padding: 8px 6px 8px 14px; }
-  .item .emo { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 19px; flex: none;
-               background: #F6F0E6; box-shadow: inset 0 -2px 0 rgba(60,45,25,.06); }
-  .tint-green { background: #E7F4E4 !important; } .tint-red { background: #FDE6E3 !important; }
-  .tint-yellow { background: #FDF3CC !important; } .tint-orange { background: #FEEBD6 !important; }
-  .tint-teal { background: var(--accent-soft) !important; }
-  .item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
-  .item .flag { font-size: 12px; font-weight: 600; flex: none; }
-  .item .flag.soonflag { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--warn-soft); }
-  .item .lvl { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; flex: none;
-               padding: 3px 10px 3px 8px; border-radius: 999px; }
-  .item .lvl i { width: 7px; height: 7px; border-radius: 50%; }
-  .lvl.plenty { background: #E7F4E4; color: #2E7D32; } .lvl.plenty i { background: var(--herb); }
-  .lvl.some { background: #FDF3CC; color: #7A5E00; } .lvl.some i { background: #E5B92A; }
-  .lvl.low { background: #FDE6E3; color: #B33A2E; } .lvl.low i { background: var(--tomato); }
-  .item.open { background: #F3F9F6; box-shadow: inset 4px 0 0 var(--teal); }
-  .item.open::before, .item.open + .item::before { display: none; }
-  .item .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 2px 14px 14px 62px; }
-  .actions .act { border: 0; background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600;
-                  color: var(--teal-dark); box-shadow: 0 1px 0 rgba(60,45,25,.06), 0 1px 4px rgba(60,45,25,.1); }
-  .actions .act.on { background: var(--carrot); color: #fff; }
-  .actions .act.danger { color: #B33A2E; background: #FFF6F4; }
-  .item .name .amt { color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
-  .amountline { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
-  .amountline label { font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .05em; }
-  .amountline input { width: 72px; border: 1px solid var(--line); border-radius: 12px; padding: 5px 9px; font-size: 16px;
-                      background: var(--surface); }
-  .amountline input.bad { border-color: var(--warn); }
-  .amountline .seg button { padding: 5px 9px; }
-  .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface);
-         box-shadow: inset 0 0 0 1px var(--line); }
-  .seg button { border: 0; background: none; border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
-  .seg button.on { background: var(--teal); color: #fff; box-shadow: 0 1px 3px rgba(15,118,110,.3); }
-  .item.uncertain { background: var(--warn-soft); box-shadow: inset 4px 0 0 var(--carrot); }
-  .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 800; }
-  .item.notseen { background: #F5F1EA; box-shadow: inset 4px 0 0 #D8CFC0; }
-  .item.notseen .emo { opacity: .6; }
-  .item.notseen .name { color: var(--muted); font-style: italic; font-weight: 400; }
-  .item.notseen .name::after { content: " · not seen"; font-size: 12px; font-style: normal; }
   .review-group h3 { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--teal);
                      margin: 16px 0 4px; }
   .review-group .why { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .sheet .review-group .items { padding: 2px 0; background: var(--surface); border: 0; border-radius: 16px; overflow: hidden;
-                               box-shadow: var(--paper-1), inset 0 0 0 1px var(--line); }
   .sheet .foot { display: flex; gap: 8px; padding: 12px 16px 14px;
                  border-top: 1px solid var(--line); }
   .sheet .foot button { flex: 1; height: 46px; border-radius: 16px; font-weight: 700; font-family: var(--head); }
@@ -322,26 +253,6 @@
   .soon { border: 1px dashed var(--line); background: none; border-radius: 999px; padding: 3px 8px; font-size: 12px;
           color: #A3A8A4; }
   .soon.on { background: var(--carrot); border-color: var(--carrot); color: #fff; }
-  .del, .edit, .ok { border: 0; background: none; color: var(--muted); font-size: 18px; width: 30px; height: 30px; padding: 0;
-                    flex: none; border-radius: 50%; }
-  .edit { font-size: 15px; }
-  .ok { color: #fff; background: var(--teal); font-size: 15px; font-weight: 800; box-shadow: 0 1px 3px rgba(15,118,110,.3); }
-  .item.uncertain .del, .item.notseen .del { color: #B33A2E; background: var(--surface); box-shadow: 0 1px 3px rgba(60,45,25,.12); }
-  .line .ok + .del { margin-left: 2px; }
-  .item.editing { display: flex; gap: 6px; align-items: center; padding: 8px 10px 8px 14px; }
-  .item.editing input { flex: 1; min-width: 0; border: 1px solid var(--teal); border-radius: 10px; padding: 5px 8px;
-                        font: inherit; background: var(--surface); color: var(--text); }
-  .item.editing .save { border: 0; border-radius: 10px; background: var(--teal); color: #fff; padding: 5px 11px; font-weight: 600; }
-  .item.editing .cancel { border: 0; background: none; color: var(--muted); padding: 5px 4px; }
-  .hint { margin: 0 12px 8px; padding: 8px 12px; font-size: 12px; color: var(--warn); background: var(--warn-soft);
-          border-radius: 12px; }
-  .add { display: flex; gap: 6px; padding: 4px 12px 10px; }
-  .add input { flex: 1; min-width: 0; border: 1.5px dashed #DCCFBC; border-radius: 14px; padding: 8px 11px 8px 34px; font: inherit;
-               background: var(--bg) 10px center / 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E"); color: var(--text); }
-  .add input:focus { border-style: solid; }
-  .add button { border: 0; border-radius: 14px; background: var(--teal); color: #fff; padding: 0 16px; font-weight: 700;
-                box-shadow: 0 1px 0 rgba(8,60,55,.3), 0 2px 6px rgba(15,118,110,.22); }
-  .empty-loc { padding: 10px 14px 12px; color: var(--muted); font-size: 13px; font-style: italic; }
   .shop .amount { color: var(--text); font-size: 13px; }
   .sheet .chats { list-style: none; margin: 0; padding: 0; }
   .hbtn { white-space: nowrap; }
@@ -362,10 +273,6 @@
   @media (max-width: 340px) {
     header h1 .name { display: none; }
   }
-  /* The drawer fills a phone's width: no rounded edge there. */
-  @media (max-width: 440px) {
-    .drawer { border-radius: 0; }
-  }
   .chats li { margin: 0; }
   .chat-row { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none;
               padding: 12px 6px; display: block; border-radius: 0; }
@@ -377,10 +284,6 @@
   .restart .startbtn { width: 100%; height: 46px; border: 1px dashed #F1B9B2; border-radius: 16px; background: transparent;
                        color: #B33A2E; font-weight: 600; }
   .restart .startbtn:active { background: #FDE6E3; }
-  .invsearch { flex: none; padding: 12px 14px; background: transparent; }
-  .invsearch input { width: 100%; box-sizing: border-box; border: 0; border-radius: 16px; padding: 11px 15px 11px 42px; font: inherit;
-                     background: var(--surface) 14px center / 20px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%230F766E' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='M15 15l5 5'/%3E%3C/svg%3E"); color: var(--text); box-shadow: var(--paper-1); }
-  .invsearch input:focus { outline: 3px solid var(--accent-soft); }
   .restart .confirm { background: #FDE6E3; border: 1px solid #F1B9B2; border-radius: var(--radius);
                       padding: 14px; text-align: left; }
   .restart .confirm p { margin: 0 0 10px; }
@@ -388,16 +291,6 @@
   .restart .row2 button { flex: 1; height: 42px; border-radius: 14px; font-weight: 700; }
   .restart .danger { border: 0; background: var(--tomato); color: #fff; box-shadow: 0 2px 6px rgba(239,91,78,.3); }
   .restart .keep { border: 1px solid var(--line); background: var(--surface); }
-  details.staples summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none;
-                            font-weight: 800; font-family: var(--head); color: var(--teal-dark);
-                            background: linear-gradient(var(--tone-soft), rgba(255,255,255,0)); }
-  details.staples summary::-webkit-details-marker { display: none; }
-  details.staples summary::before { content: "🧂"; width: 36px; height: 36px; border-radius: 12px; flex: none; display: grid;
-                                    place-items: center; font-size: 19px; background: var(--surface);
-                                    box-shadow: 0 1px 0 rgba(60,45,25,.08), 0 2px 6px rgba(60,45,25,.1); }
-  details.staples summary::after { content: "›"; margin-left: auto; font-size: 22px; line-height: 1; color: var(--teal);
-                                   transition: transform .2s; }
-  details.staples[open] summary::after { transform: rotate(90deg); }
 
   /* A centered window (recipe, review after a scan). Only its body scrolls; the shadows at its top and
      bottom edges appear when there is more to scroll (background-attachment: local). */
@@ -486,6 +379,167 @@
   .spinner { width: 22px; height: 22px; border: 3px solid var(--accent-soft); border-top-color: var(--teal); border-radius: 50%;
              animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Inventory (mockup: paper leaves behind, place tabs, one place card, each item on its own card) ---- */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); z-index: 11;
+            background: #F6EFE4 url("/static/inventory-bg.jpg") center top / cover no-repeat;
+            display: flex; flex-direction: column; box-shadow: -6px 0 28px rgba(40,30,15,.2); overflow: hidden; }
+  .drawer header { position: static; background: none; box-shadow: none; gap: 12px;
+                   padding: 14px 18px 6px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .drawer header h1 { font-family: var(--serif); font-size: 31px; font-weight: 700; color: #123F3A; letter-spacing: -.01em; gap: 14px; }
+  .drawer header h1::before { content: "🍅"; width: 54px; height: 54px; border-radius: 17px; flex: none; display: grid;
+                              place-items: center; font-size: 30px; background: #FBF6EE;
+                              box-shadow: 0 1px 0 rgba(110,80,40,.08), 0 4px 14px rgba(60,45,25,.13); }
+  #closeInv { border: 0; background: #FFFDF8; color: var(--teal-dark); font-size: 15px; font-weight: 700; padding: 10px 22px;
+              box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 4px 12px rgba(60,45,25,.1); }
+  .invsearch { flex: none; padding: 8px 18px 8px; }
+  .invsearch input { width: 100%; box-sizing: border-box; border: 0; border-radius: 20px; padding: 15px 16px 15px 50px;
+                     font: inherit; font-size: 16px; color: var(--text);
+                     background: #FFFDF8 17px center / 22px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%231D3B37' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5l5 5'/%3E%3C/svg%3E");
+                     box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 4px 14px rgba(60,45,25,.09); }
+  .invsearch input::placeholder { color: #6F7672; }
+  .invsearch input:focus { outline: 3px solid rgba(15,118,110,.18); }
+  .drawer .body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 18px calc(28px + env(safe-area-inset-bottom, 0px)); }
+
+  .invtabs { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 9px; margin: 2px 0 16px; }
+  .invtab { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 0;
+            border-radius: 18px; background: rgba(253,249,242,.94); color: #1D3B37; font-size: 15px; font-weight: 700;
+            box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 3px 10px rgba(60,45,25,.08); }
+  .invtab .ico { color: var(--teal); display: block; }
+  .invtab .ico svg { width: 22px; height: 22px; display: block; }
+  .invtab[aria-selected="true"] { background: #0E5F58; color: #fff;
+                                  box-shadow: 0 2px 0 rgba(8,50,46,.35), 0 6px 16px rgba(14,95,88,.3); }
+  .invtab[aria-selected="true"] .ico { color: #fff; }
+  /* a place with items waiting for a decision */
+  .invtab.flagged::after { content: ""; position: absolute; top: 7px; right: 9px; width: 8px; height: 8px; border-radius: 50%;
+                           background: var(--carrot); box-shadow: 0 0 0 2px #FDF9F2; }
+
+  .loc { position: relative; background: rgba(252,249,243,.95); border-radius: 30px; padding: 14px 12px 12px; margin-bottom: 18px;
+         box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 12px 32px rgba(60,45,25,.11); }
+  /* the paper leaf peeking over the card's top-right corner */
+  .loc.place::before { content: ""; position: absolute; right: -16px; top: -18px; width: 112px; height: 106px; pointer-events: none;
+                       background: url("/static/leaf.png") center / contain no-repeat; transform: rotate(-14deg); }
+  .loc-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 4px 4px 14px; }
+  .ptile { width: 66px; height: 66px; border-radius: 20px; display: grid; place-items: center; font-size: 32px;
+           background: #DCEEE5; color: var(--teal);
+           box-shadow: inset 0 -3px 0 rgba(15,118,110,.08), 0 1px 0 rgba(110,80,40,.06), 0 3px 8px rgba(15,118,110,.12); }
+  .ptile svg { width: 36px; height: 36px; display: block; }
+  .ptile.p-pantry { background: #FCEBD6; color: #B4600F; }
+  .ptile.p-freezer { background: #E1EFF0; color: #2D7F86; }
+  .ptile.p-staples { background: #FCF0D2; }
+  .loc-head h2 { font-family: var(--serif); font-size: 29px; font-weight: 700; line-height: 1.1; color: #123F3A; margin: 0; }
+  .loc-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; margin-top: 5px; font-size: 14px; color: #5F6864; }
+  .loc-sub .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--herb); }
+  .loc-sub .dot.no { background: var(--carrot); }
+  .loc-sub .when.no { color: var(--warn); }
+  .loc-head .iconbtn { position: relative; z-index: 1; width: 54px; height: 54px; border-radius: 18px; align-self: start;
+                       background-color: #FFFDF8; background-size: 27px;
+                       box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 4px 12px rgba(60,45,25,.12); }
+
+  .add { display: flex; gap: 8px; padding: 6px; margin: 0 0 12px; background: #FFFEFB; border-radius: 20px;
+         box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 2px 8px rgba(60,45,25,.07); }
+  .add input { flex: 1; min-width: 0; border: 1px solid #EEE6D9; border-radius: 16px; padding: 12px 12px 12px 48px;
+               font: inherit; font-size: 15px; color: var(--text); background: #FCF9F3 14px center / 24px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%234CAF50'/%3E%3Cpath d='M12 7v10M7 12h10' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  .add input::placeholder { color: #6F7672; }
+  .add input:focus { outline: 3px solid rgba(15,118,110,.15); border-color: var(--teal); }
+  .add button { flex: none; border: 0; border-radius: 16px; background: #0E5F58; color: #fff; padding: 0 24px;
+                font-size: 16px; font-weight: 700; box-shadow: 0 2px 0 rgba(8,50,46,.3), 0 4px 10px rgba(14,95,88,.22); }
+  .hint { margin: 0 0 12px; padding: 10px 14px; font-size: 13px; color: var(--warn); background: var(--warn-soft); border-radius: 16px; }
+
+  .items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .item { background: #FFFEFB; border-radius: 18px; overflow: hidden;
+          box-shadow: 0 1px 0 rgba(110,80,40,.05), 0 2px 9px rgba(60,45,25,.07); }
+  .item .line { display: flex; align-items: center; gap: 4px; padding-right: 12px; }
+  .item .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; border: 0; background: none;
+                text-align: left; padding: 9px 4px 9px 9px; }
+  .item .emo { width: 50px; height: 50px; border-radius: 15px; flex: none; display: grid; place-items: center; font-size: 27px;
+               background: #F2EDE5; }
+  .tint-green { background: #E2F0E5 !important; } .tint-red { background: #FCE4E1 !important; }
+  .tint-yellow { background: #FCF0D3 !important; } .tint-orange { background: #FDEBD9 !important; }
+  .tint-teal { background: #DFEFEA !important; }
+  .item .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .item .name { font-size: 16.5px; font-weight: 700; color: #16302C; overflow-wrap: anywhere; line-height: 1.25; }
+  .item .sub { font-size: 13.5px; color: #5F6864; }
+  .item .flag { font-size: 12px; font-weight: 600; flex: none; }
+  .item .flag.soonflag { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 14px;
+                         background: var(--warn-soft); }
+  .item .lvl { display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 6px 13px 6px 11px; border-radius: 999px;
+               font-size: 14px; font-weight: 700; }
+  .item .lvl i { width: 9px; height: 9px; border-radius: 50%; }
+  .lvl.plenty { background: #E2F0E5; color: #2E7D32; } .lvl.plenty i { background: var(--herb); }
+  .lvl.some { background: #FCF0C8; color: #8A6A00; } .lvl.some i { background: #E6B422; }
+  .lvl.low { background: #FCE4E1; color: #B33A2E; } .lvl.low i { background: var(--tomato); }
+  .item .chev { width: 20px; height: 20px; flex: none; margin-left: 2px; background: center / 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%238A928E' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5.5l6.5 6.5L9 18.5'/%3E%3C/svg%3E");
+                transition: transform .2s; }
+  .item.open { box-shadow: 0 0 0 2px rgba(15,118,110,.35), 0 4px 14px rgba(15,118,110,.12); }
+  .item.open .chev { transform: rotate(90deg); }
+  .item .actions { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; padding: 2px 14px 14px 73px; }
+  .actions .act { border: 0; background: #F7F2EA; border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600;
+                  color: var(--teal-dark); }
+  .actions .act.on { background: var(--carrot); color: #fff; }
+  .actions .act.danger { color: #B33A2E; background: #FDECE9; }
+  .amountline { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 4px; }
+  .amountline label { font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .05em; }
+  .amountline input { width: 76px; border: 1px solid #EEE6D9; border-radius: 12px; padding: 6px 10px; font-size: 16px; background: #FCF9F3; }
+  .amountline input.bad { border-color: var(--warn); }
+  .amountline .seg button { padding: 5px 9px; }
+  .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: #F7F2EA; }
+  .seg button { border: 0; background: none; border-radius: 999px; padding: 5px 11px; font-size: 13px; font-weight: 600; color: #5F6864; }
+  .seg button.on { background: #0E5F58; color: #fff; box-shadow: 0 1px 3px rgba(14,95,88,.3); }
+  .item.uncertain { background: #FFF5EA; box-shadow: 0 0 0 1.5px var(--warn-line), 0 2px 9px rgba(60,45,25,.07); }
+  .item.uncertain .name::after { content: " ?"; color: var(--warn); font-weight: 800; }
+  .item.notseen { background: #F5F1EA; }
+  .item.notseen .emo { opacity: .6; }
+  .item.notseen .name { color: var(--muted); font-style: italic; font-weight: 500; }
+  .item.notseen .name::after { content: " · not seen"; font-size: 12px; font-style: normal; }
+  .review-group .item.notseen .name::after { content: ""; }
+  .sheet .review-group .items { padding: 2px; }
+  .del, .edit, .ok { border: 0; background: none; color: #8A928E; font-size: 20px; width: 34px; height: 34px; padding: 0;
+                     flex: none; border-radius: 50%; }
+  .edit { font-size: 15px; }
+  .ok { color: #fff; background: #0E5F58; font-size: 16px; font-weight: 800; box-shadow: 0 1px 3px rgba(14,95,88,.3); }
+  .item.uncertain .del, .item.notseen .del { color: #B33A2E; background: #fff; box-shadow: 0 1px 3px rgba(60,45,25,.14); }
+  .line .ok + .del { margin-left: 4px; }
+  .item.editing { display: flex; gap: 6px; align-items: center; padding: 10px 12px; }
+  .item.editing input { flex: 1; min-width: 0; border: 1px solid var(--teal); border-radius: 12px; padding: 8px 10px;
+                        font: inherit; background: #fff; color: var(--text); }
+  .item.editing .save { border: 0; border-radius: 12px; background: #0E5F58; color: #fff; padding: 8px 14px; font-weight: 700; }
+  .item.editing .cancel { border: 0; background: none; color: var(--muted); padding: 8px 6px; }
+  .empty-loc { padding: 12px 14px; color: var(--muted); font-size: 14px; font-style: italic; text-align: center; }
+  .drawer .loc + .restart, .drawer .restart { margin-top: 6px; }
+  .drawer .restart .startbtn { background: rgba(255,250,248,.85); }
+
+  /* staples: the same card, folded */
+  details.staples { padding: 10px 12px; }
+  details.staples summary { display: flex; align-items: center; gap: 14px; padding: 2px 4px; cursor: pointer; list-style: none;
+                            font-family: var(--serif); font-size: 19px; font-weight: 700; color: #123F3A; }
+  details.staples[open] summary { margin-bottom: 12px; }
+  details.staples summary::-webkit-details-marker { display: none; }
+  details.staples summary::before { content: "🧂"; width: 50px; height: 50px; border-radius: 15px; flex: none; display: grid;
+                                    place-items: center; font-size: 26px; background: #FCF0D2;
+                                    box-shadow: inset 0 -3px 0 rgba(160,120,0,.07); }
+  details.staples summary::after { content: ""; width: 20px; height: 20px; flex: none; margin-left: auto;
+                                   background: center / 18px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%238A928E' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5.5l6.5 6.5L9 18.5'/%3E%3C/svg%3E"); transition: transform .2s; }
+  details.staples[open] summary::after { transform: rotate(90deg); }
+
+  @media (max-width: 400px) {
+    .drawer header h1 { font-size: 27px; gap: 12px; }
+    .drawer header h1::before { width: 48px; height: 48px; font-size: 26px; border-radius: 15px; }
+    .drawer .body, .invsearch { padding-left: 14px; padding-right: 14px; }
+    .invtabs { gap: 7px; }
+    .invtab { font-size: 14px; gap: 6px; height: 46px; border-radius: 16px; }
+    .invtab .ico svg { width: 20px; height: 20px; }
+    .ptile { width: 58px; height: 58px; border-radius: 18px; }
+    .ptile svg { width: 32px; height: 32px; }
+    .loc-head { gap: 12px; }
+    .loc-head h2 { font-size: 26px; }
+    .loc-head .iconbtn { width: 48px; height: 48px; border-radius: 16px; background-size: 24px; }
+    .add button { padding: 0 18px; }
+    .item .main { gap: 12px; }
+    .item .emo { width: 46px; height: 46px; font-size: 25px; border-radius: 14px; }
+    .item .lvl { padding: 5px 11px 5px 9px; font-size: 13px; }
+    .item .actions { padding-left: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -568,10 +622,34 @@ function defaultUnit(item) {
   if (item.category === "sauce") return "ml";
   return ["meat", "fish", "dairy", "grain", "pasta", "baking"].includes(item.category) ? "g" : "pcs";
 }
-const PLACE_ICON = { fridge: "🧊", freezer: "❄️", pantry: "🥫", staples: "🧂" };
-// A card title: the emoji on its own paper tile, then the name.
-function placeTitle(place) {
-  return el("h2", {}, el("span", { class: "ptile", "aria-hidden": "true" }, PLACE_ICON[place]), cap(place));
+// Line icons for the place tabs, and filled ones for the place card's tile.
+const TAB_ICON = {
+  fridge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="2.5" width="13" height="19" rx="2.6"/><path d="M5.5 10h13M9 5.4v2M9 12.8v3.4"/></svg>',
+  freezer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5v19M3.8 7.25l16.4 9.5M3.8 16.75l16.4-9.5M9.6 4.2 12 6.3l2.4-2.1M9.6 19.8l2.4-2.1 2.4 2.1M3.9 10.4l3.1.9.7-3.1M20.1 13.6l-3.1-.9-.7 3.1M3.9 13.6l3.1-.9.7 3.1M20.1 10.4l-3.1.9-.7-3.1"/></svg>',
+  pantry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="3.6" rx="1"/><path d="M7.6 6.1h8.8c1.6 1 2.3 2.2 2.3 3.8v9a2.6 2.6 0 0 1-2.6 2.6H7.9a2.6 2.6 0 0 1-2.6-2.6v-9c0-1.6.7-2.8 2.3-3.8zM5.3 11h13.4M5.3 17h13.4"/></svg>',
+};
+const TILE_ICON = {
+  fridge: '<svg viewBox="0 0 24 24"><rect x="5" y="1.8" width="14" height="19" rx="2.8" fill="currentColor"/><path d="M5 9.4h14" stroke="#DCEEE5" stroke-width="1.3"/><path d="M8.7 4.6v2.3M8.7 12.2v3.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><path d="M7.6 20.8v1.4M16.4 20.8v1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  freezer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5v19M3.8 7.25l16.4 9.5M3.8 16.75l16.4-9.5M9.6 4.2 12 6.3l2.4-2.1M9.6 19.8l2.4-2.1 2.4 2.1M3.9 10.4l3.1.9.7-3.1M20.1 13.6l-3.1-.9-.7 3.1M3.9 13.6l3.1-.9.7 3.1M20.1 10.4l-3.1.9-.7-3.1"/></svg>',
+  pantry: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="3.8" rx="1.1" fill="currentColor"/><path d="M7.6 6.6h8.8c1.6 1 2.4 2.2 2.4 3.8v8.6a2.8 2.8 0 0 1-2.8 2.8H7.9A2.8 2.8 0 0 1 5.1 19v-8.6c0-1.6.8-2.8 2.5-3.8z" fill="currentColor"/><path d="M5.1 11.4h13.7M5.1 16.6h13.7" stroke="#FCEBD6" stroke-width="1.4"/></svg>',
+};
+
+function icon(markup, cls) {
+  const span = el("span", { class: cls, "aria-hidden": "true" });
+  span.innerHTML = markup;  // our own constant markup
+  return span;
+}
+
+// A place card's head: the tile, the name, "12 items • scanned today", and the camera button if given.
+function placeHead(place, count, when = null, camera = null) {
+  const tile = place === "staples" ? el("span", { class: "ptile p-staples", "aria-hidden": "true" }, "🧂")
+                                   : icon(TILE_ICON[place], `ptile p-${place}`);
+  return el("div", { class: "loc-head" }, tile,
+    el("div", {}, el("h2", {}, cap(place)),
+      el("div", { class: "loc-sub" }, el("span", {}, `${count} item${count === 1 ? "" : "s"}`),
+        when ? [el("i", { class: "dot" + (when.no ? " no" : "") }), el("span", { class: "when" + (when.no ? " no" : "") }, when.text)]
+             : null)),
+    camera);
 }
 const MAX_PHOTOS = 4;
 
@@ -584,6 +662,7 @@ const state = {
   nextPlace: null,      // set by a panel camera button: the place for the next picked photos
   reviewPlaces: null,   // places shown in the review sheet while it is open
   openItem: null,       // the inventory item whose actions are shown (one at a time)
+  invTab: "fridge",     // the place shown in the inventory panel
   recentAdds: [],       // names added with the panel's add fields since it opened: shown first, newest on top
   busy: false,
   transcript: [],       // what is shown, so a reload of the same session shows it again
@@ -622,6 +701,8 @@ function ago(iso) {
 
 // An emoji for an inventory item: by a word of its name first ("cheddar" -> 🧀), else by its category.
 const NAME_EMOJI = [
+  [/\bjam\b|jelly|marmalade/, "🍓"], [/hot sauce|sriracha|tabasco/, "🌶️"], [/salami|sausage|hot dog/, "🌭"],
+  [/mayo|mustard|tahini|hummus|spread|\bdip\b|jar/, "🫙"], [/pickle|gherkin/, "🥒"], [/\bolives?\b/, "🫒"],
   [/eggplant|aubergine/, "🍆"], [/\bmilk\b/, "🥛"], [/\beggs?\b/, "🥚"], [/cheese|cheddar|parmesan|mozzarella|feta|ricotta/, "🧀"], [/butter/, "🧈"],
   [/bread|baguette/, "🍞"], [/tomato|ketchup/, "🍅"], [/onion/, "🧅"], [/garlic/, "🧄"], [/carrot/, "🥕"],
   [/potato/, "🥔"], [/bell pepper/, "🫑"], [/mushroom/, "🍄"], [/lemon|lime/, "🍋"], [/apple/, "🍎"], [/banana/, "🍌"],
@@ -636,7 +717,20 @@ const CATEGORY_TINT = {
   vegetable: "green", fruit: "red", meat: "red", fish: "teal", dairy: "yellow", egg: "yellow", grain: "orange",
   pasta: "orange", canned: "orange", baking: "orange", sauce: "red", spice: "orange", snack: "yellow", drink: "teal", frozen: "teal",
 };
-function emoClass(item) { return "emo" + (CATEGORY_TINT[item.category] ? ` tint-${CATEGORY_TINT[item.category]}` : ""); }
+// By a word of the name first (jam is red, mustard yellow), else by category.
+const NAME_TINT = [
+  [/jam|jelly|salami|sausage|hot sauce|ketchup|tomato|strawberr|apple|chili|bacon|beef|meat/, "red"],
+  [/mayo|mustard|cheese|cheddar|butter|\beggs?\b|lemon|honey|banana|corn/, "yellow"],
+  [/pickle|olive|spinach|lettuce|cucumber|zucchini|herb|avocado|broccoli|kale|cabbage/, "green"],
+  [/carrot|orange|bread|pasta|noodle|potato|peanut/, "orange"],
+  [/milk|yogurt|fish|salmon|water/, "teal"],
+];
+function emoClass(item) {
+  const name = String(item.name).toLowerCase();
+  const hit = NAME_TINT.find(([re]) => re.test(name));
+  const tint = hit ? hit[1] : CATEGORY_TINT[item.category];
+  return "emo" + (tint ? ` tint-${tint}` : "");
+}
 const CATEGORY_EMOJI = {
   vegetable: "🥬", fruit: "🍎", meat: "🥩", fish: "🐟", dairy: "🧀", egg: "🥚", grain: "🍚", pasta: "🍝",
   canned: "🥫", baking: "🧁", sauce: "🍅", condiment: "🧂", spice: "🌶️", snack: "🍪", drink: "🥤", frozen: "🧊",
@@ -1338,13 +1432,15 @@ function renderItem(item) {
   const main = el("button", { class: "main", type: "button", "aria-expanded": open ? "true" : "false",
                               onclick: () => { state.openItem = open ? null : item.name; redrawLists(); } },
     el("span", { class: emoClass(item), "aria-hidden": "true" }, itemEmoji(item)),
-    el("span", { class: "name" }, item.display_name,
-      item.amount_text ? el("span", { class: "amt" }, ` · ${item.amount_text}`) : null),
+    el("span", { class: "info" }, el("span", { class: "name" }, item.display_name),
+      item.amount_text ? el("span", { class: "sub" }, item.amount_text) : null),
     item.use_soon ? el("span", { class: "flag soonflag", title: "Use soon" }, "⏰") : null,
-    item.is_staple ? null : el("span", { class: `lvl ${item.qty_level}` }, el("i"), item.qty_level));
+    item.is_staple ? null : el("span", { class: `lvl ${item.qty_level}` }, el("i"), item.qty_level),
+    item.is_staple || flag ? null : el("span", { class: "chev", "aria-hidden": "true" }));
   if (item.is_staple) {
     row.append(el("div", { class: "line" }, el("span", { class: "main" },
-      el("span", { class: emoClass(item), "aria-hidden": "true" }, itemEmoji(item)), el("span", { class: "name" }, item.display_name)),
+      el("span", { class: emoClass(item), "aria-hidden": "true" }, itemEmoji(item)),
+      el("span", { class: "info" }, el("span", { class: "name" }, item.display_name))),
       del));
     return row;
   }
@@ -1424,7 +1520,7 @@ function editName(row, item) {
 // place: add an item there; null: add a staple (assumed always in the kitchen).
 function renderAdd(place) {
   const input = el("input", { type: "text",
-    placeholder: place ? `Add to ${place}…` : "Add a staple, e.g. rice…",
+    placeholder: place ? `Add an item to ${place}…` : "Add a staple, e.g. rice…",
     "aria-label": place ? `Add item to ${place}` : "Add a staple" });
   const add = () => {
     const name = input.value.trim();
@@ -1471,39 +1567,39 @@ function renderInventory() {
     for (const place of PLACES) {
       const here = hits.filter((i) => i.source !== "staple" && i.location === place);
       if (here.length) body.append(el("section", { class: `loc loc-${place}` },
-        el("div", { class: "loc-head" }, placeTitle(place)),
-        el("ul", { class: "items" }, here.map(renderItem))));
+        placeHead(place, here.length), el("ul", { class: "items" }, here.map(renderItem))));
     }
     const st = hits.filter((i) => i.source === "staple");
     if (st.length) body.append(el("section", { class: "loc loc-staples" },
-      el("div", { class: "loc-head" }, placeTitle("staples")),
-      el("ul", { class: "items" }, st.map(renderItem))));
+      placeHead("staples", st.length), el("ul", { class: "items" }, st.map(renderItem))));
     return;
   }
   const recent = (i) => { const k = state.recentAdds.indexOf(i.name); return k < 0 ? Infinity : k; };
-  for (const place of PLACES) {
-    const here = own.filter((i) => i.location === place)
-      // Just added (newest first), then items waiting for a decision; otherwise the stored order, so a
-      // row does not jump away while its actions are open (⏰ marks use-soon items).
-      .sort((a, b) => (recent(a) - recent(b)) || (b.uncertain - a.uncertain) || (b.not_seen - a.not_seen));
-    const when = state.scanState.scanned[place];
-    const declined = place === "freezer" && state.scanState.freezer_declined;
-    const unsure = here.some((i) => i.uncertain || i.not_seen);
-    body.append(el("section", { class: `loc loc-${place}` },
-      el("div", { class: "loc-head" },
-        placeTitle(place),
-        el("span", { class: "when" + (when ? "" : " no") },
-          when ? ago(when) : declined ? "skipped" : "not scanned yet"),
-        el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
-                       "aria-label": `Add a photo of the ${place}`, onclick: () => pickPhotos(place) }, "📷")),
-      unsure ? el("div", { class: "hint" },
-        "Orange: I'm not sure what it is. Grey: not seen in the last photo. ✓ if it's right, × if it's gone, "
-        + "or tap the item to rename it.")
-             : null,
-      renderAdd(place),
-      here.length ? el("ul", { class: "items" }, here.map(renderItem))
-                  : el("div", { class: "empty-loc" }, "Nothing here yet.")));
-  }
+  const waiting = (place) => own.some((i) => i.location === place && (i.uncertain || i.not_seen));
+  body.append(el("div", { class: "invtabs", role: "tablist", "aria-label": "Places" }, PLACES.map((p) =>
+    el("button", { class: "invtab" + (waiting(p) ? " flagged" : ""), type: "button", role: "tab",
+                   "aria-selected": String(p === state.invTab),
+                   onclick: () => { state.invTab = p; state.openItem = null; renderInventory(); $("invBody").scrollTop = 0; } },
+      icon(TAB_ICON[p], "ico"), cap(p)))));
+  const place = state.invTab;
+  const here = own.filter((i) => i.location === place)
+    // Just added (newest first), then items waiting for a decision; otherwise the stored order, so a
+    // row does not jump away while its actions are open (⏰ marks use-soon items).
+    .sort((a, b) => (recent(a) - recent(b)) || (b.uncertain - a.uncertain) || (b.not_seen - a.not_seen));
+  const when = state.scanState.scanned[place];
+  const declined = place === "freezer" && state.scanState.freezer_declined;
+  const unsure = here.some((i) => i.uncertain || i.not_seen);
+  body.append(el("section", { class: `loc place loc-${place}` },
+    placeHead(place, here.length, { text: when ? ago(when) : declined ? "skipped" : "not scanned yet", no: !when },
+      el("button", { class: "iconbtn", type: "button", title: `Photo of the ${place}`,
+                     "aria-label": `Add a photo of the ${place}`, onclick: () => pickPhotos(place) }, "📷")),
+    renderAdd(place),
+    unsure ? el("div", { class: "hint" },
+      "Orange: I'm not sure what it is. Grey: not seen in the last photo. ✓ if it's right, × if it's gone, "
+      + "or tap the item to rename it.")
+           : null,
+    here.length ? el("ul", { class: "items" }, here.map(renderItem))
+                : el("div", { class: "empty-loc" }, "Nothing here yet.")));
   body.append(el("details", { class: "loc staples", open: wasOpen },
     el("summary", {}, `Staples (${staples.length}) — assumed in the kitchen`),
     renderAdd(null),
