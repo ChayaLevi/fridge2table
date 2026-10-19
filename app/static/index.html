@@ -2067,8 +2067,16 @@ state.cookMode = storageGet("ftt.cookMode") === "shop" ? "shop" : "home";
 (async function init() {
   // The inventory first, so the saved transcript's meal cards show display names and "use soon".
   await refreshInventory();
-  startSession(storageGet("ftt.session") || newSessionId());
-  if (!state.transcript.length) await opening();
+  // Every visit opens a fresh chat; earlier ones stay in History. A chat that never got past the
+  // greeting is not in History, so its stored transcript is dropped instead of left behind.
+  const last = storageGet("ftt.session");
+  if (last) {
+    let old = [];
+    try { old = JSON.parse(storageGet("ftt.transcript." + last)) || []; } catch { old = []; }
+    if (!chatTitle(old)) { try { localStorage.removeItem("ftt.transcript." + last); } catch { /* ignore */ } }
+  }
+  startSession(newSessionId());
+  await opening();
   updateSend();
 })();
 </script>

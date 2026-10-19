@@ -101,6 +101,18 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 
 ## Log
 
+### 2026-10-19 — Every visit opens a new chat (the human's request)
+
+- `app/static/index.html` (`init`): opening or reloading the page always starts a fresh session and its greeting; it no longer resumes the chat in `ftt.session`. Past chats are reopened from History. A previous chat that never got past the greeting (not in History) has its stored transcript removed, so greetings do not pile up in `localStorage`. Supersedes "a reload shows the same chat" in the T5.x entry.
+- Note: a reload in the middle of a chat also starts a new one (the old one is in History).
+
+**How to verify**
+```
+uv run uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+```
+Expected: the server starts on port 8000.
+Manual check: open http://localhost:8000, send a message, reload the page: a new empty chat with a fresh greeting opens; History lists the previous chat and opening it brings it back.
+
 ### 2026-10-19 — Untick a bought item (T6.4 follow-up, the human's request)
 
 Built:
