@@ -20,6 +20,7 @@ from typing import Annotated, get_args
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, computed_field
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.models import Model
@@ -114,6 +115,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Fridge-to-Table", lifespan=lifespan)
+# The page's own files (the app icon); the page itself is served by GET /.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # --- response models ------------------------------------------------------------------------------
