@@ -1,4 +1,4 @@
-# Fridge-to-Table — Product spec (demo, Oct 2026)
+# Fridge2Table — Product spec (demo, Oct 2026)
 
 ## 1. Background
 

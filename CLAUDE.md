@@ -1,4 +1,4 @@
-# Fridge-to-Table — Claude Code context
+# Fridge2Table — Claude Code context
 
 Read this file first, then `docs/PRODUCT.md` (what we build and why) and `docs/PLAN.md` (the ordered task list). Work through `docs/PLAN.md` task by task.
 

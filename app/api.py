@@ -114,7 +114,7 @@ async def lifespan(_: FastAPI):
         _stores.clear()
 
 
-app = FastAPI(title="Fridge-to-Table", lifespan=lifespan)
+app = FastAPI(title="Fridge2Table", lifespan=lifespan)
 # The page's own files (the app icon); the page itself is served by GET /.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

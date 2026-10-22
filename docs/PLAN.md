@@ -1,4 +1,4 @@
-# Fridge-to-Table — Work plan (Oct 12 – Oct 23, 2026)
+# Fridge2Table — Work plan (Oct 12 – Oct 23, 2026)
 
 Read `CLAUDE.md` and `docs/PRODUCT.md` first. Work through the tasks **in order**. Each task has **Done when**: do not start the next task until it holds and `uv run pytest -q` passes.
 
