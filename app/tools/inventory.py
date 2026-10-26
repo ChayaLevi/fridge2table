@@ -464,19 +464,27 @@ def bought_undo_points(store: Store, names: Iterable[str]) -> dict[str, str]:
     inventory yet, its name to remove again. Staples (assumed always there) get no token. Keys are
     canonical names.
     """
-    stored = {i.name: i for i in store.load_inventory()}
-    staples = set(all_staples(store))
     tokens: dict[str, str] = {}
     for raw in names:
         name = normalize(raw)
-        if not name or name in tokens or name in staples:
-            continue
-        item = stored.get(name)
-        data = {"items": [item.model_dump(mode="json", exclude={"amount_text"})] if item else [],
-                "added": [] if item else [name]}
-        tokens[name] = uuid.uuid4().hex
-        store.save_undo(tokens[name], json.dumps(data))
+        if name and name not in tokens and (token := undo_point(store, [name])):
+            tokens[name] = token
     return tokens
+
+
+def undo_point(store: Store, names: Iterable[str]) -> str | None:
+    """Before adding several items at once (a delivery): one token that puts all of them back as they are
+    now; items not in the inventory yet are removed again. Staples are left out. None if nothing is left."""
+    stored = {i.name: i for i in store.load_inventory()}
+    staples = set(all_staples(store))
+    wanted = list(dict.fromkeys(n for n in map(normalize, names) if n and n not in staples))
+    if not wanted:
+        return None
+    data = {"items": [stored[n].model_dump(mode="json", exclude={"amount_text"}) for n in wanted if n in stored],
+            "added": [n for n in wanted if n not in stored]}
+    token = uuid.uuid4().hex
+    store.save_undo(token, json.dumps(data))
+    return token
 
 
 def undo_made(store: Store, token: str) -> bool:

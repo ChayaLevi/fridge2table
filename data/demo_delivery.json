@@ -1,0 +1,20 @@
+{
+ "retailer": "Leafline Market",
+ "order_id": "LL-4821",
+ "email_type": "delivered",
+ "email_subject": "Your Leafline order #LL-4821 was delivered",
+ "lines": [
+  {"raw_name": "Tomatoes", "qty": 1, "pack_size": 1, "pack_unit": "kg", "line_status": "delivered", "retailer_category": "Fruit & Veg"},
+  {"raw_name": "Fresh Basil", "qty": 1, "pack_size": null, "pack_unit": null, "line_status": "delivered", "retailer_category": "Fruit & Veg"},
+  {"raw_name": "Ricotta", "qty": 1, "pack_size": 500, "pack_unit": "g", "line_status": "delivered", "retailer_category": "Dairy & Eggs"},
+  {"raw_name": "Parmesan", "qty": 1, "pack_size": 200, "pack_unit": "g", "line_status": "ordered", "retailer_category": "Dairy & Eggs"},
+  {"raw_name": "Grana Padano", "qty": 1, "pack_size": 200, "pack_unit": "g", "line_status": "substituted", "substitute_for": "Parmesan", "retailer_category": "Dairy & Eggs"},
+  {"raw_name": "Heavy Cream", "qty": 1, "pack_size": 500, "pack_unit": "ml", "line_status": "missing", "retailer_category": "Dairy & Eggs"},
+  {"raw_name": "Chicken Breast", "qty": 1, "pack_size": 0.86, "pack_unit": "kg", "line_status": "weight_adjusted", "retailer_category": "Meat & Fish"},
+  {"raw_name": "Lasagna Sheets", "qty": 1, "pack_size": 500, "pack_unit": "g", "line_status": "delivered", "retailer_category": "Pantry"},
+  {"raw_name": "Nonna's Secret Sauce", "qty": 1, "pack_size": 680, "pack_unit": "g", "line_status": "delivered", "retailer_category": "Local Makers"},
+  {"raw_name": "Toilet Paper", "qty": 1, "pack_size": 12, "pack_unit": "pcs", "line_status": "delivered", "retailer_category": "Household"},
+  {"raw_name": "Dish Soap", "qty": 1, "pack_size": 750, "pack_unit": "ml", "line_status": "delivered", "retailer_category": "Household"},
+  {"raw_name": "Cat Food", "qty": 1, "pack_size": 2, "pack_unit": "kg", "line_status": "delivered", "retailer_category": "Pet"}
+ ]
+}

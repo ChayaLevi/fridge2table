@@ -284,3 +284,8 @@ Every tool: plain function in `app/tools/`, Pydantic I/O, unit tests with no net
 ## Demo day (Fri Oct 23) 🧑
 
 Live demo following `docs/PRODUCT.md` §12, then the scorecard: did it work end to end live, minutes from input to a usable result, number of human interventions (inventory corrections), would the user hand it the task again, did anyone ask to share the output, and which parts are reusable by other teams (recognition, normalization, the checks).
+
+## P8 — Grocery email → inventory (after the demo, added 2026-10-25 at the human's request)
+
+- **Demo first:** `docs/MAIL_DEMO_PLAN.md` (D1–D4, about 2 days): a real email in Gmail for the video, the delivery injected off camera, the app reacting on its own.
+- **Full feature:** `docs/MAIL_PLAN.md` (M0–M4, about 3–4 weeks): real inbox (IMAP), classify / extract, order lifecycle, cooking filter, decision layer.

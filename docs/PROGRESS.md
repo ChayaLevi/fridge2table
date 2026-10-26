@@ -39,9 +39,11 @@ Updated by Claude Code at the end of every task (see "Session protocol" in `CLAU
 - [x] T6.3b Amount-aware code checks (added and built 2026-10-18 at the human's request; the human's browser check is open)
 - [x] T6.4 "Bought it" (specified and built 2026-10-18 at the human's request; the human's browser check is open)
 - [ ] P7 Freeze 🧑
+- [~] P8 Grocery email, demo version (`docs/MAIL_DEMO_PLAN.md`): D1–D3 built, D4 script built 2026-10-26; the Gmail recording is open 🧑. The full feature (`docs/MAIL_PLAN.md`, M0–M4) is not started.
 
 ## Next up
 
+- **P8 demo (grocery email), open for the human:** create a demo Gmail inbox, send it `demo/mail/leafline_delivered.html` and record the inbox; record the app side with `uv run scripts/record_demo.py --delivery --record --base http://localhost:8000` (or by hand with `scripts/deliver_demo.py`). See the 2026-10-26 log entry.
 - **Open: the human checks T6.1** in a phone-size browser (eggs 12 pcs → omelette → I made it → Undo → I made it → "what can I cook?"; see the T6.1 log entry). **Open: the human checks T6.4** in a phone-size browser (lasagna → Bought on ground beef → 500 g → Bought all → lasagna again; see the T6.4 log entry). **Open: the human checks T6.3 and T6.3b** in a phone-size browser (T6.3: set "500 g" on an item, see it in the row, clear it, add "milk 2 l" from the Add field; T6.3b: eggs at 4 pcs, "I want to make a frittata with 5 eggs" → "egg · have 4, need 5"; at 12 pcs → not in To buy; see the log entries).
 - **Open: the human confirms T4.4** (the trace line under an agent message, collapsed and expanded, on a phone or in a desktop browser in phone mode). **Next task: T5.1 Vision model comparison** (🧑 needs the eval photos in `eval/fridges/`, still missing). T5.2 is done (2026-10-15). After T5.1: T5.3, the real user run (🧑).
 - **Waiting on the human:** T3.3 (a real fridge run and the internal demo; the human is away from home). The human used the page in a desktop browser on 2026-10-14 ("works great", "looks great") and asked for the changes logged below (panel edits, staples, scope, gallery, rescan review, centered recipe with the shopping list, steps with substitutes, amounts, Start over, History, design round); T3.2 stays `[~]` until it is tried on a phone. How to show it to the team lead: see "Demo on another phone" under Decisions.
@@ -100,6 +102,33 @@ Only Chinese models (see `docs/PRODUCT.md` §9). All via the DeepSeek API (`DEEP
 - (T0.5/T1.4) No eval photos yet: `eval/fridges/home1_fridge` and `home1_pantry` are empty. T1.4's "Done when" (first table on the real eval set for tiles 1, 2, 4; best `VISION_TILES`; recall vs 70%) is still open.
 
 ## Log
+
+### 2026-10-26 — P8 grocery email, demo version (D1–D4 of `docs/MAIL_DEMO_PLAN.md`; the human's request)
+
+- Plans: `docs/MAIL_PLAN.md` (the real feature, M0–M4, about 3–4 weeks) and `docs/MAIL_DEMO_PLAN.md` (the video-only version), written 2026-10-25; P8 in `docs/PLAN.md` points to both.
+- D1: `demo/mail/leafline_delivered.html` (Gmail-safe HTML: tables and inline styles; checked at 800 px and 390 px), `data/demo_delivery.json` (the same 12 lines as `OrderLine`s). Retailer **Leafline Market**, order #LL-4821 (made up; FreshMart is a real chain name).
+- Synonyms: `lasagna sheets`, `lasagne sheets`, `lasagne noodles`, `oven-ready lasagna noodles` → `lasagna noodle` (the name the code already uses, e.g. `INGREDIENT_RULES`); `grana padano` → `parmesan` (the display name stays "Grana Padano", so recipes asking for parmesan match). 124 entries.
+- D2: models `OrderLine`, `GroceryOrder`, `DeliveredItem`, `DeliveryNotice` (`app/models.py`); `app/tools/delivery.py` (`final_lines`, `classify_line`, `line_amount`, `apply_delivery`, no LLM); `inventory.undo_point(store, names)` (one token for many items; `bought_undo_points` now uses it); store table `notices` (`add_notice`, `load_notices`, `load_notice`, `mark_notice_seen`); routes `GET /notices`, `POST /notices/{id}/open?session_id=`, `POST /admin/delivery[?household=latest]`; `scripts/deliver_demo.py`; config `DEMO_DELIVERY_PATH`, `NOTICE_POLL_SECONDS` (default 5, in `.env.example`); tests `tests/test_delivery.py` (20).
+- Filter rules: a retailer section in `NON_FOOD_CATEGORIES` or a phrase in `NON_FOOD_WORDS` → not food (never added); a section in `RETAILER_CATEGORIES` → cooking ingredient with that category; anything else → uncertain (added with `uncertain=True`, so the panel shows its orange ✓ / × row). Delivered items go in through `mark_bought` with `source="chat"` (photos may still update them): plenty, place by category, amount = qty × pack size when the unit is supported. Staples are skipped.
+- D3: `app/agent.py` `DELIVERY_PROMPT`, `delivery_details`, `run_delivery` (hidden system note like the opening, one validated meal, the delivery stays in the session's history). The open route puts "source: Leafline Market order #LL-4821 (email)" first in the trace and falls back to a fixed sentence if the model fails. `app/static/index.html`: `pollNotices` (every `poll_seconds`, skipped while busy), `showDelivery`, `renderDelivery` (card in the chat with Undo and "Show in my kitchen"), `state.deliveryAdds` (rows marked NEW and listed first; the panel opens on the place with most new items).
+- D4: `scripts/record_demo.py --delivery` (opening, a 3 s pause to cut from Gmail, inject, card, agent message, the NEW fridge rows, the recipe). Note: `scripts/record_demo.py` was untracked before this entry and is still not committed.
+- Deviation from the demo plan: a card in the chat instead of a banner on the panel (on a phone the panel is a drawer, so a banner there would not be seen).
+- Checked: 654 tests pass. Real models, local server, phone-size browser: the card appears 5 s after the inject, the agent's message about 17 s later ("a Ricotta and Spinach Lasagna ... using your new tomatoes, basil, ricotta, chicken and lasagna sheets"), output check passed; `record_demo.py --delivery` ran clean (no broken shot).
+- Not deployed: Render still runs the earlier build, so record against a local server (or deploy first).
+- Open issues: none in code. The Gmail side is the human's (an inbox, sending the HTML, recording it).
+
+**How to verify**
+```
+uv run pytest -q
+uv run pytest tests/test_delivery.py -q
+uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
+```
+Expected: `654 passed`; then `20 passed`; then the server starts on port 8000.
+Manual check: open http://localhost:8000 in a phone-size browser window, call `POST /admin/reset` and `POST /admin/seed` from http://localhost:8000/docs (same browser), reload the chat and wait for the greeting. In a second terminal run:
+```
+uv run python scripts/deliver_demo.py
+```
+Expected: it prints the 7 added items. Within about 5 s, with no click, the chat shows the "Your Leafline Market order arrived" card (Grana Padano instead of Parmesan, Heavy Cream out of stock, Toilet Paper / Dish Soap / Cat Food left out, Nonna's Secret Sauce unsure), then the agent offers one meal that uses the delivery. "Show in my kitchen" opens the fridge with the new rows marked NEW; Undo on the card takes them all out again.
 
 ### 2026-10-19 — Every visit opens a new chat (the human's request)
 

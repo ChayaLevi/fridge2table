@@ -28,7 +28,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from app import config, llm
 from app.amounts import Unit
 from app.models import (
-    MAX_TO_BUY, AgentReply, BoughtItem, Constraints, CookMode, InventoryChange, Substitution, Location, MealCandidate, MissingReport, Recipe,
+    MAX_TO_BUY, AgentReply, BoughtItem, Constraints, CookMode, DeliveryNotice, InventoryChange, Substitution, Location, MealCandidate, MissingReport, Recipe,
     StepTiming, SuggestResult, ToolTraceItem, TurnUsage, ValidationResult,
 )
 from app.store import Store
@@ -58,6 +58,18 @@ Greet them in one short sentence and offer exactly one meal they can make now. C
 passed candidate in meal_ids (one id only). Say which USE SOON item it uses ("Your spinach needs using: \
 how about ...?"). If no item is marked USE SOON, offer one quick idea instead. No questions about \
 uncertain items in this message."""
+
+# A grocery delivery the app already applied (docs/MAIL_DEMO_PLAN.md, D3). Like the opening, the prompt is
+# stored as a system note; the agent tells the user and offers one meal the delivery made possible.
+DELIVERY_PROMPT = """\
+[Note from the app, not from the user: a grocery delivery just arrived, and the app has already added \
+it to the inventory. The user has not written anything.]
+{details}
+Tell the user in one short sentence that the order from {retailer} arrived and is in their inventory. \
+Then offer exactly one meal that uses what just arrived. Call suggest_meals once (request: "one dish \
+built around the newly delivered {names}; also use the USE SOON items if they fit", n=3) and put the id \
+of the best passed candidate in meal_ids (one id only). Name the delivered items it uses. Mention a \
+substitution or a missing item only if it matters for that meal. No questions."""
 
 # The cooking mode line of the instructions (T4.5); code enforces it in suggest_meals and the output check.
 # SHOP_NOTE starts every user message sent in Shopping OK mode (see user_prompt).
@@ -630,6 +642,39 @@ async def run_opening(
         return TurnResult(reply=AgentReply(message=WELCOME_MESSAGE), result=None, latency_s=0.0, steps=[], trace=[],
                           usage=TurnUsage(latency_s=0.0, requests=0, tool_calls=0, input_tokens=0, output_tokens=0))
     return await _run(store, session_id, OPENING_PROMPT, [], model=model, recipe_model=recipe_model, hidden=True)
+
+
+def delivery_details(notice: DeliveryNotice) -> str:
+    """The delivery as plain lines for DELIVERY_PROMPT (also what the agent can recall later in the chat)."""
+    order = f"{notice.retailer} order {notice.order_id}" if notice.order_id else f"{notice.retailer} order"
+    lines = [f"Delivery: {order}.",
+             "Added: " + ", ".join(f"{i.display_name} ({i.amount_text})" if i.amount_text else i.display_name
+                                   for i in notice.added) + "."]
+    if notice.substituted:
+        lines.append("Substituted: " + ", ".join(f"{new} instead of {old}" for old, new in notice.substituted) + ".")
+    if notice.unavailable:
+        lines.append("Not delivered (out of stock): " + ", ".join(notice.unavailable) + ".")
+    if notice.uncertain:
+        lines.append("Not sure these are ingredients (the app asks the user): " + ", ".join(notice.uncertain) + ".")
+    if notice.skipped:
+        lines.append("Not food, left out of the inventory: " + ", ".join(notice.skipped) + ".")
+    return "\n".join(lines)
+
+
+async def run_delivery(
+    store: Store,
+    session_id: str,
+    notice: DeliveryNotice,
+    *,
+    model: Model | None = None,
+    recipe_model: Model | None = None,
+) -> TurnResult:
+    """The agent's own message when a delivery lands: it says what arrived and offers one validated meal
+    that uses it. The prompt becomes a system note in the session, so follow-ups ("yes, the recipe") work."""
+    unsure = set(notice.uncertain)
+    names = ", ".join(i.display_name for i in notice.added if i.display_name not in unsure) or "items"
+    prompt = DELIVERY_PROMPT.format(details=delivery_details(notice), retailer=notice.retailer, names=names)
+    return await _run(store, session_id, prompt, [], model=model, recipe_model=recipe_model, hidden=True)
 
 
 def last_reply_recipes(store: Store, history: list[ModelMessage]) -> dict[str, Recipe]:

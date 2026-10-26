@@ -1,4 +1,5 @@
-"""SQLite persistence: inventory, preferences, removed and added staples, scan state, chat sessions.
+"""SQLite persistence: inventory, preferences, removed and added staples, scan state, chat sessions,
+delivery notices.
 
 One `Store` per database file. Rows hold the Pydantic models as JSON, so the
 schema stays small and the models in `app/models.py` remain the source of truth.
@@ -11,7 +12,7 @@ from pathlib import Path
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 from app import config
-from app.models import InventoryItem, Location, Preference, Recipe, ScanState
+from app.models import DeliveryNotice, InventoryItem, Location, Preference, Recipe, ScanState
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS inventory (
@@ -44,9 +45,15 @@ CREATE TABLE IF NOT EXISTS undo (
     token TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS notices (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    seen INTEGER NOT NULL DEFAULT 0
+);
 """
 
-_TABLES = ("inventory", "preferences", "staples_state", "custom_staples", "scan_state", "sessions", "recipes", "undo")
+_TABLES = ("inventory", "preferences", "staples_state", "custom_staples", "scan_state", "sessions", "recipes", "undo",
+           "notices")
 
 
 class Store:
@@ -141,6 +148,28 @@ class Store:
             row = self._conn.execute("SELECT data FROM undo WHERE token = ?", (token,)).fetchone()
             self._conn.execute("DELETE FROM undo WHERE token = ?", (token,))
         return row[0] if row else None
+
+    # delivery notices (docs/MAIL_DEMO_PLAN.md): shown once by the page, then marked seen
+
+    def add_notice(self, notice: DeliveryNotice) -> None:
+        with self._conn:
+            self._conn.execute("INSERT OR REPLACE INTO notices (id, data, seen) VALUES (?, ?, 0)",
+                               (notice.id, notice.model_dump_json()))
+
+    def load_notices(self, unseen_only: bool = True) -> list[DeliveryNotice]:
+        """Oldest first."""
+        sql = "SELECT data FROM notices" + (" WHERE seen = 0" if unseen_only else "") + " ORDER BY rowid"
+        return [DeliveryNotice.model_validate_json(r[0]) for r in self._conn.execute(sql)]
+
+    def load_notice(self, notice_id: str) -> DeliveryNotice | None:
+        row = self._conn.execute("SELECT data FROM notices WHERE id = ?", (notice_id,)).fetchone()
+        return DeliveryNotice.model_validate_json(row[0]) if row else None
+
+    def mark_notice_seen(self, notice_id: str) -> bool:
+        """False if there is no unseen notice with this id (so only one page shows it)."""
+        with self._conn:
+            cur = self._conn.execute("UPDATE notices SET seen = 1 WHERE id = ? AND seen = 0", (notice_id,))
+        return cur.rowcount == 1
 
     # scan state
 

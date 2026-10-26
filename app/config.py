@@ -34,5 +34,8 @@ DATA_DIR = ROOT / "data"
 STAPLES_PATH = DATA_DIR / "staples.json"
 SYNONYMS_PATH = DATA_DIR / "synonyms.json"
 DEMO_SEED_PATH = DATA_DIR / "demo_seed.json"
+DEMO_DELIVERY_PATH = DATA_DIR / "demo_delivery.json"  # the order /admin/delivery applies (docs/MAIL_DEMO_PLAN.md)
+# How often the page asks for delivery notices (GET /notices); 5 s for the video, minutes in real use.
+NOTICE_POLL_SECONDS = float(os.getenv("NOTICE_POLL_SECONDS") or 5)
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or DATA_DIR / "uploads")  # photos sent to /chat
 PHOTO_DIR = Path(os.getenv("PHOTO_DIR") or DATA_DIR / "photos")  # downloaded dish photos, one per recipe id

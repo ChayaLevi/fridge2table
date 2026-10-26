@@ -426,6 +426,30 @@
   #sheet .p-time { background: #FDE9D9; color: #7A3410; }
   #sheet .p-serve { background: #FCF0C9; color: #5C4A00; }
   #sheet .p-have { background: #E1F1E9; color: #0E5F58; }
+  /* a grocery delivery the app noticed by itself (docs/MAIL_DEMO_PLAN.md) */
+  .msg.delivery { align-self: flex-start; width: 100%; }
+  .dl { background: #FFFEFA; border-radius: 24px; padding: 16px 18px; border: 1.5px solid var(--accent-line);
+        box-shadow: 0 1px 0 rgba(110,80,40,.06), 0 6px 18px rgba(15,118,110,.12); animation: dlIn .45s ease-out; }
+  @keyframes dlIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .dl-head { display: flex; align-items: center; gap: 12px; }
+  .dl-icon { flex: none; width: 44px; height: 44px; border-radius: 14px; background: var(--accent-soft);
+             display: grid; place-items: center; font-size: 24px; }
+  .dl-title { font-family: var(--head); font-weight: 800; font-size: 16.5px; color: #16302C; line-height: 1.25; }
+  .dl-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .dl-items { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 4px; }
+  .dl-chip { background: #E1F1E9; color: #0E5F58; border-radius: 999px; padding: 5px 11px; font-size: 13.5px; font-weight: 600; }
+  .dl-chip em { font-style: normal; font-weight: 400; margin-left: 5px; opacity: .8; }
+  .dl-chip.unsure { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn-line); }
+  .dl-note { display: flex; gap: 8px; font-size: 13.5px; color: #3E4B47; padding: 7px 0; border-top: 1px solid var(--line); }
+  .dl-items + .dl-note { margin-top: 8px; }
+  .dl-note b { flex: none; width: 18px; text-align: center; }
+  .dl-foot { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  .dl-foot button { border: 1px solid var(--accent-line); background: #fff; color: var(--teal);
+                    border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; }
+  .dl-foot span { font-size: 13px; color: var(--muted); }
+  .item.fresh { box-shadow: 0 0 0 1.5px var(--sage), 0 2px 9px rgba(15,118,110,.12); }
+  .item.fresh .name::before { content: "NEW"; font-size: 10px; font-weight: 800; letter-spacing: .06em; color: #fff;
+                              background: var(--teal); border-radius: 6px; padding: 2px 5px; margin-right: 7px; vertical-align: 2px; }
   .madebar { margin-top: 16px; }
   .madebar .madebtn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 58px;
                       border: 0; border-radius: 18px; color: #fff; background: #0E7A70;
@@ -814,6 +838,7 @@ const state = {
   reviewPlaces: null,   // places shown in the review sheet while it is open
   openItem: null,       // the inventory item whose actions are shown (one at a time)
   invTab: "fridge",     // the place shown in the inventory panel
+  deliveryAdds: [],     // names the last grocery delivery added: marked NEW and shown first in the panel
   recentAdds: [],       // names added with the panel's add fields since it opened: shown first, newest on top
   busy: false,
   transcript: [],       // what is shown, so a reload of the same session shows it again
@@ -1038,6 +1063,7 @@ function renderEntry(entry) {
   const box = $("messages");
   if (entry.role === "user") box.append(renderUser(entry));
   else if (entry.role === "agent") box.append(renderAgent(entry.data, entry.asked));
+  else if (entry.role === "delivery") box.append(renderDelivery(entry));
   else box.append(el("div", { class: "msg system" }, el("div", { class: "bubble" }, entry.text)));
 }
 
@@ -1637,7 +1663,8 @@ async function editInventory(changes) {
 function renderItem(item) {
   const flag = item.uncertain ? " uncertain" : item.not_seen ? " notseen" : "";
   const open = state.openItem === item.name && !item.is_staple;
-  const row = el("li", { class: "item" + flag + (open ? " open" : "") });
+  const fresh = state.deliveryAdds.includes(item.name) ? " fresh" : "";
+  const row = el("li", { class: "item" + flag + fresh + (open ? " open" : "") });
   const del = el("button", { class: "del", type: "button", title: "Delete", "aria-label": `Delete ${item.display_name}`,
                              onclick: () => editInventory([{ op: "remove", name: item.name }]) }, "×");
   const main = el("button", { class: "main", type: "button", "aria-expanded": open ? "true" : "false",
@@ -1785,7 +1812,12 @@ function renderInventory() {
       placeHead("staples", st.length), el("ul", { class: "items" }, st.map(renderItem))));
     return;
   }
-  const recent = (i) => { const k = state.recentAdds.indexOf(i.name); return k < 0 ? Infinity : k; };
+  const recent = (i) => {
+    const k = state.recentAdds.indexOf(i.name);
+    if (k >= 0) return k;
+    const d = state.deliveryAdds.indexOf(i.name);
+    return d < 0 ? Infinity : state.recentAdds.length + d;
+  };
   const waiting = (place) => own.some((i) => i.location === place && (i.uncertain || i.not_seen));
   body.append(el("div", { class: "invtabs", role: "tablist", "aria-label": "Places" }, PLACES.map((p) =>
     el("button", { class: "invtab" + (waiting(p) ? " flagged" : ""), type: "button", role: "tab",
@@ -2031,6 +2063,86 @@ async function opening() {
   }
 }
 
+// --- grocery deliveries (docs/MAIL_DEMO_PLAN.md) ------------------------------------------------------
+// The page asks for new deliveries every few seconds, so it reacts by itself, with no button: a card in
+// the chat says what came in (with Undo), the new items are marked in the panel, then the agent writes.
+
+async function pollNotices() {
+  let wait = 5;
+  try {
+    const data = await api("/notices");
+    wait = data.poll_seconds || wait;
+    if (!state.busy && data.notices.length) await showDelivery(data.notices[0]);
+  } catch { /* the server did not answer: ask again later */ }
+  setTimeout(pollNotices, wait * 1000);
+}
+
+async function showDelivery(notice) {
+  setBusy(true);
+  try {
+    state.deliveryAdds = notice.added.map((i) => i.name);
+    await refreshInventory();
+    // The panel opens on the place that got the most new items.
+    const places = state.inventory.filter((i) => state.deliveryAdds.includes(i.name)).map((i) => i.location);
+    const most = (p) => places.filter((x) => x === p).length;
+    state.invTab = PLACES.reduce((a, b) => (most(b) > most(a) ? b : a));
+    addEntry({ role: "delivery", notice });
+    const typing = showTyping("Looking at what came in");
+    try {
+      const data = await api(`/notices/${encodeURIComponent(notice.id)}/open?session_id=${encodeURIComponent(state.sessionId)}`,
+                             { method: "POST" });
+      setInventory(data);
+      typing.remove();
+      addEntry({ role: "agent", data });
+    } catch (err) {
+      typing.remove();
+      // 404: another tab already showed it
+      if (!/No new delivery/.test(err.message)) addEntry({ role: "system", text: err.message });
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+function renderDelivery(entry) {
+  const n = entry.notice;
+  const count = n.added.length;
+  const unsure = n.uncertain || [];
+  const note = (mark, text) => el("div", { class: "dl-note" }, el("b", { "aria-hidden": "true" }, mark), el("span", {}, text));
+  const foot = el("div", { class: "dl-foot" });
+  const undone = () => foot.replaceChildren(el("span", {}, "Undone: the delivery is out of your inventory."));
+  if (entry.undone) undone();
+  else {
+    const show = el("button", { type: "button", onclick: () => $("openInv").click() }, "Show in my kitchen");
+    const undo = el("button", { type: "button" }, "Undo");
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      try {
+        state.deliveryAdds = [];
+        setInventory(await api(`/inventory/undo/${encodeURIComponent(n.undo)}`, { method: "POST" }));
+        entry.undone = true;
+        saveTranscript();
+        undone();
+      } catch (err) {
+        foot.replaceChildren(el("span", {}, err.message));
+      }
+    });
+    foot.append(show, n.undo ? undo : "");
+  }
+  return el("div", { class: "msg delivery" }, el("div", { class: "dl" },
+    el("div", { class: "dl-head" }, el("div", { class: "dl-icon", "aria-hidden": "true" }, "📦"),
+      el("div", {}, el("div", { class: "dl-title" }, `Your ${n.retailer} order arrived`),
+        el("div", { class: "dl-sub" }, `${n.order_id ? `Order #${n.order_id} · ` : ""}found in your email · `
+          + `added ${count} item${count === 1 ? "" : "s"} to your kitchen`))),
+    el("div", { class: "dl-items" }, n.added.map((i) => el("span", { class: "dl-chip" + (unsure.includes(i.display_name) ? " unsure" : "") },
+      i.display_name + (unsure.includes(i.display_name) ? " ?" : ""), i.amount_text ? el("em", {}, i.amount_text) : ""))),
+    ...(n.substituted || []).map(([was, now]) => note("↔", `${now} instead of ${was}`)),
+    ...((n.unavailable || []).length ? [note("✕", `Out of stock, not added: ${n.unavailable.join(", ")}`)] : []),
+    ...(unsure.length ? [note("?", `Not sure ${unsure.join(", ")} is for cooking: tap ✓ or × in your kitchen`)] : []),
+    ...((n.skipped || []).length ? [note("–", `Left out, not food: ${n.skipped.join(", ")}`)] : []),
+    foot));
+}
+
 async function refreshInventory() {
   try { setInventory(await api("/inventory")); } catch (err) { addEntry({ role: "system", text: err.message }); }
 }
@@ -2091,6 +2203,7 @@ state.cookMode = storageGet("ftt.cookMode") === "shop" ? "shop" : "home";
   startSession(newSessionId());
   await opening();
   updateSend();
+  pollNotices();
 })();
 </script>
 </body>

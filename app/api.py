@@ -1,4 +1,4 @@
-"""FastAPI routes: the chat turn, the inventory panel, recipe steps, the opening, demo admin.
+"""FastAPI routes: the chat turn, the inventory panel, recipe steps, the opening, delivery notices, demo admin.
 
 Each browser is its own household (a cookie, one SQLite file per household; see `get_store`).
 The agent, the store and the recipe model are FastAPI dependencies (`get_store`, `get_turn_runner`,
@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import threading
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -26,15 +27,15 @@ from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior, Usage
 from pydantic_ai.models import Model
 
 from app import config
-from app.agent import TurnResult, run_opening, run_turn
+from app.agent import TurnResult, run_delivery, run_opening, run_turn
 from app.llm import setup_observability
 from app.amounts import Unit
 from app.models import (
-    AgentReply, BoughtItem, CookMode, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
+    AgentReply, BoughtItem, CookMode, DeliveryNotice, GroceryOrder, InventoryChange, InventoryItem, Location, Preference, Recipe, ScanState, Substitution, ToolTraceItem,
     MadeChange, PackSize, TurnUsage,
 )
 from app.store import Store
-from app.tools import inventory, photos, recipes
+from app.tools import delivery, inventory, photos, recipes
 from app.tools.normalize import normalize
 from app.trace import trace_sentence
 
@@ -59,6 +60,7 @@ HOUSEHOLD_COOKIE = "household"
 _HOUSEHOLD_ID = re.compile(r"[0-9a-f]{32}")
 _stores: dict[str, Store] = {}
 _stores_lock = threading.Lock()
+_last_seen: dict[str, float] = {}  # household id -> when its page last called (for /admin/delivery?household=latest)
 
 
 def household_id(request: Request, response: Response) -> str:
@@ -80,6 +82,7 @@ def get_store(hid: Annotated[str, Depends(household_id)]) -> Store:
         store = _stores.get(hid)
         if store is None:
             store = _stores[hid] = Store(config.HOUSEHOLD_DIR / f"{hid}.db")
+        _last_seen[hid] = time.monotonic()
         return store
 
 
@@ -94,6 +97,11 @@ def get_turn_runner() -> TurnRunner:
 def get_opening_runner() -> TurnRunner:
     """The proactive greeting (`app.agent.run_opening`); tests inject one on a FunctionModel."""
     return run_opening
+
+
+def get_delivery_runner() -> TurnRunner:
+    """The agent's message when a delivery lands (`app.agent.run_delivery`); tests inject one."""
+    return run_delivery
 
 
 def get_recipe_model() -> Model | None:
@@ -166,6 +174,17 @@ class ChatResponse(InventoryState):
     def trace_summary(self) -> str:
         """The collapsed trace line: "3 steps · updated the inventory (removed egg) → 5 ideas → checked by code"."""
         return trace_sentence(self.trace)
+
+
+class DeliveryState(InventoryState):
+    """After a delivery was applied: the panel's state and the notice the page will show."""
+
+    notice: DeliveryNotice
+
+
+class NoticesResponse(BaseModel):
+    notices: list[DeliveryNotice]  # not shown yet, oldest first
+    poll_seconds: float  # how often the page should ask again
 
 
 def _state(store: Store) -> dict:
@@ -354,6 +373,51 @@ async def opening(
     return ChatResponse(reply=turn.reply, trace=turn.trace, usage=usage, **_state(store))
 
 
+# --- delivery notices (docs/MAIL_DEMO_PLAN.md) --------------------------------------------------------
+
+def delivery_trace(notice: DeliveryNotice) -> ToolTraceItem:
+    """The first trace line of the agent's delivery message: where the change came from."""
+    order = f"{notice.retailer} order #{notice.order_id}" if notice.order_id else f"{notice.retailer} order"
+    result = f"added {len(notice.added)}"
+    if notice.skipped:
+        result += f", skipped {len(notice.skipped)} not food"
+    if notice.unavailable:
+        result += f", {len(notice.unavailable)} out of stock"
+    return ToolTraceItem(tool="delivery", args_summary=f"{order} (email)", result_summary=result,
+                         label=f"source: {order} (email)")
+
+
+def delivery_fallback(notice: DeliveryNotice) -> str:
+    """Said instead of the agent's message when the model fails: the inventory was updated anyway."""
+    return (f"Your {notice.retailer} order arrived: I added {len(notice.added)} items to your inventory. "
+            "Ask me what you can cook with them.")
+
+
+@app.get("/notices")
+def get_notices(store: StoreDep) -> NoticesResponse:
+    """Deliveries the page has not shown yet. The page asks every poll_seconds, so it reacts on its own."""
+    return NoticesResponse(notices=store.load_notices(), poll_seconds=config.NOTICE_POLL_SECONDS)
+
+
+@app.post("/notices/{notice_id}/open")
+async def open_notice(
+    notice_id: str, store: StoreDep, runner: Annotated[TurnRunner, Depends(get_delivery_runner)], session_id: str,
+) -> ChatResponse:
+    """Show a delivery once: marks it seen and returns the agent's own message about it (one validated meal
+    that uses what arrived), with the delivery as the first trace line. 404 if already shown."""
+    notice = store.load_notice(notice_id)
+    if notice is None or not store.mark_notice_seen(notice_id):
+        raise HTTPException(404, "No new delivery with this id.")
+    try:
+        turn = await runner(store, session_id, notice)
+    except (ModelAPIError, UnexpectedModelBehavior, UsageLimitExceeded) as e:
+        log.warning("delivery message %s failed, static text: %s", session_id, e)
+        return ChatResponse(reply=AgentReply(message=delivery_fallback(notice)), trace=[delivery_trace(notice)],
+                            **_state(store))
+    usage = turn.usage if turn.result is not None else None
+    return ChatResponse(reply=turn.reply, trace=[delivery_trace(notice), *turn.trace], usage=usage, **_state(store))
+
+
 # --- demo admin -----------------------------------------------------------------------------------
 
 def seed_store(store: Store, seed: dict) -> None:
@@ -371,6 +435,32 @@ def admin_seed(store: StoreDep) -> InventoryState:
     """Add the demo inventory from data/demo_seed.json (run /admin/reset first for a clean demo)."""
     seed_store(store, json.loads(config.DEMO_SEED_PATH.read_text(encoding="utf-8")))
     return InventoryState(**_state(store))
+
+
+@app.post("/admin/delivery")
+def admin_delivery(
+    request: Request,
+    order: GroceryOrder | None = None,
+    household: Annotated[str, Query(description="mine = this browser's household; latest = the household "
+                                     "whose page called last (for scripts/deliver_demo.py)")] = "mine",
+) -> DeliveryState:
+    """Demo stand-in for the mail pipeline: apply a delivered order (default data/demo_delivery.json) and
+    save a notice; the open page picks it up by itself within NOTICE_POLL_SECONDS."""
+    if household == "latest":
+        with _stores_lock:
+            hid = max(_last_seen, key=_last_seen.get, default=None)
+        if hid is None:
+            raise HTTPException(404, "No household has opened the page yet.")
+    else:
+        hid = request.cookies.get(HOUSEHOLD_COOKIE, "")
+        if not _HOUSEHOLD_ID.fullmatch(hid):
+            raise HTTPException(400, "This browser has no household yet: open the app first.")
+    store = get_store(hid)
+    if order is None:
+        order = GroceryOrder.model_validate_json(config.DEMO_DELIVERY_PATH.read_text(encoding="utf-8"))
+    notice = delivery.apply_delivery(store, order)
+    log.info("delivery %s %s applied to household %s: %d added", order.retailer, order.order_id, hid, len(notice.added))
+    return DeliveryState(**_state(store), notice=notice)
 
 
 @app.post("/admin/reset")

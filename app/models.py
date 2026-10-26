@@ -289,3 +289,55 @@ class AgentReply(BaseModel):
     # "Shopping OK" button (T4.5). Never set by the model.
     offer_shop: SkipJsonSchema[bool] = False
     # trace is attached by the server from the run's messages, not produced by the model
+
+
+# --- grocery deliveries (docs/MAIL_DEMO_PLAN.md) ------------------------------------------------------
+# The demo feeds a hand-written order (data/demo_delivery.json); the full mail pipeline (docs/MAIL_PLAN.md)
+# will produce the same GroceryOrder from the retailer's emails.
+
+LineStatus = Literal["ordered", "delivered", "missing", "substituted", "refunded", "weight_adjusted"]
+
+
+class OrderLine(BaseModel):
+    """One line of a grocery order email, as the retailer wrote it."""
+
+    raw_name: str  # "Lasagna Sheets"
+    brand: str | None = None
+    qty: float = Field(default=1, gt=0)  # number of packs
+    pack_size: float | None = Field(default=None, gt=0)  # 500; for a weighed item, the actual weight
+    pack_unit: str | None = None  # "g", "kg", "ml", "l", "pcs", or anything the retailer wrote
+    line_status: LineStatus = "delivered"
+    substitute_for: str | None = None  # raw_name of the line this one replaces (line_status "substituted")
+    retailer_category: str | None = None  # the email's section: "Dairy & Eggs", "Household", "Pet"
+    confidence: float = 1.0
+
+
+class GroceryOrder(BaseModel):
+    """An order whose final contents are known (delivered)."""
+
+    retailer: str
+    order_id: str | None = None
+    email_type: Literal["delivered"] = "delivered"
+    email_subject: str | None = None
+    lines: list[OrderLine]
+
+
+class DeliveredItem(BaseModel):
+    name: str  # canonical
+    display_name: str  # as the retailer wrote it: "Grana Padano"
+    amount_text: str | None = None  # "500 g"; None = no size the inventory can use (plenty only)
+
+
+class DeliveryNotice(BaseModel):
+    """What a delivery changed, kept until the page has shown it (banner + the agent's message)."""
+
+    id: str = Field(default_factory=lambda: secrets.token_hex(6))
+    retailer: str
+    order_id: str | None = None
+    added: list[DeliveredItem]  # cooking ingredients put in the inventory (uncertain ones included)
+    uncertain: list[str] = []  # display names added as uncertain: the panel asks keep / remove
+    skipped: list[str] = []  # not food (household, pet, ...): never added
+    unavailable: list[str] = []  # out of stock or refunded before delivery
+    substituted: list[tuple[str, str]] = []  # (ordered, delivered instead)
+    undo: str | None = None  # POST /inventory/undo/{token} takes the whole delivery back out
+    created_at: datetime = Field(default_factory=datetime.now)
