@@ -13,7 +13,7 @@ concurrency:
 
 env:
   REPO_A: "ChayaLevi/fridge2table"
-  REPO_B: "agents-demo/fridge2tableO"
+  REPO_B: "agents-demo/fridge2table"
 
 jobs:
   mirror:
