@@ -1,0 +1,35 @@
+
+name: Mirror repo
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: mirror-push
+  cancel-in-progress: false
+
+env:
+  REPO_A: "ChayaLevi/fridge2table"
+  REPO_B: "agents-demo/fridge2tableO"
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror clone of this repo
+        run: git clone --mirror "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" source.git
+
+      - name: Push mirror to the paired repo
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+        run: |
+          cd source.git
+          if [ "${{ github.repository }}" = "${REPO_A}" ]; then
+            DEST="${REPO_B}"
+          else
+            DEST="${REPO_A}"
+          fi
+          git push --mirror "https://x-access-token:${MIRROR_TOKEN}@github.com/${DEST}.git"
